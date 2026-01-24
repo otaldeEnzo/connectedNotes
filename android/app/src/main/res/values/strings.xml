@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ConnectedNotes</string>
+    <string name="title_activity_main">ConnectedNotes</string>
+    <string name="package_name">com.seuusuario.connectednotes</string>
+    <string name="custom_url_scheme">com.seuusuario.connectednotes</string>
+</resources>
