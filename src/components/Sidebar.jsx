@@ -1,128 +1,253 @@
 import React, { useState } from 'react';
-import { Plus, FileText, Trash2, X, ChevronRight, ChevronDown, Folder, CircleDot, Search } from 'lucide-react';
+import { useNotes } from '../contexts/NotesContext';
 
-/**
- * Componente Sidebar (Árvore de Notas)
- * Design reformulado: Liquid Glass Flutuante com hierarquia clara.
- */
-const Sidebar = ({ 
-  notes, activeNoteId, isSidebarOpen, setIsSidebarOpen, 
-  onAddNote, onDeleteNote, onSelectNote 
-}) => {
-  const [expandedNodes, setExpandedNodes] = useState(new Set(['root']));
-  const [searchTerm, setSearchTerm] = useState('');
+// Ícones SVG Inline para a Sidebar
+const SidebarIcons = {
+  Plus: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
+  Trash: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
+  Folder: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>,
+  File: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+};
 
-  const toggleNode = (nodeId) => {
-    const newExpanded = new Set(expandedNodes);
-    if (newExpanded.has(nodeId)) newExpanded.delete(nodeId);
-    else newExpanded.add(nodeId);
-    setExpandedNodes(newExpanded);
+const TreeNode = ({ nodeId, level = 0 }) => {
+  const { notes, activeNoteId, selectNote, toggleCollapse, addNote, deleteNote, updateNoteTitle } = useNotes();
+  const [isHovered, setIsHovered] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+
+  const note = notes[nodeId];
+  if (!note) return null;
+
+  const hasChildren = note.children && note.children.length > 0;
+  const isSelected = activeNoteId === nodeId;
+
+  // Handler para iniciar renomeação
+  const startEditing = (e) => {
+    e.stopPropagation();
+    setEditTitle(note.title);
+    setIsEditing(true);
   };
 
-  const buildNoteTree = (parentId = 'root') => {
-    return notes
-      .filter(n => (n.parentId || 'root') === parentId)
-      .filter(n => n.title.toLowerCase().includes(searchTerm.toLowerCase()))
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  // Handler para salvar renomeação
+  const saveTitle = () => {
+    if (editTitle.trim()) {
+      updateNoteTitle(nodeId, editTitle);
+    }
+    setIsEditing(false);
   };
 
-  const NoteTreeItem = ({ note, level = 0 }) => {
-    const children = notes.filter(n => n.parentId === note.id);
-    const hasChildren = children.length > 0;
-    const isExpanded = expandedNodes.has(note.id);
-
-    return (
-      <div style={{ marginLeft: level === 0 ? 0 : 12 }}>
-        <div 
-          className={`tree-node ${activeNoteId === note.id ? 'active' : ''}`}
-          onClick={() => onSelectNote(note.id)}
-        >
-          <div 
-            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-black/5"
-            onClick={(e) => { e.stopPropagation(); toggleNode(note.id); }}
-            style={{ opacity: hasChildren ? 1 : 0 }}
-          >
-            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </div>
-          
-          <div className="flex items-center gap-3 flex-1 min-w-0 ml-1">
-            {hasChildren ? 
-              <Folder size={18} className={activeNoteId === note.id ? "text-indigo-500" : "opacity-60"} /> : 
-              <FileText size={18} className="opacity-60" />
-            }
-            <span className="truncate text-sm font-semibold">{note.title || 'Sem título'}</span>
-          </div>
-
-          <div className="actions flex gap-1">
-            <button 
-              onClick={(e) => { e.stopPropagation(); onAddNote(note.id); }} 
-              className="p-1.5 hover:bg-indigo-50 rounded-lg text-indigo-500"
-              title="Nova sub-nota"
-            >
-              <Plus size={14} />
-            </button>
-            <button 
-              onClick={(e) => { e.stopPropagation(); onDeleteNote(note.id); }} 
-              className="p-1.5 hover:bg-red-50 rounded-lg text-red-400"
-              title="Excluir"
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        </div>
-        {isExpanded && children.map(child => <NoteTreeItem key={child.id} note={child} level={level + 1} />)}
-      </div>
-    );
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') saveTitle();
+    // Cancela edição no ESC
+    if (e.key === 'Escape') setIsEditing(false);
   };
 
   return (
-    <aside className={`sidebar-container liquid-glass ${!isSidebarOpen ? 'sidebar-closed' : ''}`}>
-      <div className="sidebar-header flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-500 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200 text-white">
-              <CircleDot size={24} />
-            </div>
-            <span className="font-extrabold text-xl tracking-tight text-slate-800 dark:text-white">Lumina</span>
+    <div>
+      <div 
+        className="tree-item"
+        style={{ 
+          paddingLeft: `${level * 16 + 12}px`,
+          paddingRight: '8px',
+          paddingTop: '6px',
+          paddingBottom: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          cursor: 'pointer',
+          fontSize: '0.9rem',
+          color: isSelected ? 'var(--accent-color)' : 'var(--text-primary)',
+          background: isSelected ? 'rgba(99, 102, 241, 0.1)' : (isHovered ? 'rgba(0,0,0,0.03)' : 'transparent'),
+          borderRadius: '6px',
+          margin: '1px 8px',
+          position: 'relative' // Para posicionar botões absolutos se precisar
+        }}
+        onClick={() => selectNote(nodeId)}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onDoubleClick={startEditing} // Duplo clique para renomear
+      >
+        {/* Ícone de Expansão/Colapso */}
+        <span 
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleCollapse(nodeId);
+          }}
+          style={{ 
+            marginRight: '6px', 
+            width: '16px', 
+            textAlign: 'center', 
+            opacity: 0.6,
+            cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}
+        >
+          {hasChildren ? (
+            note.collapsed ? <span style={{fontSize: '10px'}}>▶</span> : <span style={{fontSize: '10px'}}>▼</span>
+          ) : (
+            <span style={{fontSize: '14px'}}>•</span>
+          )}
+        </span>
+
+        {/* Título ou Input de Edição */}
+        {isEditing ? (
+          <input 
+            autoFocus
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            onBlur={saveTitle}
+            onKeyDown={handleKeyDown}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()} // Permite clicar para mover cursor
+            style={{
+              flex: 1, // Ocupa o espaço restante corretamente
+              minWidth: 0, // Evita overflow no flexbox
+              border: '1px solid var(--accent-color)',
+              borderRadius: '4px',
+              padding: '2px 6px',
+              fontSize: '0.9rem',
+              background: 'var(--bg-color)', // Usa a cor de fundo do tema
+              color: 'var(--text-primary)',  // Usa a cor de texto do tema
+              outline: 'none',
+              userSelect: 'text', // GARANTE que o texto seja selecionável e visível
+              cursor: 'text'
+            }}
+          />
+        ) : (
+          <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none' }}>
+            {note.title}
+          </span>
+        )}
+
+        {/* Botões de Ação (Só aparecem no Hover e não na Raiz) */}
+        {isHovered && !isEditing && (
+          <div style={{ display: 'flex', gap: '4px', marginLeft: '8px' }}>
+            {/* Adicionar Filho */}
+            <button 
+              title="Adicionar sub-nota"
+              onClick={(e) => {
+                e.stopPropagation();
+                addNote(nodeId);
+              }}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px'
+              }}
+            >
+              <SidebarIcons.Plus />
+            </button>
+            
+            {/* Deletar (Exceto Root) */}
+            {nodeId !== 'root' && (
+              <button 
+                title="Excluir"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if(confirm('Excluir esta nota?')) deleteNote(nodeId);
+                }}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px'
+                }}
+              >
+                <SidebarIcons.Trash />
+              </button>
+            )}
           </div>
+        )}
+      </div>
+
+      {/* Renderização Recursiva */}
+      {hasChildren && !note.collapsed && (
+        <div className="tree-children">
+          {note.children.map(childId => (
+            <TreeNode key={childId} nodeId={childId} level={level + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const Sidebar = () => {
+  const { notes, addNote } = useNotes();
+  const rootNote = notes['root'];
+
+  return (
+    <div className="glass-panel" style={{ 
+      height: '100%', 
+      display: 'flex', 
+      flexDirection: 'column',
+      borderRadius: '16px',
+      overflow: 'hidden'
+    }}>
+      {/* Cabeçalho */}
+      <div style={{ padding: '16px', borderBottom: '1px solid var(--glass-border)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <h2 style={{ 
+            fontSize: '1.1rem', 
+            fontWeight: '700', 
+            color: 'var(--text-primary)'
+          }}>
+            Notas
+          </h2>
           <button 
-            onClick={() => setIsSidebarOpen(false)} 
-            className="p-2 hover:bg-black/5 rounded-full text-slate-400 transition-colors"
+            onClick={() => addNote('root')}
+            style={{
+              background: 'var(--accent-color)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '4px 8px',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+              display: 'flex', alignItems: 'center', gap: '4px'
+            }}
           >
-            <X size={20} />
+            <SidebarIcons.Plus /> Nova
           </button>
         </div>
-
-        {/* Busca rápida */}
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Buscar notas..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-black/5 border-none rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 outline-none"
-          />
-        </div>
-      </div>
-
-      <div className="sidebar-content hide-scrollbar">
-        <button 
-          onClick={() => onAddNote('root')} 
-          className="w-full py-3.5 mb-6 bg-indigo-500 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
-        >
-           <Plus size={20} /> Nova Nota
-        </button>
         
-        <div className="space-y-1">
-          {buildNoteTree('root').length === 0 ? (
-            <div className="text-center py-8 opacity-40 italic text-sm">Nenhuma nota encontrada</div>
-          ) : (
-            buildNoteTree('root').map(rootNote => <NoteTreeItem key={rootNote.id} note={rootNote} />)
-          )}
-        </div>
+        <input 
+          type="text" 
+          placeholder="Pesquisar..." 
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            border: '1px solid var(--glass-border)',
+            background: 'rgba(255,255,255,0.05)',
+            color: 'var(--text-primary)',
+            outline: 'none',
+            fontSize: '0.85rem'
+          }}
+        />
       </div>
-    </aside>
+
+      {/* Árvore Scrollável */}
+      <div style={{ flex: 1, overflowY: 'auto', paddingTop: '8px' }}>
+        {rootNote && rootNote.children.map(childId => (
+          <TreeNode key={childId} nodeId={childId} level={0} />
+        ))}
+        
+        {/* Mensagem se vazio */}
+        {rootNote && rootNote.children.length === 0 && (
+          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+            Nenhuma nota criada.<br/>Clique em "Nova" acima.
+          </div>
+        )}
+      </div>
+
+      {/* Rodapé */}
+      <div style={{ 
+        padding: '12px', 
+        borderTop: '1px solid var(--glass-border)', 
+        fontSize: '0.7rem',
+        color: 'var(--text-secondary)',
+        display: 'flex', 
+        justifyContent: 'space-between'
+      }}>
+        <span>v0.1.0 Alpha</span>
+        <span title="Status de Sincronização">🟢 Local</span>
+      </div>
+    </div>
   );
 };
 

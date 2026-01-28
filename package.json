@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "vite": "vite",
+    "vite": "vite --host",
     "electron:dev": "wait-on http://localhost:5173 && cd electron && npx electron .",
     "dev": "concurrently -k \"npm run vite\" \"npm run electron:dev\"",
     "build": "vite build",

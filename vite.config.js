@@ -8,6 +8,8 @@ export default defineConfig({
     watch: {
       usePolling: true, // Força o Vite a verificar mudanças (útil em Windows/WSL)
     },
-    hmr: true // Garante que o Hot Module Replacement está ligado
+    hmr: true, // Garante que o Hot Module Replacement está ligado
+    host: true,
   }
+
 })
