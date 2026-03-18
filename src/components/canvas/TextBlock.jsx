@@ -1,0 +1,197 @@
+import React, { useRef, useEffect, useCallback } from 'react';
+import ReactDOM from 'react-dom';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
+import { TextStyle } from '@tiptap/extension-text-style';
+import FontFamily from '@tiptap/extension-font-family';
+import Color from '@tiptap/extension-color';
+import Highlight from '@tiptap/extension-highlight';
+import Underline from '@tiptap/extension-underline';
+import TextAlign from '@tiptap/extension-text-align';
+import Subscript from '@tiptap/extension-subscript';
+import Superscript from '@tiptap/extension-superscript';
+import { FontSize } from '../../extensions/FontSize';
+import { Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify } from 'lucide-react';
+import BlockWrapper from './BlockWrapper';
+
+const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, onInteract, saveHistory, isEditing, setEditing, isDragging, canvasScale, canvasPan }) => {
+    const toolbarRef = useRef(null);
+    const cardRef = useRef(null);
+
+    const editor = useEditor({
+        extensions: [
+            StarterKit,
+            Placeholder.configure({ placeholder: 'Digite algo...', }),
+            TextStyle, FontFamily, FontSize, Color, Underline,
+            Highlight.configure({ multicolor: true }),
+            TextAlign.configure({ types: ['heading', 'paragraph'], }),
+            Subscript, Superscript,
+            TaskList, TaskItem.configure({ nested: true, }),
+        ],
+        content: block.content || '',
+        editable: isEditing,
+        onBlur: ({ editor }) => {
+            const html = editor.getHTML();
+            if (html !== block.content) {
+                updateBlock(block.id, { content: html });
+                if (saveHistory) saveHistory();
+            }
+            if (setEditing) setEditing(false);
+        },
+        onUpdate: ({ editor }) => {
+            const html = editor.getHTML();
+            if (html !== block.content) {
+                updateBlock(block.id, { content: html });
+            }
+        }
+    });
+
+    useEffect(() => {
+        if (editor) {
+            editor.setEditable(isEditing);
+            if (isEditing) editor.commands.focus();
+        }
+    }, [isEditing, editor]);
+
+    const handleDoubleClick = (e) => {
+        e.stopPropagation();
+        if (setEditing) setEditing(true);
+    };
+
+    const dotColor = block.color === 'violet' ? '#8b5cf6' : (block.color === 'cyan' ? '#06b6d4' : (block.color === 'amber' ? '#f59e0b' : '#8b5cf6'));
+
+    const highlightColors = {
+        default: 'transparent',
+        yellow: '#fef3c7',
+        pink: '#fce7f3',
+        green: '#dcfce7',
+        blue: '#dbeafe',
+    };
+
+    const fontSizes = ['12px', '14px', '16px', '18px', '20px', '24px', '32px'];
+
+    // Common Tailwind button class for toolbar
+    const toolBtnClass = (isActive) => `
+        p-2 rounded-xl transition-all duration-300 flex items-center justify-center 
+        ${isActive ? 'bg-accent-color text-white' : 'hover:bg-white/10 text-white/60 hover:text-white'}
+        active:scale-95
+    `;
+
+    return (
+        <BlockWrapper
+            ref={cardRef}
+            block={block}
+            title="Sua Nota"
+            color={dotColor}
+            isEditing={isEditing}
+            isDragging={isDragging}
+            isDarkMode={isDarkMode}
+            onClose={removeBlock}
+            onInteract={onInteract}
+            onDoubleClick={handleDoubleClick}
+            onRename={(id, name) => updateBlock(id, { customTitle: name })}
+            canvasScale={canvasScale}
+            canvasPan={canvasPan}
+            className="min-w-[350px] max-w-[1200px]"
+        >
+            <div className={`p-6 pb-8 transition-colors duration-500`}>
+                <EditorContent
+                    editor={editor}
+                    className="ProseMirror-container text-white/90"
+                    style={{
+                        height: '100%',
+                        cursor: isEditing ? 'text' : 'grab',
+                        minHeight: '80px',
+                        outline: 'none'
+                    }}
+                />
+            </div>
+
+            {/* Floating Liquid Toolbar - Tailwind Refactored */}
+            {editor && isEditing && cardRef.current && ReactDOM.createPortal(
+                <div
+                    ref={toolbarRef}
+                    className="fixed bottom-12 left-1/2 -translate-x-1/2 glass-extreme flex items-center gap-4 px-6 py-4 rounded-[2.5rem] z-[3000] border-white/20 shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-500"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    <div className="flex items-center gap-2 pr-4 border-r border-white/10 overflow-hidden">
+                        <select
+                            className="bg-transparent text-white/80 text-sm font-medium outline-none cursor-pointer p-1 hover:text-white transition-colors"
+                            value={editor.getAttributes('textStyle').fontSize || '16px'}
+                            onChange={(e) => editor.chain().focus().setFontSize(e.target.value).run()}
+                        >
+                            {fontSizes.map(size => (
+                                <option key={size} value={size} className="bg-[#1e1e2e] text-white">{size}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex items-center gap-1 pr-4 border-r border-white/10">
+                        <button className={toolBtnClass(editor.isActive('bold'))} onClick={() => editor.chain().focus().toggleBold().run()}>
+                            <Bold size={16} />
+                        </button>
+                        <button className={toolBtnClass(editor.isActive('italic'))} onClick={() => editor.chain().focus().toggleItalic().run()}>
+                            <Italic size={16} />
+                        </button>
+                        <button className={toolBtnClass(editor.isActive('underline'))} onClick={() => editor.chain().focus().toggleUnderline().run()}>
+                            <UnderlineIcon size={16} />
+                        </button>
+                    </div>
+
+                    <div className="flex items-center gap-1 pr-4 border-r border-white/10">
+                        <button className={toolBtnClass(editor.isActive({ textAlign: 'left' }))} onClick={() => editor.chain().focus().setTextAlign('left').run()}>
+                            <AlignLeft size={16} />
+                        </button>
+                        <button className={toolBtnClass(editor.isActive({ textAlign: 'center' }))} onClick={() => editor.chain().focus().setTextAlign('center').run()}>
+                            <AlignCenter size={16} />
+                        </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        {Object.entries(highlightColors).filter(([k]) => k !== 'default').map(([key, color]) => (
+                            <button
+                                key={key}
+                                onClick={() => editor.chain().focus().toggleHighlight({ color }).run()}
+                                className={`w-6 h-6 rounded-lg transition-all border-2 ${editor.isActive('highlight', { color }) ? 'border-white scale-110' : 'border-transparent hover:scale-105 opacity-60 hover:opacity-100'}`}
+                                style={{ backgroundColor: color }}
+                                title={`Marca-texto ${key}`}
+                            />
+                        ))}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 ml-2">
+                        {['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#ffffff'].map(c => (
+                            <button
+                                key={c}
+                                onClick={() => editor.chain().focus().setColor(c).run()}
+                                className={`w-4 h-4 rounded-full transition-all border ${editor.isActive('textStyle', { color: c }) ? 'ring-2 ring-white scale-125' : 'hover:scale-110 border-white/20'}`}
+                                style={{ background: c }}
+                            />
+                        ))}
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            <style>{`
+                .ProseMirror p.is-editor-empty:first-child::before {
+                    content: attr(data-placeholder);
+                    float: left;
+                    color: rgba(255, 255, 255, 0.4);
+                    pointer-events: none;
+                    height: 0;
+                }
+                .ProseMirror:focus { outline: none; }
+                .ProseMirror { font-size: 1.1rem; line-height: 1.6; }
+                .ProseMirror ul, .ProseMirror ol { padding-left: 1.5rem; margin: 1rem 0; }
+                .ProseMirror li { margin-bottom: 0.5rem; }
+            `}</style>
+        </BlockWrapper>
+    );
+};
+
+export default TextBlock;

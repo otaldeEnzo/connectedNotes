@@ -1,0 +1,114 @@
+# ConnectedNotes - Consolidated Project Roadmap
+
+## Phase 1: Core Interaction & Canvas Foundations (Completed)
+- [x] **Selection & Bounds**: Precise selection boxes and handle alignment.
+- [x] **State Persistence**: Full application state saving and loading.
+- [x] **Canvas Connections (Arrows)**: 
+    - [x] SVG Bezier curves with arrow/style support.
+    - [x] Selectable and deletable connection paths.
+- [x] **Canvas MiniMap**: Top-aligned Minimap with drag navigation and scroll-zoom.
+- [x] **Undo/Redo**: Global history management in `NotesContext`.
+
+## Phase 2: Mindmap Editor & UI Polish (Completed)
+- [x] **Marquee Selection**: Multi-node selection and bulk movement.
+- [x] **Interaction Fixes**: Resolved dragging "shake" with anchor-based logic.
+- [x] **Visual Feedback**: Stronger glows, scales (1.08), and hover effects.
+- [x] **Stability**: Fixed recursion errors and passive listener conflicts.
+
+## Phase 3: Global Graph View & OSINT-Flow (Completed)
+- [x] **Mind Map Layout Evolution**:
+    - [x] **Strict Tree Algorithm**: Deterministic Left-to-Right expansion.
+    - [x] **Zero-Crossing Logic**: Subtree-size based vertical slotting (160px gaps).
+- [x] **Smart Navigation**:
+    - [x] **Tag & Search Auto-Focus**: Automatic `fitView` for matching nodes.
+    - [x] **Enhanced Zoom**: Dynamic padding and active note centering.
+- [x] **Mouse Control Modernization**:
+    - [x] **Right-Click**: Panning/Canvas Drag.
+    - [x] **Left-Click**: Marquee selection.
+- [x] **Visual Styling**:
+    - [x] Pill-shaped nodes with branch-based color coding.
+    - [x] Edge deduplication (Hierarchy vs Tags).
+
+## Phase 4: AI & Math Assistant (Completed)
+- [x] **AIPanel Integration**: Contextual generation (Text, Code, Mindmaps).
+- [x] **Math Assistant (Gemini API)**:
+    - [x] Cloud Vision based Math/LaTeX recognition.
+    - [x] Step-by-step resolution and interactive Plotly/GeoGebra graphs.
+- [x] **GeoGebra Bridge**:
+    - [x] Native GGBBlocks with drag handles and interactive hovers.
+- [x] **Ink-to-Math**: Converting handwriting directly into solvable MathBlocks.
+
+## Phase 5: Rich Text & Organization (Completed)
+- [x] **TipTap Rich Text Engine**:
+    - [x] Floating formatting menus & Markdown shortcuts.
+    - [x] Office-style toolbar (Colors, Fonts, Alignment, Highlights).
+- [x] **Tagging System (#tags)**:
+    - [x] Automatic tag extraction and sidebar filtering.
+    - [x] CommandBar deep search integration (#tag search).
+
+## Phase 6: Global Improvements & Stability (Completed)
+- [x] **Input Fixes**: Restored Code Editor input and Eraser cursor stability.
+- [x] **Stylus Optimization**: PointerEvents capture for smooth Pen/Highlighter decoupling.
+- [x] **Hard Strike Protection**: Sanitized block creation to prevent "undefined" crashes.
+
+---
+
+## Phase 7: UI/UX Refinement & Polish (Completed)
+- [x] **Neat Shapes (V5)**: "Hold-to-Snap" logic for lines, arrows, and geometric shapes.
+- [x] **Selection Box Styling**: Dashed border visuals with scale/glow feedback.
+- [x] **Connection Line Routing**: Improved Bezier paths with dynamic control points.
+- [x] **Pan/Zoom Limits**: Hard constraints for min/max zoom levels.
+
+## Phase 8: Search & Command Architecture (Completed)
+- [x] **Command Palette (Ctrl+K/P)**: Advanced quick-action menu for global navigation.
+- [x] **Global Search (Ctrl+F)**: Deep search across all notes and block types.
+- [x] **AI Summarization**: Targeted summaries for groups of selected blocks.
+
+## Phase 9: Multi-Theme & Design System (Completed)
+- [x] **Extended Theme Library**: Nord, Gruvbox, Dracula, and Midnight OLED presets.
+- [x] **Custom Theme Manager**: Dynamic hex-to-rgba injection for user-defined styles.
+
+---
+
+## Future Roadmap & Pending Features (Backlog)
+
+### Phase A: Professional Export & Export/Import
+- [x] **Canvas Capture Engine**: 
+    - [x] High-resolution PNG export (using Stage `toDataURL`) <!-- id: 300 -->
+    - [x] PDF Workspace Snapshot (using `jsPDF`) <!-- id: 301 -->
+- [ ] **Markdown Batch Export**:
+    - [ ] Logic to convert blocks + connections into a structured ZIP of MD files <!-- id: 302 -->
+- [ ] **Native Asset Support**:
+    - [ ] Drag & Drop for images/PDFs directly onto the canvas <!-- id: 303 -->
+    - [ ] File size optimization/compression on import <!-- id: 304 -->
+- [x] **Workspace Portability**:
+    - [x] Single-file `.connected` export (Full JSON backup) <!-- id: 305 -->
+
+### Phase B: Advanced Canvas Structures
+- [ ] **Structural Bridges**: Convert structured Mindmaps into free-form Canvas blocks.
+- [ ] **Auto-Tidy**: Auto-alignment engine for cleaning up messy canvas layouts.
+- [ ] **Version History**: Snapshots and auto-backup/restore systems.
+
+### Phase C: Global UX & Knowledge Management
+- [ ] **CommandBar Enhancements**: Show content snippets/previews in search results.
+- [ ] **Multi-Window / Split View**: Side-by-side note editing.
+- [x] **Drafts & Auto-Save**: Refinement of persistence layers for very large notes.
+
+### Phase D: Organization & Management
+- [ ] **Bulk Management**: Multi-drag move/delete for sidebar notes.
+- [ ] **Sidebar Fluidity**: Improve drag & drop transitions in the notes tree.
+- [ ] **Advanced Trash**: "Recently Deleted" folder with recovery and security.
+
+### Phase E: Platform & Tablet Optimization (Future Mobile)
+- [ ] **Touch & Tablet Support**:
+    - [ ] Pinch-to-zoom for Canvas.
+    - [ ] Palm rejection and stylus pressure sensitivity.
+    - [ ] Touch-friendly long-press menus.
+    - [ ] **Dual Layout Strategy**:
+        - [ ] Dedicated Home/Dock layout for mobile.
+        - [ ] Persistent sidebar and palette for desktop.
+    - [ ] **Gesture Conflict Resolution**:
+        - [ ] Multi-touch lockout for drawing tools to allow smooth pan/zoom.
+
+### Phase F: Advanced AI Features
+- [ ] **Conversational Context**: AI Chat with full workspace/note awareness.

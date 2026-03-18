@@ -1,0 +1,195 @@
+ConnectedNotes - Especificação de Funcionalidades
+
+Foco: Estudantes de Exatas | Inspiração: OneNote + Trilium Notes
+
+Este documento detalha o roteiro de funcionalidades para combinar a liberdade criativa do OneNote com a estrutura lógica do Trilium, focado em uma experiência cross-device perfeita.
+
+1. Funcionalidades do OneNote (O "Caos Criativo")
+
+O objetivo aqui é capturar a fluidez da aula e do raciocínio matemático.
+
+1.1. Tela Infinita (Infinite Canvas)
+
+Descrição: O usuário não está limitado a uma página A4. A nota cresce horizontalmente e verticalmente conforme necessário.
+
+Implementação: Container com scroll bidirecional e posicionamento absoluto de elementos.
+
+Uso em Exatas: Resolução de integrais longas, diagramas de corpo livre extensos, mapas mentais.
+
+1.2. Input "Click-to-Type" (Digitar em qualquer lugar)
+
+Descrição: Clicar em qualquer ponto vazio da tela cria um container de texto flutuante, independente do fluxo do documento.
+
+Comportamento: Containers podem ser arrastados e reorganizados.
+
+1.3. Tinta Digital Universal (Universal Inking)
+
+Conceito: A capacidade de desenhar à mão livre não é um "modo" isolado, mas uma camada sempre disponível sobre qualquer tipo de nota.
+
+Comportamento:
+
+Sobre Canvas: Desenho livre tradicional.
+
+Sobre Texto/Código: Camada de anotação transparente (overlay) que permite circular palavras, fazer setas ou anotações marginais sobre blocos de texto digitado ou código.
+
+Ferramentas: Caneta, Marca-texto, Borracha (por traço ou pixel), Laço de Seleção.
+
+Crucial para Exatas: Escrever fórmulas rapidamente sobre slides ou enuciados de questões.
+
+1.4. OCR e Reconhecimento de Formas
+
+Ink-to-Text: Converter escrita à mão para texto.
+
+Ink-to-Math: Converter equações desenhadas para LaTeX renderizado.
+
+Beautify: Transformar círculos e quadrados tortos em formas geométricas perfeitas.
+
+1.5. Gravação de Áudio Sincronizada
+
+Descrição: Gravar a aula enquanto anota. Ao reproduzir o áudio, as notas escritas naquele momento são destacadas.
+
+2. Funcionalidades do Trilium Notes (A "Ordem Lógica")
+
+O objetivo aqui é organizar o conhecimento a longo prazo e criar conexões.
+
+2.1. Estrutura de Árvore Hierárquica Infinita
+
+Descrição: Níveis infinitos de organização (Pai > Filho > Neto...).
+
+Interface: Sidebar robusta com drag-and-drop.
+
+2.2. Clonagem de Notas (Symlinks)
+
+Descrição: Uma única nota pode existir em dois lugares da árvore simultaneamente.
+
+2.3. Mapa de Conhecimento (Graph View)
+
+Descrição: Visualização em grafo de como as notas se conectam (Backlinks e Forward links).
+
+2.4. Tipos de Notas Polimórficos
+
+Conceito: O "tipo" define a estrutura primária, mas a tinta é universal.
+
+Tipos Suportados:
+
+Nota Canvas (Padrão): O modo "OneNote" completo. Suporta texto, desenhos, e PDFs incorporados.
+
+Nota de Texto: Editor Markdown/Rich Text focado em escrita linear (artigos, resumos teóricos).
+
+Nota de Código: Editor com syntax highlighting (Monaco/CodeMirror).
+
+Nota Todo/Kanban: Para gerenciamento de estudos.
+
+Obs: PDF não é um tipo de nota, mas sim um elemento dentro da Nota Canvas.
+
+2.5. Versionamento (Histórico de Notas)
+
+Descrição: Snapshot automático das notas.
+
+3. Funcionalidades Específicas para Exatas (O Diferencial)
+
+3.1. Editor LaTeX Nativo e Rápido
+
+Descrição: Suporte a $$...$$ e $ ... $ com renderização em tempo real.
+
+3.2. Blocos de Código Executáveis (Jupyter-like)
+
+Descrição: Escrever Python/JS e ver o resultado (gráficos/cálculos) dentro da nota.
+
+3.3. Integração com IA (Tutor Virtual & Multimodal)
+
+Contexto Total: A IA tem acesso de leitura a todo o conteúdo da nota atual (texto, desenhos convertidos via OCR, e imagens) para dar respostas precisas.
+
+Interação "Circule para Perguntar" (Circle to Search):
+
+Ação: O usuário usa a ferramenta de laço (ou caneta específica) para circular uma fórmula, um gráfico ou um parágrafo.
+
+Trigger: Um menu flutuante aparece: "Explicar", "Resolver", "Gerar Similar".
+
+Exemplo: Circular uma integral difícil em um PDF importado e pedir "Passo a passo da solução".
+
+Casos de Uso:
+
+Explicação: "Explique isso como se eu tivesse 5 anos".
+
+Resolução: Solução passo a passo de problemas matemáticos manuscritos ou em imagem.
+
+Auto-Tagging: Sugestão automática de organização.
+
+4. Suporte a Arquivos e Mídia Rica (Edição In-App)
+
+4.1. Tabelas Avançadas
+
+Funcionalidade: Tabelas estilo Excel/Notion com fórmulas básicas.
+
+4.2. Imagens com Edição
+
+Edição: Recortar, rotacionar e desenhar por cima.
+
+4.3. PDFs como Elementos do Canvas
+
+Conceito: Importar um PDF "imprime" as páginas dentro da Nota Canvas (vertical ou horizontalmente).
+
+Interação: O PDF funciona como um plano de fundo fixo (ou movível) sobre o qual o usuário pode usar todas as ferramentas de Tinta Digital Universal.
+
+Flexibilidade: É possível escrever ao lado do slide do PDF (espaço infinito), não apenas em cima dele.
+
+5. Estratégia Cross-Device e Técnica
+
+5.1. Arquitetura Híbrida (Monorepo Atual)
+
+Core: React + Vite.
+
+Desktop: Electron.
+
+Mobile: Capacitor.
+
+Web: Versão Lite.
+
+5.2. Sincronização (Backend)
+
+Estratégia: Offline-First (Firebase Firestore).
+
+5.3. Responsividade de Interface
+
+Desktop: Sidebar expandida.
+
+Mobile: Sidebar colapsável, foco em input por toque/caneta.
+
+6. Roadmap de Implementação (Fases)
+
+Fase 1: O MVP (Fundação)
+
+[x] Setup do Projeto (Vite, Electron, Capacitor).
+
+[ ] Sistema de Autenticação (Firebase Auth).
+
+[ ] Editor de Texto Rico básico.
+
+[ ] Estrutura de Árvore (Sidebar) básica.
+
+Fase 2: O Visual (OneNote Feel + Mídia)
+
+[ ] Implementar Canvas "Infinito".
+
+[ ] Sistema de "Click-to-Type".
+
+[ ] Engine de Tinta Digital (Canvas API/SVG).
+
+[ ] Importação de PDF para o Canvas (PDF.js).
+
+Fase 3: A Estrutura (Trilium Feel)
+
+[ ] Árvore avançada (Drag and drop).
+
+[ ] Backlinks e Grafo.
+
+[ ] Seletor de Tipos de Notas.
+
+Fase 4: O "Hardcore" Exatas + IA
+
+[ ] Ferramenta "Circule para Perguntar".
+
+[ ] Integração com API de IA (Vision Model para ler o canvas).
+
+[ ] Blocos de Código Executáveis.
