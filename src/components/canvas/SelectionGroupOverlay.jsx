@@ -30,7 +30,7 @@ const SelectionGroupOverlay = ({ bounds, onResize, onMove, onStartInteraction, o
         e.stopPropagation(); e.preventDefault();
         const startX = e.clientX;
         const startY = e.clientY;
-        if (onStartInteraction) onStartInteraction();
+        if (onStartInteraction) onStartInteraction(true); // true = resize mode
         
         const onPointerMove = (ev) => {
             const dx = ev.clientX - startX;

@@ -663,6 +663,7 @@ const CanvasArea = forwardRef(({
   }, []);
 
   const dragStartRef = useRef(null); // { mouse: {x,y}, blocks: {id: {x,y}}, strokes: {id: points} }
+  const isResizingRef = useRef(false); // true when resize is active, blocks drag logic in handlePointerMove
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -1402,7 +1403,7 @@ const CanvasArea = forwardRef(({
     if (connectingState) setConnectingState(p => ({ ...p, tempX: pt.x, tempY: pt.y }));
     if (isErasing) { setStrokes(p => p.filter(s => !isStrokeClicked(s, pt, 15 / scale))); return; }
     if (selectionRect) { setSelectionRect(p => ({ ...p, currentX: pt.x, currentY: pt.y })); return; }
-    if (isDraggingSelection && dragStartRef.current) {
+    if (isDraggingSelection && dragStartRef.current && !isResizingRef.current) {
       nextDragPosRef.current = { x: e.clientX, y: e.clientY };
       
       if (!dragRafRef.current) {
@@ -1774,7 +1775,8 @@ const CanvasArea = forwardRef(({
           bounds={groupBounds}
           onMove={handleGroupMove}
           onResize={handleGroupResize}
-          onStartInteraction={() => {
+          onStartInteraction={(isResize) => {
+            if (isResize) isResizingRef.current = true;
             setIsDraggingSelection(true);
             interactionInitialBoundsRef.current = groupBounds;
             
@@ -1791,6 +1793,7 @@ const CanvasArea = forwardRef(({
             ];
           }}
           onEndInteraction={() => {
+            isResizingRef.current = false;
             setIsDraggingSelection(false);
             interactionInitialBoundsRef.current = null;
             saveToHistory();
