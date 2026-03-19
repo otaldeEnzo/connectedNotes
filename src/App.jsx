@@ -298,6 +298,10 @@ function AppContent() {
 
         root.style.setProperty('--border-color', hexToRgba(text, 0.1));
         root.style.setProperty('--glass-bg', hexToRgba(bg, 0.7));
+        root.style.setProperty('--glass-border', hexToRgba(text, 0.12));
+        root.style.setProperty('--glass-border-top', hexToRgba(text, 0.25));
+        root.style.setProperty('--glass-border-left', hexToRgba(text, 0.18));
+        root.style.setProperty('--mj-mark-text', '#ffffff');
 
         root.style.setProperty('--bg-gradient', `linear-gradient(135deg, ${bg}, ${hexToRgba(bg, 0.8)})`);
 
@@ -314,7 +318,7 @@ function AppContent() {
         '--bg-color', '--sidebar-bg', '--canvas-bg-color',
         '--text-primary', '--text-secondary',
         '--accent-color', '--accent-glow',
-        '--border-color', '--glass-bg', '--bg-gradient',
+        '--border-color', '--glass-bg', '--glass-border', '--glass-border-top', '--glass-border-left', '--bg-gradient',
         '--graph-edge-tag', '--graph-edge-hier', '--node-bg'
       ].forEach(prop => root.style.removeProperty(prop));
     }

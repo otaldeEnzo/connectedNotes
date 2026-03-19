@@ -55,34 +55,4 @@
     font-weight: 600;
     margin: 0.6rem 0;
 }
-
-.ProseMirror mark {
-    background-color: #fef08a;
-    /* Default to yellow if no color specified */
-    color: inherit !important;
-    /* Allow text color to inherit so dark mode text stays visible */
-    padding: 0 2px;
-    border-radius: 2px;
-}
-
-/* Specific highlight colors based on Tiptap data-color attribute */
-.ProseMirror mark[data-color="#c0b954ff"],
-.ProseMirror mark[data-color="#fef08a"] {
-    background-color: #fef08a !important;
-    /* Yellow */
-}
-
-.ProseMirror mark[data-color="#bbf7d0"] {
-    background-color: #bbf7d0 !important;
-    /* Green */
-}
-
-.ProseMirror mark[data-color="#bfdbfe"] {
-    background-color: #bfdbfe !important;
-    /* Blue */
-}
-
-.ProseMirror mark[data-color="#fbcfe8"] {
-    background-color: #fbcfe8 !important;
-    /* Pink */
-}
+

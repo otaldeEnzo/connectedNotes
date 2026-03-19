@@ -411,25 +411,28 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
                     position: 'absolute',
                     top: 0, left: 0, right: 0, bottom: 0,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: 'rgba(0, 0, 0, 0.4)',
-                    backdropFilter: 'blur(8px)',
-                    zIndex: 9999,
+                    background: 'rgba(0, 0, 0, 0.45)',
+                    backdropFilter: 'blur(32px) saturate(180%) brightness(0.8)',
+                    WebkitBackdropFilter: 'blur(32px) saturate(180%) brightness(0.8)',
+                    zIndex: 99999,
                     animation: 'workspaceFadeIn 0.3s ease-out'
                 }}>
                     <style>{`
                         @keyframes workspaceFadeIn { from { opacity: 0; } to { opacity: 1; } }
+                        @keyframes workspaceScaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
                         @keyframes workspaceSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
                         @keyframes workspaceShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
                     `}</style>
-                    <div className="progress-card glass-panel" style={{
-                        padding: '2rem',
-                        borderRadius: '24px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4)',
+                    <div className="progress-card glass-extreme" style={{
+                        padding: '2.5rem',
+                        borderRadius: '2.5rem',
+                        background: 'var(--glass-bg-floating)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        boxShadow: 'var(--glass-shadow), 0 30px 60px rgba(0, 0, 0, 0.6)',
                         textAlign: 'center',
-                        width: '320px',
-                        color: '#fff'
+                        width: '380px',
+                        color: '#fff',
+                        animation: 'workspaceScaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)'
                     }}>
                         <div className="status-header" style={{
                             display: 'flex',

@@ -11,7 +11,6 @@ import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
-import Underline from '@tiptap/extension-underline';
 import Image from '@tiptap/extension-image';
 import { FontSize } from '../../extensions/FontSize';
 import { Bold, Italic, Underline as UnderlineIcon, List, CheckSquare, AlignLeft, AlignCenter, AlignRight, AlignJustify, Palette, Highlighter, Image as ImageIcon } from 'lucide-react';
@@ -27,7 +26,16 @@ const TextEditor = ({ note, updateContent }) => {
             FontFamily,
             FontSize,
             Color,
-            Highlight.configure({ multicolor: true }),
+            Highlight.configure({ 
+                multicolor: true,
+                colors: [
+                    'var(--mj-highlight-yellow)', 
+                    'var(--mj-highlight-green)', 
+                    'var(--mj-highlight-blue)', 
+                    'var(--mj-highlight-pink)', 
+                    'var(--mj-highlight-accent)'
+                ] 
+            }),
             TextAlign.configure({
                 types: ['heading', 'paragraph'],
             }),
@@ -37,7 +45,6 @@ const TextEditor = ({ note, updateContent }) => {
             TaskItem.configure({
                 nested: true,
             }),
-            Underline,
             Image.configure({
                 inline: true,
                 allowBase64: true,
@@ -258,7 +265,13 @@ const TextEditor = ({ note, updateContent }) => {
                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                     <Highlighter size={16} style={{ color: editor.isActive('highlight') ? 'var(--accent-color)' : 'var(--text-secondary)' }} />
                     <div style={{ display: 'flex', gap: '2px' }}>
-                        {['#fef08a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#e9d5ff', '#fecaca'].map(c => (
+                        {[
+                            'var(--mj-highlight-yellow)',
+                            'var(--mj-highlight-green)',
+                            'var(--mj-highlight-blue)',
+                            'var(--mj-highlight-pink)',
+                            'var(--mj-highlight-accent)'
+                        ].map(c => (
                             <button
                                 key={c}
                                 onClick={() => editor.chain().focus().toggleHighlight({ color: c }).run()}

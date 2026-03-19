@@ -41,7 +41,11 @@
 
   /* Liquid Glass Core */
   --glass-bg: rgba(255, 255, 255, 0.12);
-  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-bg-floating: rgba(255, 255, 255, 0.65);
+  --glass-bg-hover: rgba(255, 255, 255, 0.18);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-border-top: rgba(255, 255, 255, 0.6);
+  --glass-border-left: rgba(255, 255, 255, 0.3);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.4);
   --glass-blur: 40px;
 
@@ -57,13 +61,13 @@
   --accent-color-transparent: rgba(99, 102, 241, 0.12);
 
   /* Highlight Colors (Light Mode - Pastel) */
-  --highlight-default: rgba(255, 255, 0, 0.4);
-  --highlight-yellow: rgba(254, 240, 138, 0.5);
-  --highlight-green: rgba(187, 247, 208, 0.5);
-  --highlight-blue: rgba(191, 219, 254, 0.5);
-  --highlight-pink: rgba(251, 207, 232, 0.5);
-  --highlight-blue: rgba(191, 219, 254, 0.5);
-  --highlight-pink: rgba(251, 207, 232, 0.5);
+  --mj-highlight-yellow: rgba(255, 255, 0, 0.4);
+  --mj-highlight-green: rgba(0, 255, 0, 0.25);
+  --mj-highlight-blue: rgba(0, 255, 255, 0.3);
+  --mj-highlight-pink: rgba(255, 0, 255, 0.2);
+  --mj-highlight-accent: rgba(255, 165, 0, 0.35);
+  --mj-mark-blend: multiply;
+  --mj-mark-text: #000000;
 
   /* Graph View Specifics (Light) */
   --graph-edge-tag: rgba(99, 102, 241, 0.2);
@@ -102,6 +106,15 @@
 
   --bg-gradient: none;
 
+  /* Custom Highlight Colors (Dark Mode) */
+  --mj-highlight-yellow: rgba(255, 235, 59, 0.3);
+  --mj-highlight-green: rgba(105, 240, 174, 0.25);
+  --mj-highlight-blue: rgba(64, 196, 255, 0.3);
+  --mj-highlight-pink: rgba(255, 64, 129, 0.25);
+  --mj-highlight-accent: rgba(124, 77, 255, 0.3);
+  --mj-mark-blend: screen;
+  --mj-mark-text: #ffffff;
+
   /* Graph View Specifics (Dark) */
   --graph-edge-tag: rgba(129, 140, 248, 0.2);
   --graph-edge-hier: rgba(129, 140, 248, 0.4);
@@ -124,10 +137,22 @@
 
   --glass-bg: rgba(46, 52, 64, 0.7);
   --glass-bg-floating: rgba(30, 34, 42, 0.98);
+  --glass-bg-hover: rgba(59, 66, 82, 0.8);
   --glass-border: rgba(236, 239, 244, 0.1);
+  --glass-border-top: rgba(236, 239, 244, 0.2);
+  --glass-border-left: rgba(236, 239, 244, 0.15);
   --glass-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
 
   --bg-gradient: linear-gradient(-45deg, #2e3440, #3b4252, #434c5e, #2e3440);
+
+  /* Custom Highlight Colors (Nord) */
+  --mj-highlight-yellow: rgba(255, 235, 59, 0.3);
+  --mj-highlight-green: rgba(105, 240, 174, 0.25);
+  --mj-highlight-blue: rgba(64, 196, 255, 0.3);
+  --mj-highlight-pink: rgba(255, 64, 129, 0.25);
+  --mj-highlight-accent: rgba(124, 77, 255, 0.3);
+  --mj-mark-blend: screen;
+  --mj-mark-text: #ffffff;
 
   /* Graph View Specifics (Nord) */
   --graph-edge-tag: rgba(136, 192, 208, 0.2);
@@ -151,9 +176,21 @@
 
   --glass-bg: rgba(40, 40, 40, 0.7);
   --glass-bg-floating: rgba(25, 25, 25, 0.98);
+  --glass-bg-hover: rgba(50, 50, 50, 0.8);
   --glass-border: rgba(235, 219, 178, 0.1);
+  --glass-border-top: rgba(235, 219, 178, 0.2);
+  --glass-border-left: rgba(235, 219, 178, 0.15);
 
   --bg-gradient: linear-gradient(-45deg, #282828, #3c3836, #32302f, #1d2021);
+
+  /* Custom Highlight Colors (Gruvbox) */
+  --mj-highlight-yellow: rgba(255, 235, 59, 0.3);
+  --mj-highlight-green: rgba(105, 240, 174, 0.25);
+  --mj-highlight-blue: rgba(64, 196, 255, 0.3);
+  --mj-highlight-pink: rgba(255, 64, 129, 0.25);
+  --mj-highlight-accent: rgba(124, 77, 255, 0.3);
+  --mj-mark-blend: screen;
+  --mj-mark-text: #ffffff;
 
   /* Graph View Specifics (Gruvbox) */
   --graph-edge-tag: rgba(254, 128, 25, 0.2);
@@ -177,9 +214,21 @@
 
   --glass-bg: rgba(40, 42, 54, 0.7);
   --glass-bg-floating: rgba(20, 21, 30, 0.98);
+  --glass-bg-hover: rgba(50, 52, 64, 0.8);
   --glass-border: rgba(189, 147, 249, 0.2);
+  --glass-border-top: rgba(189, 147, 249, 0.3);
+  --glass-border-left: rgba(189, 147, 249, 0.15);
 
   --bg-gradient: linear-gradient(-45deg, #282a36, #44475a, #6272a4, #282a36);
+
+  /* Custom Highlight Colors (Dracula) */
+  --mj-highlight-yellow: rgba(255, 235, 59, 0.3);
+  --mj-highlight-green: rgba(105, 240, 174, 0.25);
+  --mj-highlight-blue: rgba(64, 196, 255, 0.3);
+  --mj-highlight-pink: rgba(255, 64, 129, 0.25);
+  --mj-highlight-accent: rgba(124, 77, 255, 0.3);
+  --mj-mark-blend: screen;
+  --mj-mark-text: #ffffff;
 
   /* Graph View Specifics (Dracula) */
   --graph-edge-tag: rgba(189, 147, 249, 0.2);
@@ -203,9 +252,21 @@
 
   --glass-bg: rgba(0, 0, 0, 0.8);
   --glass-bg-floating: rgba(10, 10, 10, 0.98);
-  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-bg-hover: rgba(20, 20, 20, 0.9);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-border-top: rgba(255, 255, 255, 0.2);
+  --glass-border-left: rgba(255, 255, 255, 0.15);
 
   --bg-gradient: linear-gradient(180deg, #000000, #050505);
+
+  /* Custom Highlight Colors (Midnight) */
+  --mj-highlight-yellow: rgba(255, 235, 59, 0.3);
+  --mj-highlight-green: rgba(105, 240, 174, 0.25);
+  --mj-highlight-blue: rgba(64, 196, 255, 0.3);
+  --mj-highlight-pink: rgba(255, 64, 129, 0.25);
+  --mj-highlight-accent: rgba(124, 77, 255, 0.3);
+  --mj-mark-blend: screen;
+  --mj-mark-text: #ffffff;
 
   /* Graph View Specifics (Midnight) */
   --graph-edge-tag: rgba(59, 130, 246, 0.2);
@@ -215,11 +276,10 @@
 
 /* Ensure Mark (Highlight) visibility */
 mark {
-  background-color: #fef08a;
-  /* Default fallback */
-  color: inherit;
-  border-radius: 2px;
-  padding: 0 2px;
+  background-color: var(--mj-highlight-yellow);
+  color: var(--mj-mark-text) !important;
+  border-radius: 4px;
+  padding: 0 4px;
 }
 
 body,
@@ -362,9 +422,9 @@ body.gradient-enabled {
   background: var(--glass-bg) !important;
   backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
-  border: 1px solid var(--glass-border) !important;
-  border-top-color: var(--glass-border-top) !important;
-  border-left-color: var(--glass-border-left) !important;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1)) !important;
+  border-top-color: var(--glass-border-top, var(--glass-border)) !important;
+  border-left-color: var(--glass-border-left, var(--glass-border)) !important;
   border-radius: 2.5rem;
   transition: opacity 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
   position: relative;

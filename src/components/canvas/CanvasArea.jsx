@@ -68,7 +68,6 @@ const MemoizedStroke = React.memo(({ stroke, isSelected }) => {
     ref: shapeRef,
     data: pathData.d,
     opacity: isHighlighter ? 0.5 : 1,
-    opacity: isHighlighter ? 0.5 : 1,
     listening: false
   };
 
@@ -1232,7 +1231,7 @@ const CanvasArea = forwardRef(({
     const block = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].find(b => b.id === id);
     if (!block) return;
 
-    const isHeaderClick = e?.target?.closest('.glass-card-header');
+    const isHeaderClick = e?.target?.closest('.block-header');
 
     // Check if clicking with matching tool to trigger direct edit
     const isMatchingTool = (activeTool === 'text' && textBlocks.some(b => b.id === id)) ||
@@ -1300,7 +1299,8 @@ const CanvasArea = forwardRef(({
     }
 
     if (editingBlockId) {
-      if (['TEXTAREA', 'INPUT', 'BUTTON'].includes(e.target.tagName) || e.target.closest('.modebar, .legend, .connector-handle, .ggb-container, .ggb-drag-handle, .infinite-canvas > div, .rich-text-toolbar')) {
+      const isInternalClick = e.target.closest('.block-wrapper, .rich-text-toolbar, .ProseMirror, .ProseMirror-container, .block-content, .ggb-container, .ggb-drag-handle, .modebar, .legend, .connector-handle');
+      if (['TEXTAREA', 'INPUT', 'BUTTON'].includes(e.target.tagName) || isInternalClick) {
         return;
       }
       setEditingBlockId(null);
@@ -1747,7 +1747,7 @@ const CanvasArea = forwardRef(({
       </div>
 
       {/* ====== LAYER 2b: Glass blocks (NO parent transform — backdrop-filter works!) ====== */}
-      <div className="glass-blocks-layer" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 3 }}>
+      <div className="glass-blocks-layer" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10000 }}>
         {imageBlocks.map(b => <ImageBlock key={b.id} block={b} activeTool={activeTool} updateBlock={(id, d) => updateAnyBlock('image', id, d)} onInteract={handleBlockInteract} removeBlock={removeAnyBlock} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {codeBlocks.map(b => <CodeBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('code', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {textBlocks.map(b => <TextBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('text', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}

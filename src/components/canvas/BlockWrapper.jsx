@@ -22,6 +22,7 @@ const BlockWrapper = forwardRef(
       allowOverflow,
       className = "",
       style = {},
+      toolbarContent,
     },
     ref,
   ) => {
@@ -174,6 +175,7 @@ const BlockWrapper = forwardRef(
           if (isEditing || isRenamingTitle) e.stopPropagation();
         }}
       >
+        {toolbarContent}
         <div 
           className={`glass-extreme w-full h-full flex flex-col rounded-[2.5rem] transition-[box-shadow,border-color,background] duration-300 ${allowOverflow ? '' : 'overflow-hidden'} ${shadowTailwind}`}
           style={{

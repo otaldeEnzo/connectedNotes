@@ -17,14 +17,26 @@ const SelectionToolbar = ({ bounds, scale = 1, position = { x: 0, y: 0 }, viewpo
     const constrainedX = Math.max(180, Math.min(viewportWidth - 180, screenX + (screenW / 2)));
 
     const style = {
-        position: 'absolute', left: constrainedX, top: topPos, transform: 'translateX(-50%)',
-        display: 'flex', gap: '4px', padding: '6px', borderRadius: '12px', zIndex: 9999,
-        pointerEvents: 'auto'
+        position: 'absolute', 
+        left: constrainedX, 
+        top: topPos, 
+        transform: 'translateX(-50%)',
+        display: 'flex', 
+        gap: '4px', 
+        padding: '8px', 
+        borderRadius: '2.5rem', 
+        zIndex: 50000, // Top of everything
+        pointerEvents: 'auto',
+        background: 'var(--glass-bg-floating)', 
+        backdropFilter: 'blur(32px) saturate(180%) brightness(1.2)',
+        WebkitBackdropFilter: 'blur(32px) saturate(180%) brightness(1.2)',
+        border: '1px solid rgba(255, 255, 255, 0.2)',
+        boxShadow: 'var(--glass-shadow), 0 10px 30px rgba(0,0,0,0.1)'
     };
     const btnStyle = { border: 'none', background: 'transparent', cursor: 'pointer', padding: '6px', borderRadius: '8px', display: 'flex', color: 'var(--text-primary)', transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)' };
 
     return (
-        <div className="selection-toolbar glass-panel accent-glow" style={style} onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
+        <div className="selection-toolbar glass-extreme animate-in fade-in slide-in-from-bottom-2 duration-300" style={style} onMouseDown={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
             {(onGroup || onUngroup) && (
                 <button className="liquid-item" style={btnStyle} onClick={isGrouped ? onUngroup : onGroup} title={isGrouped ? "Desagrupar (Ctrl+G)" : "Agrupar (Ctrl+G)"}>
                     {isGrouped ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
