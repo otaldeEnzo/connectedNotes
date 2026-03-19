@@ -18,8 +18,9 @@ const loadGGBScript = () => {
     return ggbScriptPromise;
 };
 
-const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool, isDragging }) => {
+const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool, isDragging, canvasScale, canvasPan }) => {
     const containerRef = useRef(null);
+    const cardRef = useRef(null);
     const appletRef = useRef(null);
     const ggbApiRef = useRef(null);
     const ggbPanRef = useRef({ isPanning: false });
@@ -98,6 +99,7 @@ const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool,
                 "autoHeight": false,
                 "language": "pt",
                 "borderColor": "transparent",
+                "backgroundColor": "transparent",
                 "enableKeyboard": false,
                 "showKeyboardOnFocus": false,
                 "preventFocus": false,
@@ -211,6 +213,7 @@ const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool,
 
     return (
         <BlockWrapper
+            ref={cardRef}
             block={block}
             title={currentTitle}
             color={dotColor}
@@ -219,8 +222,11 @@ const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool,
             isDarkMode={isDarkMode}
             onClose={() => updateBlock && updateBlock(block.id, { isDeleted: true })}
             onInteract={onInteract}
-            onRename={(id, name) => updateBlock(id, { customTitle: name })}
+            onRename={(id, name) => updateBlock && updateBlock(id, { customTitle: name })}
             headerActions={headerActions}
+            updateBlock={updateBlock}
+            canvasScale={canvasScale}
+            canvasPan={canvasPan}
         >
             {showInput && (
                 <div style={{ padding: '12px', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '8px', alignItems: 'center' }} onPointerDown={e => e.stopPropagation()}>

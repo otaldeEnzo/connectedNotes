@@ -25,10 +25,10 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
         extensions: [
             StarterKit,
             Placeholder.configure({ placeholder: 'Digite algo...', }),
-            TextStyle, FontFamily, FontSize, Color, Underline,
+            TextStyle, FontFamily, FontSize, Color,
             Highlight.configure({ multicolor: true }),
             TextAlign.configure({ types: ['heading', 'paragraph'], }),
-            Subscript, Superscript,
+            Subscript, Superscript, Underline,
             TaskList, TaskItem.configure({ nested: true, }),
         ],
         content: block.content || '',
@@ -93,9 +93,11 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
             onInteract={onInteract}
             onDoubleClick={handleDoubleClick}
             onRename={(id, name) => updateBlock(id, { customTitle: name })}
+            updateBlock={updateBlock}
             canvasScale={canvasScale}
             canvasPan={canvasPan}
             className="min-w-[350px] max-w-[1200px]"
+            allowOverflow={true}
         >
             <div className={`p-6 pb-8 transition-colors duration-500`}>
                 <EditorContent
@@ -110,15 +112,15 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
                 />
             </div>
 
-            {/* Floating Liquid Toolbar - Tailwind Refactored */}
-            {editor && isEditing && cardRef.current && ReactDOM.createPortal(
+            {/* Floating Liquid Toolbar - Now anchored inside the block for zero-cost positioning */}
+            {editor && isEditing && (
                 <div
                     ref={toolbarRef}
-                    className="fixed bottom-12 left-1/2 -translate-x-1/2 glass-extreme flex items-center gap-4 px-6 py-4 rounded-[2.5rem] z-[3000] border-white/20 shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-500"
+                    className="absolute -top-4 left-1/2 -translate-x-1/2 -translate-y-full glass-extreme flex items-center gap-4 px-6 py-4 rounded-[2.5rem] z-[3000] border-white/20 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500 whitespace-nowrap"
                     onPointerDown={(e) => e.stopPropagation()}
                     onMouseDown={(e) => e.stopPropagation()}
                 >
-                    <div className="flex items-center gap-2 pr-4 border-r border-white/10 overflow-hidden">
+                    <div className="flex items-center gap-2 pr-4 border-r border-white/10">
                         <select
                             className="bg-transparent text-white/80 text-sm font-medium outline-none cursor-pointer p-1 hover:text-white transition-colors"
                             value={editor.getAttributes('textStyle').fontSize || '16px'}
@@ -173,8 +175,7 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
                             />
                         ))}
                     </div>
-                </div>,
-                document.body
+                </div>
             )}
 
             <style>{`

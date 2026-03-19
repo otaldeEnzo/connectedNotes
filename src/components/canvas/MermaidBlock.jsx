@@ -41,20 +41,6 @@ const MermaidBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
         return () => clearTimeout(timer);
     }, [code, block.id, isDarkMode]);
 
-    useEffect(() => {
-        if (!cardRef.current || block.fixedSize === true) return;
-        const observer = new ResizeObserver((entries) => {
-            if (block.fixedSize === true) return;
-            for (let entry of entries) {
-                const { width, height } = entry.contentRect;
-                if (Math.abs(width - (block.measuredWidth || 0)) > 2 || Math.abs(height - (block.measuredHeight || 0)) > 2) {
-                    updateBlock(block.id, { measuredWidth: width, measuredHeight: height });
-                }
-            }
-        });
-        observer.observe(cardRef.current);
-        return () => observer.disconnect();
-    }, [block.id, block.measuredWidth, block.measuredHeight, block.fixedSize]);
 
     const handleSave = () => {
         if (setEditing) setEditing(false);
@@ -138,6 +124,7 @@ const MermaidBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
             onInteract={onInteract}
             onDoubleClick={() => setEditing && setEditing(true)}
             isEditing={isEditing}
+            updateBlock={updateBlock}
             canvasScale={canvasScale}
             canvasPan={canvasPan}
             headerActions={headerActions}
@@ -151,7 +138,7 @@ const MermaidBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
                             value={code}
                             onChange={(e) => setCode(e.target.value)}
                             onKeyDown={e => e.stopPropagation()}
-                            className="w-full h-full bg-black/20 text-emerald-400/90 font-mono text-sm leading-relaxed p-4 rounded-2xl outline-none focus:ring-1 focus:ring-emerald-500/30 resize-none scrollbar-hide dark:bg-white/5"
+                            className="w-full h-full bg-transparent text-emerald-400/90 font-mono text-sm leading-relaxed p-4 rounded-2xl outline-none focus:ring-1 focus:ring-emerald-500/30 resize-none scrollbar-hide"
                             placeholder="graph TD; ..."
                         />
                     </div>

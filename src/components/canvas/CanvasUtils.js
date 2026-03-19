@@ -89,13 +89,13 @@ export const getBlockDimensions = (block) => {
     // 3. Estimativas para blocos sem dimensões (ex: criação inicial)
     if (block.type === 'text' || block.content?.startsWith('<')) {
         const contentLen = block.content ? block.content.length : 0;
-        const estWidth = Math.max(100, contentLen * 9 + 24);
-        const estHeight = Math.max(40, (block.content.split('\n').length * 20) + 16);
+        const estWidth = Math.max(350, contentLen * 9 + 24);
+        const estHeight = Math.max(120, (block.content.split('\n').length * 20) + 56);
         return { width: estWidth, height: estHeight };
     }
 
     if (block.type === 'math' || block.content?.includes('\\')) {
-        return { width: 220, height: 80 };
+        return { width: 250, height: 110 };
     }
 
     if (block.type === 'mermaid' || block.code) {

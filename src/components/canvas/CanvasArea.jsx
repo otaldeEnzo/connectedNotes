@@ -68,8 +68,8 @@ const MemoizedStroke = React.memo(({ stroke, isSelected }) => {
     ref: shapeRef,
     data: pathData.d,
     opacity: isHighlighter ? 0.5 : 1,
-    listening: false,
-    zIndex: stroke.zIndex || 0
+    opacity: isHighlighter ? 0.5 : 1,
+    listening: false
   };
 
   if (stroke.isNeatShape) {
@@ -117,6 +117,10 @@ const CanvasArea = forwardRef(({
   const lastPointerPos = useRef({ x: 0, y: 0 });
   const lastSavedJson = useRef('');
   const lastLoadedNoteId = useRef(null);
+  const dragRafRef = useRef(null);
+  const nextDragPosRef = useRef(null);
+  const interactionInitialBlocksRef = useRef([]);
+  const interactionInitialBoundsRef = useRef(null);
 
   // [OPTIMIZATION] Imperative Drawing Refs
   const activeStrokePathRef = useRef(null);
@@ -943,32 +947,45 @@ const CanvasArea = forwardRef(({
   const isSelectedLocked = (selectedIds.length > 0) && [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].some(b => selectedIds.includes(b.id) && b.locked);
   const isSelectedGrouped = (selectedIds.length > 0) && [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].some(b => selectedIds.includes(b.id) && b.groupId);
 
-  // Carrega Nota (Unificado)
+  // Carrega Nota (Unificado) - Optimized to prevent selection loss during auto-saves
   useEffect(() => {
-    setIsNoteLoaded(false);
     if (activeNote) {
       const content = activeNote.content || {};
-      setStrokes(content.strokes || []);
-      setTextBlocks(content.textBlocks || []);
-      setImageBlocks(content.imageBlocks || []);
-      setCodeBlocks(content.codeBlocks || []);
-      setMathBlocks(content.mathBlocks || []);
-      setGgbBlocks(content.ggbBlocks || []);
-      setMermaidBlocks(content.mermaidBlocks || []);
-      setMindmapBlocks(content.mindmapBlocks || []);
-      setConnections(content.connections || []);
-      setSelectedIds([]); setSelectedStrokeIds([]); setSelectedConnectionIds([]);
-      lastLoadedNoteId.current = activeNote.id;
-      lastSavedJson.current = JSON.stringify(content);
-      setIsNoteLoaded(true);
+      const contentJson = JSON.stringify(content);
+
+      // Only perform a full reload if the note ID changed OR if the content was updated externally
+      // (e.g. via Undo/Redo or from another session, meaning it differs from our lastSavedJson)
+      if (activeNote.id !== lastLoadedNoteId.current || contentJson !== lastSavedJson.current) {
+        setIsNoteLoaded(false);
+        setStrokes(content.strokes || []);
+        setTextBlocks(content.textBlocks || []);
+        setImageBlocks(content.imageBlocks || []);
+        setCodeBlocks(content.codeBlocks || []);
+        setMathBlocks(content.mathBlocks || []);
+        setGgbBlocks(content.ggbBlocks || []);
+        setMermaidBlocks(content.mermaidBlocks || []);
+        setMindmapBlocks(content.mindmapBlocks || []);
+        setConnections(content.connections || []);
+
+        // PERSISTENCE FIX: Only clear selection if we are switching to a DIFFERENT note
+        if (activeNote.id !== lastLoadedNoteId.current) {
+          setSelectedIds([]); 
+          setSelectedStrokeIds([]); 
+          setSelectedConnectionIds([]);
+        }
+
+        lastLoadedNoteId.current = activeNote.id;
+        lastSavedJson.current = contentJson;
+        setIsNoteLoaded(true);
+      }
     }
   }, [activeNote?.id, activeNote?.content]);
 
-  // Salva Nota (Unificado)
+  // Salva Nota (Unificado) - Optimized to avoid stuttering during interaction
   useEffect(() => {
-    if (activeNoteId && isNoteLoaded) {
+    // SUSPEND auto-save while dragging to prevent stuttering and re-render cycles
+    if (activeNoteId && isNoteLoaded && !isDraggingSelection) {
       const timer = setTimeout(() => {
-        // Explicitly check variables to ensure they exist (debugging ReferenceError)
         const safeMermaid = typeof mermaidBlocks !== 'undefined' ? mermaidBlocks : [];
         const safeMindmap = typeof mindmapBlocks !== 'undefined' ? mindmapBlocks : [];
 
@@ -985,10 +1002,10 @@ const CanvasArea = forwardRef(({
         };
         lastSavedJson.current = JSON.stringify(content);
         updateNoteContent(activeNoteId, content);
-      }, 500);
+      }, 1000); // Increased debounce for cleaner performance
       return () => clearTimeout(timer);
     }
-  }, [strokes, textBlocks, imageBlocks, codeBlocks, mathBlocks, ggbBlocks, mermaidBlocks, mindmapBlocks, connections, activeNoteId, isNoteLoaded]);
+  }, [strokes, textBlocks, imageBlocks, codeBlocks, mathBlocks, ggbBlocks, mermaidBlocks, mindmapBlocks, connections, activeNoteId, isNoteLoaded, isDraggingSelection]);
 
   // PDF & Image Handlers
   const importPdfAt = useCallback(async (file, startX, startY) => {
@@ -1049,31 +1066,52 @@ const CanvasArea = forwardRef(({
 
   const groupBounds = getGroupBounds([...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].filter(b => selectedIds.includes(b.id)), strokes.filter(s => selectedStrokeIds.includes(s.id)));
   const handleGroupMove = (dx, dy) => {
-    if (!groupBounds) return;
-    let sdx = dx / scale, sdy = dy / scale;
+    if (!interactionInitialBoundsRef.current) return;
+    const sdx = dx / scale;
+    const sdy = dy / scale;
 
-    // Hard Clamping: Impede movimento além da borda inicial (0,0)
-    if (groupBounds.x + sdx < 0) sdx = -groupBounds.x;
-    if (groupBounds.y + sdy < 0) sdy = -groupBounds.y;
+    const up = b => {
+      if (!selectedIds.includes(b.id)) return b;
+      const initial = interactionInitialBlocksRef.current.find(ib => ib.id === b.id);
+      if (!initial) return b;
 
-    if (sdx === 0 && sdy === 0) return;
+      let nx = initial.x + sdx;
+      let ny = initial.y + sdy;
 
-    const up = b => selectedIds.includes(b.id) ? { ...b, x: b.x + sdx, y: b.y + sdy } : b;
-    setTextBlocks(p => p.map(up)); setImageBlocks(p => p.map(up)); setCodeBlocks(p => p.map(up)); setMathBlocks(p => p.map(up)); setGgbBlocks(p => p.map(up)); setMermaidBlocks(p => p.map(up)); setMindmapBlocks(p => p.map(up));
-    setStrokes(p => p.map(s => selectedStrokeIds.includes(s.id) ? { ...s, points: s.points.map(pt => ({ x: pt.x + sdx, y: pt.y + sdy })) } : s));
+      // Clamping to 0,0
+      return { ...b, x: Math.max(0, nx), y: Math.max(0, ny) };
+    };
+
+    setTextBlocks(p => p.map(up));
+    setImageBlocks(p => p.map(up));
+    setCodeBlocks(p => p.map(up));
+    setMathBlocks(p => p.map(up));
+    setGgbBlocks(p => p.map(up));
+    setMermaidBlocks(p => p.map(up));
+    setMindmapBlocks(p => p.map(up));
+
+    setStrokes(p => p.map(s => {
+      if (!selectedStrokeIds.includes(s.id)) return s;
+      const initial = interactionInitialBlocksRef.current.find(is => is.id === s.id);
+      if (!initial) return s;
+      return { ...s, points: initial.points.map(pt => ({ x: pt.x + sdx, y: pt.y + sdy })) };
+    }));
   };
 
   const handleGroupResize = (dx, dy, type = 'corner') => {
-    if (!groupBounds) return;
+    // CRITICAL FIX: Use the stable initial bounds captured at the start of the drag
+    // to prevent the "drifting bounds" feedback loop that breaks resizing.
+    const bounds = interactionInitialBoundsRef.current || groupBounds;
+    if (!bounds) return;
 
     // Screen deltas normalized by scale
     const cdx = dx / scale;
     const cdy = dy / scale;
 
-    const startW = groupBounds.width;
-    const startH = groupBounds.height;
-    const originX = groupBounds.x;
-    const originY = groupBounds.y;
+    const startW = bounds.width;
+    const startH = bounds.height;
+    const originX = bounds.x;
+    const originY = bounds.y;
 
     let scaleX = 1, scaleY = 1;
 
@@ -1095,23 +1133,22 @@ const CanvasArea = forwardRef(({
 
     const scaleBlock = b => {
       if (!selectedIds.includes(b.id)) return b;
+      const initial = interactionInitialBlocksRef.current.find(ib => ib.id === b.id);
+      if (!initial) return b;
 
-      const dims = getBlockDimensions(b);
-      const newWidth = dims.width * scaleX;
-      const newHeight = dims.height * scaleY;
+      const newWidth = initial.width * scaleX;
+      const newHeight = initial.height * scaleY;
 
-      const relativeX = b.x - originX;
-      const relativeY = b.y - originY;
+      const relativeX = initial.x - originX;
+      const relativeY = initial.y - originY;
 
       return {
         ...b,
         fixedSize: true,
-        x: originX + (relativeX * scaleX),
-        y: originY + (relativeY * scaleY),
+        x: Math.max(0, originX + (relativeX * scaleX)),
+        y: Math.max(0, originY + (relativeY * scaleY)),
         width: newWidth,
         height: newHeight,
-        // Sync measured dimensions so getBlockDimensions returns
-        // the correct value on the next frame (prevents stale groupBounds)
         measuredWidth: newWidth,
         measuredHeight: newHeight
       };
@@ -1126,7 +1163,9 @@ const CanvasArea = forwardRef(({
     setMindmapBlocks(prev => prev.map(scaleBlock));
     setStrokes(prev => prev.map(s => {
       if (!selectedStrokeIds.includes(s.id)) return s;
-      return { ...s, points: s.points.map(p => ({ x: originX + (p.x - originX) * scaleX, y: originY + (p.y - originY) * scaleY })) };
+      const initial = interactionInitialBlocksRef.current.find(is => is.id === s.id);
+      if (!initial) return s;
+      return { ...s, points: initial.points.map(p => ({ x: originX + (p.x - originX) * scaleX, y: originY + (p.y - originY) * scaleY })) };
     }));
   };
 
@@ -1245,8 +1284,17 @@ const CanvasArea = forwardRef(({
   };
 
   const handlePointerDown = (e) => {
+    // --- Event Delegation for Blocks ---
+    const dragHandle = e.target.closest('[data-drag-handle="true"]');
+    if (dragHandle) {
+      const blockId = e.target.closest('[data-block-id]')?.getAttribute('data-block-id');
+      if (blockId) {
+        handleBlockInteract(blockId, e);
+        return;
+      }
+    }
+
     if (window.isOverInteractiveBlock) {
-      // Allow internal interaction for GGB, Mermaid, Mindmap
       return;
     }
 
@@ -1255,19 +1303,18 @@ const CanvasArea = forwardRef(({
         return;
       }
       setEditingBlockId(null);
-      return;
+      // Wait a frame to prevent immediate re-creation if tool is active
+      setTimeout(() => {}, 0);
     }
     if (e.button !== 0 && e.pointerType !== 'pen') return;
 
     // Se estivermos com uma ferramenta de bloco, verifique se clicamos em um bloco existente
     if (['text', 'code', 'math', 'ggb', 'mermaid', 'mindmap'].includes(activeTool)) {
-      // Encontre se há um bloco sob o clique
       const allBlocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks];
       const pt = screenToCanvas(e.clientX, e.clientY);
       const clickedBlock = allBlocks.find(b => isPointInBlock(b, pt));
 
       if (clickedBlock) {
-        // Não crie um novo. Apenas interaja com o existente.
         handleBlockInteract(clickedBlock.id, e);
         return;
       }
@@ -1276,6 +1323,13 @@ const CanvasArea = forwardRef(({
     activePointerId.current = e.pointerId; lastPointerPos.current = { x: e.clientX, y: e.clientY };
     const pt = screenToCanvas(e.clientX, e.clientY);
     if (activeTool === 'eraser') { setIsErasing(true); saveToHistory(); setStrokes(p => p.filter(s => !isStrokeClicked(s, pt, 15 / scale))); return; }
+    
+    // Pan detection (Space or Middle Mouse)
+    if (e.button === 1 || (activeTool === 'cursor' && e.altKey)) {
+      setIsPanning(true);
+      return;
+    }
+
     if (activeTool === 'cursor' || activeTool === 'ai-lasso') {
       const sid = strokes.find(s => isStrokeClicked(s, pt, 10 / scale))?.id;
       if (sid && activeTool === 'cursor') {
@@ -1292,6 +1346,7 @@ const CanvasArea = forwardRef(({
       setSelectionRect({ startX: pt.x, startY: pt.y, currentX: pt.x, currentY: pt.y });
       containerRef.current?.setPointerCapture(e.pointerId); return;
     }
+    // ... (drawing logic remains as is for now)
     if (['pen', 'highlighter'].includes(activeTool)) {
       setIsDrawing(true); const attrs = currentAttributes(); const ipt = { x: pt.x, y: pt.y, pressure: e.pressure };
       activeStrokePointsRef.current = [ipt];
@@ -1348,29 +1403,42 @@ const CanvasArea = forwardRef(({
     if (isErasing) { setStrokes(p => p.filter(s => !isStrokeClicked(s, pt, 15 / scale))); return; }
     if (selectionRect) { setSelectionRect(p => ({ ...p, currentX: pt.x, currentY: pt.y })); return; }
     if (isDraggingSelection && dragStartRef.current) {
-      const dx = (e.clientX - dragStartRef.current.mouse.x) / scale;
-      const dy = (e.clientY - dragStartRef.current.mouse.y) / scale;
+      nextDragPosRef.current = { x: e.clientX, y: e.clientY };
+      
+      if (!dragRafRef.current) {
+        dragRafRef.current = requestAnimationFrame(() => {
+          if (!nextDragPosRef.current || !dragStartRef.current) {
+            dragRafRef.current = null;
+            return;
+          }
 
-      const moveBlock = b => {
-        const start = dragStartRef.current.blocks[b.id];
-        if (!start) return b;
-        return { ...b, x: start.x + dx, y: start.y + dy };
-      };
+          const dx = (nextDragPosRef.current.x - dragStartRef.current.mouse.x) / scale;
+          const dy = (nextDragPosRef.current.y - dragStartRef.current.mouse.y) / scale;
 
-      const moveStroke = s => {
-        const startPoints = dragStartRef.current.strokes[s.id];
-        if (!startPoints) return s;
-        return { ...s, points: startPoints.map(p => ({ ...p, x: p.x + dx, y: p.y + dy })) };
-      };
+          const moveBlock = b => {
+            const start = dragStartRef.current.blocks[b.id];
+            if (!start) return b;
+            return { ...b, x: start.x + dx, y: start.y + dy };
+          };
 
-      setTextBlocks(prev => prev.map(moveBlock));
-      setImageBlocks(prev => prev.map(moveBlock));
-      setCodeBlocks(prev => prev.map(moveBlock));
-      setMathBlocks(prev => prev.map(moveBlock));
-      setGgbBlocks(prev => prev.map(moveBlock));
-      setMermaidBlocks(prev => prev.map(moveBlock));
-      setMindmapBlocks(prev => prev.map(moveBlock));
-      setStrokes(prev => prev.map(moveStroke));
+          const moveStroke = s => {
+            const startPoints = dragStartRef.current.strokes[s.id];
+            if (!startPoints) return s;
+            return { ...s, points: startPoints.map(p => ({ ...p, x: p.x + dx, y: p.y + dy })) };
+          };
+
+          setTextBlocks(prev => prev.map(moveBlock));
+          setImageBlocks(prev => prev.map(moveBlock));
+          setCodeBlocks(prev => prev.map(moveBlock));
+          setMathBlocks(prev => prev.map(moveBlock));
+          setGgbBlocks(prev => prev.map(moveBlock));
+          setMermaidBlocks(prev => prev.map(moveBlock));
+          setMindmapBlocks(prev => prev.map(moveBlock));
+          setStrokes(prev => prev.map(moveStroke));
+
+          dragRafRef.current = null;
+        });
+      }
       return;
     }
     if (isDrawing && currentStroke) {
@@ -1546,7 +1614,7 @@ const CanvasArea = forwardRef(({
   if (!activeNote) return <div className="loading">Carregando...</div>;
 
   return (
-    <div className="canvas-viewport glass-panel" ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onContextMenu={e => e.preventDefault()} style={{
+    <div className="canvas-viewport" ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onContextMenu={e => e.preventDefault()} style={{
       width: '100%',
       height: '100%',
       overflow: 'hidden',
@@ -1686,14 +1754,45 @@ const CanvasArea = forwardRef(({
         {mermaidBlocks.map(b => <MermaidBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('mermaid', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {mindmapBlocks.map(b => <MindmapBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('mindmap', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
 
-        {[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].map(b => <BlockHandles key={b.id} block={b} type={b.src ? 'image' : (b.expression ? 'ggb' : (b.code ? 'mermaid' : (b.content?.root ? 'mindmap' : (b.content?.includes('\\') ? 'math' : 'text'))))} scale={scale} isHovered={hoveredBlockId === b.id || connectingState} onStartConnection={handleStartConnection} onCompleteConnection={handleCompleteConnection} canvasScale={scale} canvasPan={position} />)}
+        {[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].map(b => (
+          <BlockHandles 
+            key={b.id} 
+            block={b} 
+            type={b.src ? 'image' : (b.expression ? 'ggb' : (b.code ? 'mermaid' : (b.content?.root ? 'mindmap' : (b.content?.includes('\\') ? 'math' : 'text'))))} 
+            scale={scale} 
+            // Separate connection handles and resizing logic:
+            // Connection dots are suppressed if block is selected to avoid overlap with groups selection
+            isHovered={hoveredBlockId === b.id && !selectedIds.includes(b.id)} 
+            connectingState={connectingState}
+            onStartConnection={handleStartConnection} 
+            onCompleteConnection={handleCompleteConnection} 
+            canvasScale={scale} 
+            canvasPan={position} 
+          />
+        ))}
         <SelectionGroupOverlay
           bounds={groupBounds}
           onMove={handleGroupMove}
           onResize={handleGroupResize}
-          onStartInteraction={() => setIsDraggingSelection(true)}
+          onStartInteraction={() => {
+            setIsDraggingSelection(true);
+            interactionInitialBoundsRef.current = groupBounds;
+            
+            // Capture initial state of all selected items for stable relative manipulation
+            interactionInitialBlocksRef.current = [
+                ...[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].filter(b => selectedIds.includes(b.id)).map(b => ({ 
+                    id: b.id, 
+                    x: b.x, 
+                    y: b.y, 
+                    width: getBlockDimensions(b).width, 
+                    height: getBlockDimensions(b).height 
+                })),
+                ...strokes.filter(s => selectedStrokeIds.includes(s.id)).map(s => ({ id: s.id, points: [...s.points] }))
+            ];
+          }}
           onEndInteraction={() => {
             setIsDraggingSelection(false);
+            interactionInitialBoundsRef.current = null;
             saveToHistory();
           }}
           onDoubleClick={handleGroupDoubleClick}

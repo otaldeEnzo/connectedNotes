@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import BlockWrapper from './BlockWrapper';
 
 const CodeBlock = ({ block, updateBlock, activeTool, isDarkMode, onInteract, saveHistory, isEditing, setEditing, isDragging, canvasScale, canvasPan }) => {
+    const cardRef = useRef(null);
     const containerRef = useRef(null);
     const appletRef = useRef(null);
     const [isLoaded, setIsLoaded] = useState(false);
@@ -30,7 +31,7 @@ const CodeBlock = ({ block, updateBlock, activeTool, isDarkMode, onInteract, sav
             "autoHeight": false,
             "language": "pt",
             "borderColor": "transparent",
-            "backgroundColor": isDarkMode ? "#0f172a" : "#ffffff",
+            "backgroundColor": "transparent",
             "enableKeyboard": false,
             "showKeyboardOnFocus": false,
             "preventFocus": true
@@ -48,7 +49,7 @@ const CodeBlock = ({ block, updateBlock, activeTool, isDarkMode, onInteract, sav
 
                 try {
                     ggbApplet.evalCommand("SetAxesRatio(1, 1)");
-                    ggbApplet.evalCommand("SetBackgroundColor('" + (isDarkMode ? "#0f172a" : "#ffffff") + "')");
+                    ggbApplet.evalCommand("SetBackgroundColor('rgba(255,255,255,0)')");
                     ggbApplet.setVisible("algebra", false);
                 } catch (e) {
                     console.warn("GGB Init error", e);
@@ -79,7 +80,7 @@ const CodeBlock = ({ block, updateBlock, activeTool, isDarkMode, onInteract, sav
         if (ggbApplet && typeof ggbApplet.evalCommand === 'function' && block.content) {
             ggbApplet.newConstruction();
             ggbApplet.evalCommand("SetAxesRatio(1, 1)");
-            ggbApplet.evalCommand("SetBackgroundColor('" + (isDarkMode ? "#0f172a" : "#ffffff") + "')");
+            ggbApplet.evalCommand("SetBackgroundColor('rgba(255,255,255,0)')");
             const lines = block.content.split('\n').filter(l => l.trim());
             lines.forEach(cmd => ggbApplet.evalCommand(cmd));
         }
@@ -103,6 +104,7 @@ const CodeBlock = ({ block, updateBlock, activeTool, isDarkMode, onInteract, sav
 
     return (
         <BlockWrapper
+            ref={cardRef}
             block={block}
             title="Expressão Matemática"
             color={dotColor}
@@ -111,7 +113,8 @@ const CodeBlock = ({ block, updateBlock, activeTool, isDarkMode, onInteract, sav
             isDarkMode={isDarkMode}
             onClose={() => updateBlock && updateBlock(block.id, { isDeleted: true })}
             onInteract={onInteract}
-            onRename={(id, name) => updateBlock(id, { customTitle: name })}
+            onRename={(id, name) => updateBlock && updateBlock(id, { customTitle: name })}
+            updateBlock={updateBlock}
             headerActions={headerActions}
             canvasScale={canvasScale}
             canvasPan={canvasPan}

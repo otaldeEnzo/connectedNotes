@@ -16,16 +16,21 @@ const BlockWrapper = forwardRef(
       onRename,
       children,
       headerActions,
-      className = "",
-      style = {},
       canvasScale,
       canvasPan,
+      updateBlock,
+      allowOverflow,
+      className = "",
+      style = {},
     },
     ref,
   ) => {
     const [isRenamingTitle, setIsRenamingTitle] = useState(false);
     const [titleValue, setTitleValue] = useState(block.customTitle || "");
     const titleInputRef = useRef(null);
+    const internalRef = useRef(null);
+    const cardRef = ref || internalRef;
+
 
     useEffect(() => {
       if (isRenamingTitle && titleInputRef.current) {
@@ -72,24 +77,61 @@ const BlockWrapper = forwardRef(
     const screenX = px + block.x * s;
     const screenY = py + block.y * s;
 
+    const isSelected = isEditing || isDragging;
+
+    // Viewport Culling logic
+    const [isVisible, setIsVisible] = useState(true);
+    useEffect(() => {
+      const checkVisibility = () => {
+        const viewportW = window.innerWidth;
+        const viewportH = window.innerHeight;
+        const margin = 300; 
+        const bWidth = (block.width || 400) * s;
+        const bHeight = (block.height || 300) * s;
+        const inViewport = (
+          screenX + bWidth > -margin &&
+          screenX < viewportW + margin &&
+          screenY + bHeight > -margin &&
+          screenY < viewportH + margin
+        );
+        setIsVisible(inViewport);
+      };
+      checkVisibility();
+      window.addEventListener('resize', checkVisibility);
+      return () => window.removeEventListener('resize', checkVisibility);
+    }, [screenX, screenY, block.width, block.height, s]);
+
+    // Report dimensions to canvas
+    useEffect(() => {
+      const target = cardRef && 'current' in cardRef ? cardRef.current : cardRef;
+      if (!target || !updateBlock) return;
+      const observer = new ResizeObserver((entries) => {
+        for (let entry of entries) {
+          const { width, height } = entry.contentRect;
+          // Only update if significantly changed to avoid loops
+          if (Math.abs(width - (block.measuredWidth || 0)) > 1 || 
+              Math.abs(height - (block.measuredHeight || 0)) > 1) {
+            updateBlock(block.id, { measuredWidth: width, measuredHeight: height });
+          }
+        }
+      });
+      observer.observe(target);
+      return () => observer.disconnect();
+    }, [block.id, block.measuredWidth, block.measuredHeight, updateBlock, ref]);
+
     return (
       <div
-        ref={ref}
-        className={`glass-extreme flex flex-col rounded-[2.5rem] overflow-hidden group select-none ${shadowTailwind} ${isDragging ? "opacity-90 scale-[1.02] z-[1001]" : ""} ${className}`}
+        ref={cardRef}
+        data-block-id={block.id}
+        className={`absolute pointer-events-auto ${isDragging ? "opacity-90 z-[1001]" : ""} ${className}`}
         style={{
-          position: "absolute",
           left: screenX,
           top: screenY,
-          transform: `scale(${s})`,
+          transform: `scale(${s * (isDragging ? 1.02 : 1)})`,
           transformOrigin: '0 0',
           width: useFixed && block.width ? `${block.width}px` : "auto",
           height: useFixed && block.height ? `${block.height}px` : "auto",
           zIndex: isEditing ? 1000 : isDragging ? 1001 : block.zIndex || 50,
-          pointerEvents: "auto",
-          transitionProperty: "transform, opacity, box-shadow, background, border-color",
-          transitionDuration: "400ms",
-          transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)",
-          ...style,
         }}
         onPointerDown={(e) => {
           if (e.target.closest("button") || e.target.closest("input") || e.target.closest(".no-interact")) {
@@ -98,9 +140,7 @@ const BlockWrapper = forwardRef(
           }
 
           if (e.target.closest(".block-header")) {
-            e.stopPropagation();
-            onInteract && onInteract(block.id, e);
-            return;
+            return; // Delegation handles it
           }
 
           if (e.target.closest(".block-interactivity-isolation")) {
@@ -134,52 +174,68 @@ const BlockWrapper = forwardRef(
           if (isEditing || isRenamingTitle) e.stopPropagation();
         }}
       >
-        {/* Header - Tailwind Refactored */}
-        <div className="block-header flex items-center justify-between px-6 py-4 cursor-grab active:cursor-grabbing border-b border-white/[0.05]">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-2.5 h-2.5 rounded-full shadow-[0_0_10px_currentColor]"
-              style={{ color: color, backgroundColor: "currentColor" }}
-            />
-            {isRenamingTitle ? (
-              <input
-                ref={titleInputRef}
-                value={titleValue}
-                onChange={(e) => setTitleValue(e.target.value)}
-                onBlur={commitRename}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === "Enter") commitRename();
-                  if (e.key === "Escape") setIsRenamingTitle(false);
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                className="bg-transparent border-none border-b border-accent-color text-white/90 text-[0.85rem] font-semibold tracking-tight outline-none px-0.5 min-w-[40px] max-w-[200px]"
+        <div 
+          className={`glass-extreme w-full h-full flex flex-col rounded-[2.5rem] transition-[box-shadow,border-color,background] duration-300 ${allowOverflow ? '' : 'overflow-hidden'} ${shadowTailwind}`}
+          style={{
+            background: "var(--glass-bg) !important",
+            backdropFilter: isVisible ? `blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important` : 'none',
+            WebkitBackdropFilter: isVisible ? `blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important` : 'none',
+            border: '1.5px solid var(--glass-border) !important',
+            boxShadow: `var(--glass-shadow), 0 0 0 calc(var(--select-opacity, 0) * 2px) var(--accent-color)`,
+            "--select-opacity": isSelected ? 1 : 0,
+            ...style,
+          }}
+        >
+          {/* Header - Unified Transparent */}
+          <div 
+            className="block-header flex items-center justify-between px-6 py-4 cursor-grab active:cursor-grabbing"
+            data-drag-handle="true"
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-2.5 h-2.5 rounded-full shadow-[0_0_10px_currentColor]"
+                style={{ color: color, backgroundColor: "currentColor" }}
               />
-            ) : (
-              <span className="text-white/80 text-[0.85rem] font-semibold tracking-tight uppercase opacity-60 group-hover:opacity-100 transition-opacity">
-                {displayTitle}
-              </span>
-            )}
+              {isRenamingTitle ? (
+                <input
+                  ref={titleInputRef}
+                  value={titleValue}
+                  onChange={(e) => setTitleValue(e.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") commitRename();
+                    if (e.key === "Escape") setIsRenamingTitle(false);
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="bg-transparent border-none border-b border-accent-color text-white/90 text-[0.85rem] font-semibold tracking-tight outline-none px-0.5 min-w-[40px] max-w-[200px]"
+                />
+              ) : (
+                <span className="text-white/80 text-[0.85rem] font-semibold tracking-tight uppercase opacity-60 group-hover:opacity-100 transition-opacity">
+                  {displayTitle}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {headerActions}
+              <button
+                className="p-2 rounded-xl hover:bg-white/10 text-white/40 hover:text-white transition-all duration-300 active:scale-90"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose && onClose(block.id);
+                }}
+                title="Remover"
+              >
+                <X size={14} />
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {headerActions}
-            <button
-              className="p-2 rounded-xl hover:bg-white/10 text-white/40 hover:text-white transition-all duration-300 active:scale-90"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose && onClose(block.id);
-              }}
-              title="Remover"
-            >
-              <X size={14} />
-            </button>
+          {/* Content - Tailwind Refactored */}
+          <div className="block-content flex-1 overflow-visible relative">
+            {children}
           </div>
-        </div>
-
-        {/* Content - Tailwind Refactored */}
-        <div className="block-content flex-1 overflow-visible relative">
-          {children}
         </div>
       </div>
     );

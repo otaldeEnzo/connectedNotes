@@ -317,13 +317,12 @@ const MindmapNode = ({ node, onUpdate, onAddChild, onDelete, isRoot, onDragStart
            .node-item:not(.has-color) { background: var(--glass-bg); }
 
           .node-item:not(.has-color):hover {
-              /* Solid Background matching theme */
-              background: var(--bg-color) !important; 
+              /* Semi-transparent Background on hover */
+              background: var(--glass-bg-hover, rgba(255,255,255,0.15)) !important; 
               box-shadow: 0 8px 30px rgba(0,0,0,0.15);
               /* No scale to prevent blur */
               transform: translateZ(0);
               z-index: 50;
-              opacity: 1; /* Force opaque */
           }
           .node-item.selected {
               transform: scale(1.05) translateZ(0);

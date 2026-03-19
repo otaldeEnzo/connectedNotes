@@ -40,10 +40,10 @@
   /* Suave no claro */
 
   /* Liquid Glass Core */
-  --glass-bg: rgba(255, 255, 255, 0.45);
-  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-bg: rgba(255, 255, 255, 0.12);
+  --glass-border: rgba(255, 255, 255, 0.5);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.4);
-  --glass-blur: 32px;
+  --glass-blur: 40px;
 
   /* Organic Dynamic Mesh Gradient - Refined for V2 */
   --bg-gradient: radial-gradient(at 0% 0%, rgba(220, 230, 255, 0.4) 0px, transparent 50%),
@@ -359,21 +359,21 @@ body.gradient-enabled {
 
 /* ====== EXTREME LIQUID GLASS BLOCKS ====== */
 .glass-card {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.1);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.1);
-  border: 1px solid var(--glass-border);
-  border-top-color: var(--glass-border-top);
-  border-left-color: var(--glass-border-left);
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-top-color: var(--glass-border-top) !important;
+  border-left-color: var(--glass-border-left) !important;
   border-radius: 2.5rem;
-  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0s;
+  transition: opacity 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
   position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   /* Support floating toolbars; internal content is rounded via .glass-card-content */
   box-shadow: var(--glass-shadow);
-  will-change: auto;
+  will-change: transform-scale, opacity, box-shadow;
   transform-style: flat;
 }
 
@@ -407,7 +407,6 @@ body.gradient-enabled {
 
 .glass-card-header {
   padding: 10px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -578,14 +577,14 @@ body.gradient-enabled {
 
 /* Extreme Liquid Glass — the core aesthetic */
 .glass-extreme {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.1);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.1);
-  border: 1px solid var(--glass-border);
-  border-top-color: var(--glass-border-top);
-  border-left-color: var(--glass-border-left);
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-top-color: var(--glass-border-top) !important;
+  border-left-color: var(--glass-border-left) !important;
   box-shadow: var(--glass-shadow);
-  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
 }
 
 .glass-extreme:hover {
@@ -598,12 +597,12 @@ body.gradient-enabled {
 
 /* Legacy glass-panel — keep for blocks */
 .glass-panel {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.1);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.1);
-  border: 1px solid var(--glass-border);
-  border-top-color: var(--glass-border-top);
-  border-left-color: var(--glass-border-left);
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-top-color: var(--glass-border-top) !important;
+  border-left-color: var(--glass-border-left) !important;
   box-shadow: var(--glass-shadow);
   transition: transform 0.3s ease,
     box-shadow 0.3s ease,

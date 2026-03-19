@@ -17,20 +17,6 @@ const MindmapBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
     const isPanning = useRef(false);
     const lastPos = useRef({ x: 0, y: 0 });
 
-    useEffect(() => {
-        if (!cardRef.current || block.fixedSize === true) return;
-        const observer = new ResizeObserver((entries) => {
-            if (block.fixedSize === true) return;
-            for (let entry of entries) {
-                const { width, height } = entry.contentRect;
-                if (Math.abs(width - (block.measuredWidth || 0)) > 2 || Math.abs(height - (block.measuredHeight || 0)) > 2) {
-                    updateBlock(block.id, { measuredWidth: width, measuredHeight: height });
-                }
-            }
-        });
-        observer.observe(cardRef.current);
-        return () => observer.disconnect();
-    }, [block.id, block.measuredWidth, block.measuredHeight, block.fixedSize]);
 
     const onPointerDown = (e) => {
         if (isEditing) return;
@@ -109,6 +95,7 @@ const MindmapBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
             onInteract={onInteract}
             onDoubleClick={() => setEditing && setEditing(true)}
             isEditing={isEditing}
+            updateBlock={updateBlock}
             canvasScale={canvasScale}
             canvasPan={canvasPan}
             headerActions={headerActions}

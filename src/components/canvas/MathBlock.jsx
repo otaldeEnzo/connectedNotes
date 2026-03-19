@@ -30,20 +30,6 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
         return () => clearTimeout(timer);
     }, [block.content, isEditing]);
 
-    useEffect(() => {
-        if (!cardRef.current || block.fixedSize === true) return;
-        const observer = new ResizeObserver((entries) => {
-            if (block.fixedSize === true) return;
-            for (let entry of entries) {
-                const { width, height } = entry.contentRect;
-                if (Math.abs(width - (block.measuredWidth || 0)) > 2 || Math.abs(height - (block.measuredHeight || 0)) > 2) {
-                    updateBlock(block.id, { measuredWidth: width, measuredHeight: height });
-                }
-            }
-        });
-        observer.observe(cardRef.current);
-        return () => observer.disconnect();
-    }, [block.id, block.measuredWidth, block.measuredHeight, block.fixedSize]);
 
     const handleSolve = async () => {
         if (!apiKey) return alert("Configure a API Key para resolver.");
@@ -133,6 +119,7 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
             onInteract={onInteract}
             onDoubleClick={handleDoubleClick}
             onRename={(id, name) => updateBlock(id, { customTitle: name })}
+            updateBlock={updateBlock}
             headerActions={headerActions}
             canvasScale={canvasScale}
             canvasPan={canvasPan}

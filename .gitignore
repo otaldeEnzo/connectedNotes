@@ -41,6 +41,7 @@ pnpm-debug.log*
 *.ntvs*
 *.njsproj
 .DS_Store
+.antigravityignore
 
 # --- Capacitor / Android / iOS ---
 # (Se não pretenderes subir as pastas geradas de plataformas nativas)

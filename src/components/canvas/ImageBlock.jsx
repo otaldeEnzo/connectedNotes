@@ -2,10 +2,12 @@ import React from 'react';
 import BlockWrapper from './BlockWrapper';
 
 const ImageBlock = ({ block, activeTool, updateBlock, onInteract, removeBlock, isDragging, isDarkMode, canvasScale, canvasPan }) => {
+    const cardRef = React.useRef(null);
     const dotColor = block.color === 'cyan' ? '#06b6d4' : (block.color === 'blue' ? '#3b82f6' : '#06b6d4');
 
     return (
         <BlockWrapper
+            ref={cardRef}
             block={block}
             title="Imagem"
             color={dotColor}
@@ -14,6 +16,7 @@ const ImageBlock = ({ block, activeTool, updateBlock, onInteract, removeBlock, i
             onClose={removeBlock}
             onInteract={onInteract}
             onRename={(id, name) => updateBlock && updateBlock(id, { customTitle: name })}
+            updateBlock={updateBlock}
             canvasScale={canvasScale}
             canvasPan={canvasPan}
             className="image-block-wrapper"

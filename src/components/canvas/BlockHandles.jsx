@@ -1,7 +1,22 @@
 import React from 'react';
 import { getEffectiveMathDimensions } from './CanvasUtils';
 
-const BlockHandles = ({ block, type, onStartConnection, onCompleteConnection, isHovered, scale, canvasScale, canvasPan }) => {
+const BlockHandles = ({ block, type, onStartConnection, onCompleteConnection, isHovered, scale, canvasScale, canvasPan, connectingState }) => {
+    const [showDots, setShowDots] = React.useState(false);
+
+    React.useEffect(() => {
+        if (isHovered && !connectingState) {
+            const timer = setTimeout(() => setShowDots(true), 400);
+            return () => clearTimeout(timer);
+        } else if (connectingState) {
+            setShowDots(true);
+        } else {
+            setShowDots(false);
+        }
+    }, [isHovered, !!connectingState]);
+
+    const activeVisible = showDots || !!connectingState;
+
     const isMath = type === 'math' || block.type === 'math';
     const { width: w, height: h, xOffset, yOffset } = getEffectiveMathDimensions(block, isMath && isHovered);
 
@@ -19,8 +34,8 @@ const BlockHandles = ({ block, type, onStartConnection, onCompleteConnection, is
         boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
         cursor: 'crosshair',
         zIndex: 200,
-        pointerEvents: 'auto',
-        opacity: isHovered ? 1 : 0,
+        pointerEvents: activeVisible ? 'auto' : 'none',
+        opacity: activeVisible ? 1 : 0,
         transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)'
     };
 
@@ -54,28 +69,28 @@ const BlockHandles = ({ block, type, onStartConnection, onCompleteConnection, is
                 onPointerDown={(e) => onStartConnection(e, block.id, 'top')}
                 onPointerUp={(e) => onCompleteConnection && onCompleteConnection(e, block.id, 'top')}
                 {...handleHoverProps}
-                style={{ ...handleStyle, top: -14, left: '50%', transform: 'translateX(-50%)' }} />
+                style={{ ...handleStyle, top: -22, left: '50%', transform: 'translateX(-50%)' }} />
             {/* Bottom */}
             <div className="connector-handle"
                 data-block-id={block.id} data-side="bottom"
                 onPointerDown={(e) => onStartConnection(e, block.id, 'bottom')}
                 onPointerUp={(e) => onCompleteConnection && onCompleteConnection(e, block.id, 'bottom')}
                 {...handleHoverProps}
-                style={{ ...handleStyle, bottom: -14, left: '50%', transform: 'translateX(-50%)' }} />
+                style={{ ...handleStyle, bottom: -22, left: '50%', transform: 'translateX(-50%)' }} />
             {/* Left */}
             <div className="connector-handle"
                 data-block-id={block.id} data-side="left"
                 onPointerDown={(e) => onStartConnection(e, block.id, 'left')}
                 onPointerUp={(e) => onCompleteConnection && onCompleteConnection(e, block.id, 'left')}
                 {...handleHoverProps}
-                style={{ ...handleStyle, top: '50%', left: -14, transform: 'translateY(-50%)' }} />
+                style={{ ...handleStyle, top: '50%', left: -22, transform: 'translateY(-50%)' }} />
             {/* Right */}
             <div className="connector-handle"
                 data-block-id={block.id} data-side="right"
                 onPointerDown={(e) => onStartConnection(e, block.id, 'right')}
                 onPointerUp={(e) => onCompleteConnection && onCompleteConnection(e, block.id, 'right')}
                 {...handleHoverProps}
-                style={{ ...handleStyle, top: '50%', right: -14, transform: 'translateY(-50%)' }} />
+                style={{ ...handleStyle, top: '50%', right: -22, transform: 'translateY(-50%)' }} />
         </div>
     );
 };
