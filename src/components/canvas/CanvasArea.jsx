@@ -1,5 +1,5 @@
 import React, { forwardRef, useState, useEffect, useRef, useCallback, useImperativeHandle, memo } from 'react';
-import { Stage, Layer, Line, Path, Rect, Circle } from 'react-konva';
+import { Stage, Layer, Line, Path, Rect, Circle, Group } from 'react-konva';
 import { queryGemini } from '../../services/AIService';
 import { MathService } from '../../services/MathService';
 import { useNotes } from '../../contexts/NotesContext';
@@ -42,8 +42,9 @@ import {
 // --- Optimized Sub-Component ---
 const MemoizedStroke = React.memo(({ stroke, isSelected }) => {
   const isHighlighter = stroke.type === 'highlighter';
-  const color = isSelected ? '#6366f1' : stroke.color;
   const shapeRef = React.useRef(null);
+  const baseColor = React.useMemo(() => resolveColor(stroke.color), [stroke.color]);
+  const highlightColor = '#6366f1';
 
   const pathData = React.useMemo(() => {
     if (stroke.isNeatShape) {
@@ -59,10 +60,11 @@ const MemoizedStroke = React.memo(({ stroke, isSelected }) => {
 
   React.useEffect(() => {
     if (shapeRef.current) {
-      shapeRef.current.cache();
+      // We removed shapeRef.current.cache() to maintain full vector resolution on zoom.
+      // Konva will now re-render from paths on each frame, ensuring sharpness.
       shapeRef.current.getLayer()?.batchDraw();
     }
-  }, [pathData, color]);
+  }, [pathData, baseColor]);
 
   const commonProps = {
     ref: shapeRef,
@@ -71,23 +73,42 @@ const MemoizedStroke = React.memo(({ stroke, isSelected }) => {
     listening: false
   };
 
+  const selectionGlow = isSelected && (
+    <Path
+      {...commonProps}
+      fill={stroke.isNeatShape ? 'transparent' : highlightColor}
+      stroke={highlightColor}
+      strokeWidth={stroke.isNeatShape ? stroke.width + 6 : 8}
+      opacity={0.5}
+      lineCap="round"
+      lineJoin="round"
+      dash={[4, 4]}
+    />
+  );
+
   if (stroke.isNeatShape) {
     return (
-      <Path
-        {...commonProps}
-        stroke={color}
-        strokeWidth={stroke.width}
-        lineCap="round"
-        lineJoin="round"
-      />
+      <Group>
+        {selectionGlow}
+        <Path
+          {...commonProps}
+          stroke={baseColor}
+          strokeWidth={stroke.width}
+          lineCap="round"
+          lineJoin="round"
+        />
+      </Group>
     );
   }
 
   return (
-    <Path
-      {...commonProps}
-      fill={color}
-    />
+    <Group>
+      {selectionGlow}
+      <Path
+        {...commonProps}
+        fill={baseColor}
+      />
+    </Group>
   );
 }, (prev, next) => {
   return prev.stroke.id === next.stroke.id &&
@@ -103,7 +124,7 @@ const CanvasArea = forwardRef(({
   penType, apiKey, scale,
   penConfig, highlighterConfig,
   panOffset: position, setAiPanel, onMoveView, isMiniMapEnabled, setActiveTool,
-  onOpenSettings, activeForcedShape, setActiveForcedShape, setExportStatus
+  onOpenSettings, activeForcedShape, setActiveForcedShape, setExportStatus, isShadow
 }, ref) => {
   const { activeNote: globalActiveNote, activeNoteId, updateNoteContent, updateNoteBackground, saveNoteHistory, undo, redo } = useNotes();
   const activeNote = propNote || globalActiveNote;
@@ -139,7 +160,7 @@ const CanvasArea = forwardRef(({
 
   useEffect(() => {
     const canvas = document.createElement('canvas');
-    const size = paperPattern === 'dots' ? (backgroundSize === 40 ? 24 : backgroundSize * 0.6) : backgroundSize;
+    const size = Math.round(paperPattern === 'dots' ? (backgroundSize === 40 ? 24 : backgroundSize * 0.6) : backgroundSize);
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d');
@@ -398,49 +419,7 @@ const CanvasArea = forwardRef(({
   }, []);
 
   // [HYBRID EXPORT] Snapshot SVG injection
-  useEffect(() => {
-    const handleExport = async (e) => {
-      if (e.detail.noteId !== activeNoteId) return;
-      const canvasEl = containerRef.current?.querySelector('.infinite-canvas');
-      if (!canvasEl) return;
-
-      const prepared = prepareExport();
-      if (!prepared) return;
-
-      const allBlocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].map(b => ({
-        id: b.id, x: b.x, y: b.y, width: b.width || 250, height: b.height || 200
-      }));
-
-      // Include stroke envelopes for smart paging support
-      strokes.forEach(s => {
-        const sb = getStrokeBounds(s.points);
-        if (sb) {
-          allBlocks.push({ id: s.id, x: sb.x - s.width, y: sb.y - s.width, width: sb.width + s.width * 2, height: sb.height + s.width * 2 });
-        }
-      });
-
-      try {
-        setExportStatus({ isExporting: true, progress: 0, message: 'Iniciando exportação...' });
-        await ExportService.exportCurrentView(
-          canvasEl,
-          e.detail.format || 'png',
-          activeNote?.title || 'Sem Título',
-          prepared.bounds,
-          null,
-          allBlocks,
-          (status) => setExportStatus({ isExporting: true, ...status })
-        );
-      } catch (err) {
-        console.error('[CanvasArea] Export failed:', err);
-      } finally {
-        finalizeExport();
-        setTimeout(() => setExportStatus({ isExporting: false, progress: 0, message: '' }), 800);
-      }
-    };
-
-    window.addEventListener('triggerExport', handleExport);
-    return () => window.removeEventListener('triggerExport', handleExport);
-  }, [activeNoteId, activeNote, strokes, textBlocks, imageBlocks, codeBlocks, mathBlocks, ggbBlocks, mermaidBlocks, mindmapBlocks, prepareExport, finalizeExport]);
+  // Handled by NoteWorkspace via useImperativeHandle / shadow renderer.
 
   const saveToHistory = useCallback(() => saveNoteHistory(activeNoteId), [saveNoteHistory, activeNoteId]);
 
@@ -969,8 +948,8 @@ const CanvasArea = forwardRef(({
 
         // PERSISTENCE FIX: Only clear selection if we are switching to a DIFFERENT note
         if (activeNote.id !== lastLoadedNoteId.current) {
-          setSelectedIds([]); 
-          setSelectedStrokeIds([]); 
+          setSelectedIds([]);
+          setSelectedStrokeIds([]);
           setSelectedConnectionIds([]);
         }
 
@@ -1064,7 +1043,13 @@ const CanvasArea = forwardRef(({
     return { x: (cx - r.left - position.x) / scale, y: (cy - r.top - position.y) / scale };
   }, [position, scale]);
 
-  const groupBounds = getGroupBounds([...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].filter(b => selectedIds.includes(b.id)), strokes.filter(s => selectedStrokeIds.includes(s.id)));
+  const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks];
+  const groupBounds = getGroupBounds(
+    allB.filter(b => selectedIds.includes(b.id)),
+    strokes.filter(s => selectedStrokeIds.includes(s.id)),
+    connections.filter(c => selectedConnectionIds.includes(c.id)),
+    allB
+  );
   const handleGroupMove = (dx, dy) => {
     if (!interactionInitialBoundsRef.current) return;
     const sdx = dx / scale;
@@ -1123,10 +1108,11 @@ const CanvasArea = forwardRef(({
       scaleX = 1;
       const newHeight = Math.max(20, startH + cdy);
       scaleY = newHeight / startH;
-    } else {
+    } else if (type === 'corner') {
       const newWidth = Math.max(20, startW + cdx);
-      const s = newWidth / startW;
-      scaleX = s; scaleY = s;
+      const newHeight = Math.max(20, startH + cdy);
+      scaleX = newWidth / startW;
+      scaleY = newHeight / startH;
     }
 
     if (!isFinite(scaleX) || scaleX <= 0 || !isFinite(scaleY) || scaleY <= 0) return;
@@ -1305,7 +1291,7 @@ const CanvasArea = forwardRef(({
       }
       setEditingBlockId(null);
       // Wait a frame to prevent immediate re-creation if tool is active
-      setTimeout(() => {}, 0);
+      setTimeout(() => { }, 0);
     }
     if (e.button !== 0 && e.pointerType !== 'pen') return;
 
@@ -1324,7 +1310,7 @@ const CanvasArea = forwardRef(({
     activePointerId.current = e.pointerId; lastPointerPos.current = { x: e.clientX, y: e.clientY };
     const pt = screenToCanvas(e.clientX, e.clientY);
     if (activeTool === 'eraser') { setIsErasing(true); saveToHistory(); setStrokes(p => p.filter(s => !isStrokeClicked(s, pt, 15 / scale))); return; }
-    
+
     // Pan detection (Space or Middle Mouse)
     if (e.button === 1 || (activeTool === 'cursor' && e.altKey)) {
       setIsPanning(true);
@@ -1332,6 +1318,8 @@ const CanvasArea = forwardRef(({
     }
 
     if (activeTool === 'cursor' || activeTool === 'ai-lasso') {
+      const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks];
+      const pt = screenToCanvas(e.clientX, e.clientY);
       const sid = strokes.find(s => isStrokeClicked(s, pt, 10 / scale))?.id;
       if (sid && activeTool === 'cursor') {
         const newStrokeSel = selectedStrokeIds.includes(sid) ? selectedStrokeIds : [sid];
@@ -1343,6 +1331,17 @@ const CanvasArea = forwardRef(({
         startDrag(e, [], newStrokeSel);
         containerRef.current?.setPointerCapture(e.pointerId); return;
       }
+
+      const cid = connections.find(c => {
+        const start = getAnchorPointById(c.fromId, c.fromSide, allB);
+        const end = getAnchorPointById(c.toId, c.toSide, allB);
+        return start && end && isConnectionInRect(c, start, end, { startX: pt.x, startY: pt.y, currentX: pt.x + 1, currentY: pt.y + 1 });
+      })?.id;
+      if (cid && activeTool === 'cursor') {
+        setSelectedConnectionIds(prev => e.shiftKey ? (prev.includes(cid) ? prev.filter(x => x !== cid) : [...prev, cid]) : [cid]);
+        setSelectedIds([]); setSelectedStrokeIds([]); return;
+      }
+
       setSelectedIds([]); setSelectedStrokeIds([]); setSelectedConnectionIds([]);
       setSelectionRect({ startX: pt.x, startY: pt.y, currentX: pt.x, currentY: pt.y });
       containerRef.current?.setPointerCapture(e.pointerId); return;
@@ -1399,13 +1398,47 @@ const CanvasArea = forwardRef(({
   const handlePointerMove = (e) => {
     if (activePointerId.current !== null && e.pointerId !== activePointerId.current) return;
     const pt = screenToCanvas(e.clientX, e.clientY);
+
+    // [PRO CONNECTORS] Hover detection for handles
+    if (activeTool === 'cursor' && !isDrawing && !isDraggingSelection && !selectionRect) {
+      const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks];
+      const hBlock = allB.find(b => isPointInBlock(b, pt, b.id === hoveredBlockId ? 60 : 40));
+      if (hBlock?.id !== hoveredBlockId) setHoveredBlockId(hBlock?.id || null);
+    } else if (hoveredBlockId) {
+      setHoveredBlockId(null);
+    }
+
     if (activeTool === 'eraser') { setEraserCursorPos(pt); } else if (eraserCursorPos) { setEraserCursorPos(null); }
-    if (connectingState) setConnectingState(p => ({ ...p, tempX: pt.x, tempY: pt.y }));
+    if (connectingState) {
+      const blocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks];
+      let snap = null;
+      let minDist = 30; // Snap threshold
+      for (const b of blocks) {
+        if (b.id === connectingState.fromId) continue;
+        ['top', 'bottom', 'left', 'right'].forEach(side => {
+          const ap = getAnchorPointById(b.id, side, blocks, hoveredBlockId);
+          if (ap) {
+            const d = Math.hypot(ap.x - pt.x, ap.y - pt.y);
+            if (d < minDist) {
+              minDist = d;
+              snap = { x: ap.x, y: ap.y, targetId: b.id, targetSide: side };
+            }
+          }
+        });
+      }
+
+      if (snap) {
+        setConnectingState(p => ({ ...p, tempX: snap.x, tempY: snap.y, targetId: snap.targetId, targetSide: snap.targetSide }));
+      } else {
+        setConnectingState(p => ({ ...p, tempX: pt.x, tempY: pt.y, targetId: null, targetSide: null }));
+      }
+    }
+
     if (isErasing) { setStrokes(p => p.filter(s => !isStrokeClicked(s, pt, 15 / scale))); return; }
     if (selectionRect) { setSelectionRect(p => ({ ...p, currentX: pt.x, currentY: pt.y })); return; }
     if (isDraggingSelection && dragStartRef.current && !isResizingRef.current) {
       nextDragPosRef.current = { x: e.clientX, y: e.clientY };
-      
+
       if (!dragRafRef.current) {
         dragRafRef.current = requestAnimationFrame(() => {
           if (!nextDragPosRef.current || !dragStartRef.current) {
@@ -1590,17 +1623,32 @@ const CanvasArea = forwardRef(({
       setCurrentStroke(null); activeStrokePointsRef.current = [];
     }
     if (selectionRect) {
-      const nIds = [], nSIds = [];
-      [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].forEach(b => { if (isBlockIntersecting(b, selectionRect)) nIds.push(b.id); });
+      const nIds = [], nSIds = [], nCIds = [];
+      const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks];
+      allB.forEach(b => { if (isBlockIntersecting(b, selectionRect)) nIds.push(b.id); });
       strokes.forEach(s => { if (isStrokeInRect(s, selectionRect)) nSIds.push(s.id); });
-      setSelectedIds(nIds); setSelectedStrokeIds(nSIds); setSelectionRect(null);
+      connections.forEach(c => {
+        const start = getAnchorPointById(c.fromId, c.fromSide, allB);
+        const end = getAnchorPointById(c.toId, c.toSide, allB);
+        if (start && end && isConnectionInRect(c, start, end, selectionRect)) nCIds.push(c.id);
+      });
+      setSelectedIds(nIds); setSelectedStrokeIds(nSIds); setSelectedConnectionIds(nCIds); setSelectionRect(null);
     }
     if (isDraggingSelection || isDrawing) saveToHistory();
     setIsDrawing(false); setIsErasing(false); setIsDraggingSelection(false);
+    if (connectingState?.targetId) {
+      handleCompleteConnection(e, connectingState.targetId, connectingState.targetSide);
+    }
     setConnectingState(null);
   };
 
-  const handleStartConnection = (e, bid, side) => { e.stopPropagation(); const pt = screenToCanvas(e.clientX, e.clientY); setConnectingState({ fromId: bid, fromSide: side, tempX: pt.x, tempY: pt.y }); };
+  const handleStartConnection = (e, bid, side) => {
+    e.stopPropagation();
+    const pt = screenToCanvas(e.clientX, e.clientY);
+    setConnectingState({ fromId: bid, fromSide: side, tempX: pt.x, tempY: pt.y });
+    activePointerId.current = e.pointerId;
+    containerRef.current?.setPointerCapture(e.pointerId);
+  };
   const handleCompleteConnection = (e, tid, tside) => {
     e.stopPropagation();
     if (connectingState) {
@@ -1610,6 +1658,25 @@ const CanvasArea = forwardRef(({
       }
       setConnectingState(null);
     }
+  };
+
+  const handleColorChange = (color) => {
+    saveToHistory();
+    const update = b => (selectedIds.includes(b.id) || (b.groupId && allB.filter(x => selectedIds.includes(x.id)).some(x => x.groupId === b.groupId))) ? { ...b, color } : b;
+    setTextBlocks(p => p.map(update));
+    setImageBlocks(p => p.map(update));
+    setCodeBlocks(p => p.map(update));
+    setMathBlocks(p => p.map(update));
+    setGgbBlocks(p => p.map(update));
+    setMermaidBlocks(p => p.map(update));
+    setMindmapBlocks(p => p.map(update));
+    setStrokes(p => p.map(s => selectedStrokeIds.includes(s.id) ? { ...s, color } : s));
+    setConnections(p => p.map(c => selectedConnectionIds.includes(c.id) ? { ...c, color } : c));
+  };
+  const handleStyleChange = (style) => {
+    saveToHistory();
+    setConnections(p => p.map(c => selectedConnectionIds.includes(c.id) ? { ...c, ...style } : c));
+    setStrokes(p => p.map(s => selectedStrokeIds.includes(s.id) ? { ...s, ...style } : s));
   };
 
   if (!activeNote) return <div className="loading">Carregando...</div>;
@@ -1643,7 +1710,7 @@ const CanvasArea = forwardRef(({
               fillPatternImage={patternImage}
               fillPatternRepeat="repeat"
               fillPatternX={0}
-              fillPatternY={80} // Offset pattern to align with top margin
+              fillPatternY={0}
             />
           )}
 
@@ -1714,7 +1781,7 @@ const CanvasArea = forwardRef(({
         <div style={{ position: 'absolute', top: 0, left: 0, width: 50000, height: 50000, pointerEvents: 'none', ...getBackgroundStyle() }} />
 
         {/* GGBBlock stays here (no backdrop-filter needed, has iframe) */}
-        {ggbBlocks.map(b => <GGBBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('ggb', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} />)}
+        {ggbBlocks.map(b => <GGBBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('ggb', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} isShadow={isShadow} />)}
 
         {/* SVG Overlay Stage for Top-Layer Strokes (zIndex >= 100) */}
         <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible', zIndex: 90 }}>
@@ -1747,28 +1814,28 @@ const CanvasArea = forwardRef(({
       </div>
 
       {/* ====== LAYER 2b: Glass blocks (NO parent transform — backdrop-filter works!) ====== */}
-      <div className="glass-blocks-layer" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10000 }}>
+      <div className="glass-blocks-layer" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10000, isolation: 'isolate', transform: 'translateZ(0)' }}>
         {imageBlocks.map(b => <ImageBlock key={b.id} block={b} activeTool={activeTool} updateBlock={(id, d) => updateAnyBlock('image', id, d)} onInteract={handleBlockInteract} removeBlock={removeAnyBlock} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {codeBlocks.map(b => <CodeBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('code', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {textBlocks.map(b => <TextBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('text', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {mathBlocks.map(b => <MathBlock key={b.id} block={b} apiKey={apiKey} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('math', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} onPlot={e => handleMathPlot(b, e)} onSolve={r => handleMathSolve(b, r)} onSteps={s => handleMathSteps(b, s)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
-        {mermaidBlocks.map(b => <MermaidBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('mermaid', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
-        {mindmapBlocks.map(b => <MindmapBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('mindmap', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
+        {mermaidBlocks.map(b => <MermaidBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('mermaid', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} isShadow={isShadow} />)}
+        {mindmapBlocks.map(b => <MindmapBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('mindmap', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} isShadow={isShadow} />)}
 
         {[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].map(b => (
-          <BlockHandles 
-            key={b.id} 
-            block={b} 
-            type={b.src ? 'image' : (b.expression ? 'ggb' : (b.code ? 'mermaid' : (b.content?.root ? 'mindmap' : (b.content?.includes('\\') ? 'math' : 'text'))))} 
-            scale={scale} 
+          <BlockHandles
+            key={b.id}
+            block={b}
+            type={b.src ? 'image' : (b.expression ? 'ggb' : (b.code ? 'mermaid' : (b.content?.root ? 'mindmap' : (typeof b.content === 'string' && b.content.includes('\\') ? 'math' : 'text'))))}
+            scale={scale}
             // Separate connection handles and resizing logic:
             // Connection dots are suppressed if block is selected to avoid overlap with groups selection
-            isHovered={hoveredBlockId === b.id && !selectedIds.includes(b.id)} 
+            isHovered={hoveredBlockId === b.id}
             connectingState={connectingState}
-            onStartConnection={handleStartConnection} 
-            onCompleteConnection={handleCompleteConnection} 
-            canvasScale={scale} 
-            canvasPan={position} 
+            onStartConnection={handleStartConnection}
+            onCompleteConnection={handleCompleteConnection}
+            canvasScale={scale}
+            canvasPan={position}
           />
         ))}
         <SelectionGroupOverlay
@@ -1779,17 +1846,17 @@ const CanvasArea = forwardRef(({
             if (isResize) isResizingRef.current = true;
             setIsDraggingSelection(true);
             interactionInitialBoundsRef.current = groupBounds;
-            
+
             // Capture initial state of all selected items for stable relative manipulation
             interactionInitialBlocksRef.current = [
-                ...[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].filter(b => selectedIds.includes(b.id)).map(b => ({ 
-                    id: b.id, 
-                    x: b.x, 
-                    y: b.y, 
-                    width: getBlockDimensions(b).width, 
-                    height: getBlockDimensions(b).height 
-                })),
-                ...strokes.filter(s => selectedStrokeIds.includes(s.id)).map(s => ({ id: s.id, points: [...s.points] }))
+              ...[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].filter(b => selectedIds.includes(b.id)).map(b => ({
+                id: b.id,
+                x: b.x,
+                y: b.y,
+                width: getBlockDimensions(b).width,
+                height: getBlockDimensions(b).height
+              })),
+              ...strokes.filter(s => selectedStrokeIds.includes(s.id)).map(s => ({ id: s.id, points: [...s.points] }))
             ];
           }}
           onEndInteraction={() => {
@@ -1803,11 +1870,41 @@ const CanvasArea = forwardRef(({
           activeTool={activeTool}
           canvasScale={scale}
           canvasPan={position}
+          isFreeformOnly={selectedConnectionIds.length > 0 && selectedIds.length === 0 && selectedStrokeIds.length === 0}
         />
       </div>
 
-      {groupBounds && (selectedIds.length > 0 || selectedStrokeIds.length > 0) && <SelectionToolbar bounds={groupBounds} scale={scale} position={position} viewportWidth={stageSize.width} onGroup={handleGroup} onLock={handleLock} onBringToFront={handleBringToFront} onSendToBack={handleSendToBack} isGrouped={isSelectedGrouped} isLocked={isSelectedLocked} onConvertToMath={handleInkToMath} isConverting={isMathConverting} />}
+      {groupBounds && (selectedIds.length > 0 || selectedStrokeIds.length > 0 || selectedConnectionIds.length > 0) && (
+        <SelectionToolbar
+          bounds={groupBounds}
+          scale={scale}
+          position={position}
+          viewportWidth={stageSize.width}
+          onGroup={handleGroup}
+          onLock={handleLock}
+          onBringToFront={handleBringToFront}
+          onSendToBack={handleSendToBack}
+          isGrouped={isSelectedGrouped}
+          isLocked={isSelectedLocked}
+          onColorChange={handleColorChange}
+          onStyleChange={handleStyleChange}
+          onConvertToMath={handleInkToMath}
+          isConverting={isMathConverting}
+        />
+      )}
 
+      {isMiniMapEnabled && (
+        <MiniMap
+          blocks={[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks]}
+          strokes={strokes}
+          panOffset={position}
+          scale={scale}
+          viewportWidth={stageSize.width}
+          viewportHeight={stageSize.height}
+          onMoveView={onMoveView}
+          activeNoteType={activeNote.type}
+        />
+      )}
     </div>
   );
 }

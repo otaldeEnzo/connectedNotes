@@ -5,10 +5,7 @@ const BlockHandles = ({ block, type, onStartConnection, onCompleteConnection, is
     const [showDots, setShowDots] = React.useState(false);
 
     React.useEffect(() => {
-        if (isHovered && !connectingState) {
-            const timer = setTimeout(() => setShowDots(true), 400);
-            return () => clearTimeout(timer);
-        } else if (connectingState) {
+        if (isHovered || connectingState) {
             setShowDots(true);
         } else {
             setShowDots(false);

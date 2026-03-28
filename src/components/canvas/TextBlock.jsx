@@ -113,14 +113,14 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
             updateBlock={updateBlock}
             canvasScale={canvasScale}
             canvasPan={canvasPan}
-            className="min-w-[350px] max-w-[1200px]"
+            className="max-w-[1200px]"
             allowOverflow={true}
             toolbarContent={
                 editor && isEditing && (
                     <div
                         ref={toolbarRef}
                         className="rich-text-toolbar absolute -top-4 left-1/2 -translate-x-1/2 -translate-y-full glass-extreme flex items-center gap-4 px-6 py-4 rounded-[2.5rem] z-[15000] animate-in fade-in slide-in-from-bottom-4 duration-500 whitespace-nowrap"
-                        style={{ 
+                        style={{
                             pointerEvents: 'auto',
                             background: 'var(--glass-bg-floating)',
                             backdropFilter: 'blur(32px) saturate(180%) brightness(1.1)',
@@ -197,7 +197,7 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
                     style={{
                         height: '100%',
                         cursor: isEditing ? 'text' : 'grab',
-                        minHeight: '80px',
+                        minHeight: '30px',
                         outline: 'none'
                     }}
                 />

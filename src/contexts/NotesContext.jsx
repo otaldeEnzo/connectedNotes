@@ -314,7 +314,8 @@ export const NotesProvider = ({ children }) => {
           ...prev,
           [id]: {
             ...currentNote,
-            content: { ...currentContent, ...newContent }
+            content: { ...currentContent, ...newContent },
+            updatedAt: Date.now()
           }
         };
       } catch (err) {
@@ -331,7 +332,7 @@ export const NotesProvider = ({ children }) => {
     if (type === 'canvas') {
       initialContent = { strokes: [], textBlocks: [], imageBlocks: [], mathBlocks: [], codeBlocks: [] };
     } else if (type === 'text') {
-      initialContent = { markdown: '# Nova Nota\nComece a escrever...' };
+      initialContent = { markdown: '' };
     } else if (type === 'code') {
       initialContent = { code: '// Digite seu código aqui\n', language: 'javascript' };
     } else if (type === 'mermaid') {
@@ -340,13 +341,16 @@ export const NotesProvider = ({ children }) => {
       initialContent = { root: { id: 'm-root', text: 'Tópico Central', x: 800, y: 450, children: [] } };
     }
 
+    const now = Date.now();
     const newNote = {
       id: newId,
       title: type === 'folder' ? 'Nova Pasta' : 'Nova Nota',
       type: type,
       content: initialContent,
       children: [],
-      collapsed: false
+      collapsed: false,
+      createdAt: now,
+      updatedAt: now
     };
 
     setNotes(prev => {
@@ -454,7 +458,7 @@ export const NotesProvider = ({ children }) => {
       if (!prev?.[id]) return prev;
       return {
         ...prev,
-        [id]: { ...prev[id], title: newTitle }
+        [id]: { ...prev[id], title: newTitle, updatedAt: Date.now() }
       };
     });
   };
@@ -464,8 +468,23 @@ export const NotesProvider = ({ children }) => {
       if (!prev?.[id]) return prev;
       return {
         ...prev,
-        [id]: { ...prev[id], tags: Array.isArray(newTags) ? newTags : [] }
+        [id]: { ...prev[id], tags: Array.isArray(newTags) ? newTags : [], updatedAt: Date.now() }
       };
+    });
+  };
+
+  const deleteTagGlobally = (tagToDelete) => {
+    setNotes(prev => {
+      const updatedNotes = { ...prev };
+      Object.keys(updatedNotes).forEach(id => {
+        if (updatedNotes[id].tags && Array.isArray(updatedNotes[id].tags)) {
+          updatedNotes[id] = {
+            ...updatedNotes[id],
+            tags: updatedNotes[id].tags.filter(t => t !== tagToDelete)
+          };
+        }
+      });
+      return updatedNotes;
     });
   };
 
@@ -479,6 +498,20 @@ export const NotesProvider = ({ children }) => {
         [id]: {
           ...prev[id],
           content: { ...prev[id]?.content, background }
+        }
+      };
+    });
+  };
+
+  const updateNoteBackgroundSize = (id, size) => {
+    if (!id) return;
+    setNotes(prev => {
+      if (!prev?.[id]) return prev;
+      return {
+        ...prev,
+        [id]: {
+          ...prev[id],
+          content: { ...prev[id]?.content, backgroundSize: size }
         }
       };
     });
@@ -505,16 +538,18 @@ export const NotesProvider = ({ children }) => {
     notes, activeNoteId, selectNote, toggleCollapse, updateNoteContent,
     addNote, deleteNote, updateNoteTitle, updateNoteTags, allTags,
     filterTag, setFilterTag, activeNote, moveNote, updateNoteBackground,
+    updateNoteBackgroundSize,
     saveNoteHistory, undo, redo, defaultBackground, setDefaultBackground,
     openTabs, openTab, closeTab, closeOtherTabs, closeTabsToRight,
-    reorderTabs, restoreTab
+    reorderTabs, restoreTab, deleteTagGlobally
   }), [
     notes, activeNoteId, selectNote, toggleCollapse, updateNoteContent,
     addNote, deleteNote, updateNoteTitle, updateNoteTags, allTags,
     filterTag, activeNote, moveNote, updateNoteBackground,
+    updateNoteBackgroundSize,
     saveNoteHistory, undo, redo, defaultBackground,
     openTabs, openTab, closeTab, closeOtherTabs, closeTabsToRight,
-    reorderTabs, restoreTab
+    reorderTabs, restoreTab, deleteTagGlobally
   ]);
 
   return (

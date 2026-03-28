@@ -3,21 +3,18 @@ import { ExportService } from '../../services/ExportService';
 
 const FolderView = ({ note: folder, notes = {}, onOpenNote, setAiPanel, activeTool, setExportStatus, captureNote, runExport }) => {
     const [selectedIds, setSelectedIds] = useState([]);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-    // 1. Unificar hierarquia: usar folder.children decodificado do NotesContext
-    // Filtrar apenas IDs válidos que existem em 'notes'
+    // 1. Hierarquia de notas
     const childNotes = (folder.children || [])
         .map(id => notes[id])
         .filter(n => n !== undefined);
-
-    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     const handleExportFolder = (format) => {
         setIsMenuOpen(false);
         if (runExport) {
             runExport(folder, format);
         } else {
-            // Fallback legacy (only if runExport is missing)
             if (setExportStatus) setExportStatus({ isExporting: true, progress: 0, message: `Iniciando exportação (${format})...` });
             ExportService.exportFolder(folder, notes, {
                 format,
@@ -33,32 +30,29 @@ const FolderView = ({ note: folder, notes = {}, onOpenNote, setAiPanel, activeTo
         }
     };
 
-    // 2. Definir ícones por tipo
+    // 2. Ícones Modernos
     const getIcon = (type) => {
+        const iconStyle = { width: '32px', height: '32px', strokeWidth: '1.5' };
         switch (type) {
-            case 'text': return '📝';
-            case 'code': return '💻';
-            case 'mindmap': return '🧠';
-            case 'canvas': return '🎨';
-            case 'mermaid': return '📊';
-            case 'folder': return '📂';
-            case 'pdf': return '📕';
-            default: return '📄';
+            case 'text': return <svg {...iconStyle} viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>;
+            case 'code': return <svg {...iconStyle} viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>;
+            case 'mindmap': return <svg {...iconStyle} viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"></circle><path d="M12 9V5"></path><path d="M12 19v-4"></path><path d="M15 12h4"></path><path d="M5 12h4"></path></svg>;
+            case 'canvas': return <svg {...iconStyle} viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 19l7-7 3 3-7 7-3-3z"></path><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path></svg>;
+            case 'mermaid': return <svg {...iconStyle} viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><path d="M10 10l4 4"></path></svg>;
+            case 'folder': return <svg {...iconStyle} viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>;
+            case 'pdf': return <svg {...iconStyle} viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>;
+            default: return <svg {...iconStyle} viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path></svg>;
         }
     };
 
-    // 3. Atualizar contexto da IA quando a pasta muda ou notas mudam
+    // 3. Contexto da IA
     useEffect(() => {
-        // Se a ferramenta de IA estiver ativa (ou apenas por estar na pasta), 
-        // definimos o contexto global.
-        // O activeTool === 'ai-lasso' é o gatilho visual, mas o contexto pode estar disponível sempre.
-
         const itemsToSend = selectedIds.length > 0
             ? childNotes.filter(n => selectedIds.includes(n.id))
             : childNotes;
 
         const contextData = {
-            id: folder.id + '-' + selectedIds.join(','), // Facilita detecção de mudança
+            id: folder.id + '-' + selectedIds.join(','),
             type: 'folder_context',
             folderId: folder.id,
             folderName: folder.title,
@@ -67,25 +61,15 @@ const FolderView = ({ note: folder, notes = {}, onOpenNote, setAiPanel, activeTo
                 id: n.id,
                 title: n.title,
                 type: n.type,
-                // Um preview curto do conteúdo para a IA ter noção do que se trata
-                preview: n.content?.markdown?.slice(0, 300) || n.content?.code?.slice(0, 300) || n.text || "(no preview)"
+                preview: n.content?.markdown?.slice(0, 300) || "(sem visualização)"
             }))
         };
 
-        if (setAiPanel) {
-            setAiPanel(prev => ({
-                ...prev,
-                // Só atualiza se o contexto for diferente ou se for null
-                context: contextData
-            }));
-        }
-
-        // Cleanup: opcionalmente limpar ao sair, mas o NoteWorkspace gerencia isso trocando de editor
-    }, [folder.id, childNotes.length, setAiPanel, selectedIds]);
-    // ^ Dependências: se adicionar nota, atualiza contexto.
+        if (setAiPanel) setAiPanel(prev => ({ ...prev, context: contextData }));
+    }, [folder.id, childNotes.length, selectedIds, setAiPanel]);
 
     return (
-        <div style={{ flex: 1, padding: '40px', overflowY: 'auto' }}>
+        <div style={{ flex: 1, padding: '80px 40px 40px 40px', overflowY: 'auto' }}>
             <div style={{ marginBottom: '40px', borderBottom: '1px solid var(--border-color)', paddingBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
                     <h1 style={{ fontSize: '2.5rem', fontWeight: 800, margin: 0, background: 'var(--accent-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
@@ -121,58 +105,32 @@ const FolderView = ({ note: folder, notes = {}, onOpenNote, setAiPanel, activeTo
                             <line x1="12" y1="15" x2="12" y2="3" />
                         </svg>
                         Exportar Pasta
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: isMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
-                            <path d="m6 9 6 6 6-6" />
-                        </svg>
                     </button>
 
                     {isMenuOpen && (
                         <>
-                            <div
-                                onClick={() => setIsMenuOpen(false)}
-                                style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100 }}
-                            />
+                            <div onClick={() => setIsMenuOpen(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100 }} />
                             <div className="glass-panel" style={{
-                                position: 'absolute',
-                                top: '100%',
-                                right: 0,
-                                marginTop: '8px',
-                                minWidth: '220px',
-                                background: 'rgba(30, 30, 35, 0.95)',
-                                backdropFilter: 'blur(16px)',
-                                border: '1px solid rgba(255, 255, 255, 0.1)',
-                                borderRadius: '12px',
-                                boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-                                padding: '8px',
-                                zIndex: 101,
-                                animation: 'fadeIn 0.2s ease-out'
+                                position: 'absolute', top: '100%', right: 0, marginTop: '8px', minWidth: '220px',
+                                background: 'rgba(30, 30, 35, 0.8)', backdropFilter: 'blur(16px)',
+                                border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '12px',
+                                boxShadow: '0 10px 25px rgba(0,0,0,0.5)', padding: '8px', zIndex: 101
                             }}>
                                 {[
-                                    { id: 'md', label: 'Markdown (.md)', icon: '📝', desc: 'Ideal para textos e código' },
-                                    { id: 'png', label: 'Imagens (.png)', icon: '🖼️', desc: 'Captura visual fiel' },
-                                    { id: 'pdf', label: 'Documentos (.pdf)', icon: '📕', desc: 'Relatório profissional' },
-                                    { id: 'json', label: 'Backup (.json)', icon: '📦', desc: 'Dados brutos/Fidelidade total' },
+                                    { id: 'md', label: 'Markdown (.md)', icon: '📝' },
+                                    { id: 'png', label: 'Imagens (.png)', icon: '🖼️' },
+                                    { id: 'pdf', label: 'Documentos (.pdf)', icon: '📕' },
+                                    { id: 'json', label: 'Backup (.json)', icon: '📦' },
                                 ].map(opt => (
                                     <div
                                         key={opt.id}
                                         onClick={() => handleExportFolder(opt.id)}
+                                        style={{ padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', color: '#fff' }}
                                         onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
                                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                                        style={{
-                                            padding: '10px 12px',
-                                            borderRadius: '8px',
-                                            cursor: 'pointer',
-                                            transition: 'background 0.2s',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '12px'
-                                        }}
                                     >
-                                        <span style={{ fontSize: '1.2rem' }}>{opt.icon}</span>
-                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                            <span style={{ fontSize: '14px', fontWeight: '500', color: '#fff' }}>{opt.label}</span>
-                                            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>{opt.desc}</span>
-                                        </div>
+                                        <span>{opt.icon}</span>
+                                        <span>{opt.label}</span>
                                     </div>
                                 ))}
                             </div>
@@ -181,82 +139,56 @@ const FolderView = ({ note: folder, notes = {}, onOpenNote, setAiPanel, activeTo
                 </div>
             </div>
 
-            {childNotes.length === 0 ? (
-                <div style={{
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    height: '200px', border: '2px dashed var(--border-color)', borderRadius: '20px',
-                    color: 'var(--text-secondary)'
-                }}>
-                    <span style={{ fontSize: '3rem', opacity: 0.3, marginBottom: '20px' }}>📂</span>
-                    <p>Esta pasta está vazia.</p>
-                    <p style={{ fontSize: '0.9rem', opacity: 0.7 }}>Adicione notas pela barra lateral ou peça à IA para criar algo!</p>
-                </div>
-            ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>
-                    {childNotes.map(note => {
-                        const isSelected = selectedIds.includes(note.id);
-                        return (
-                            <div
-                                key={note.id}
-                                onClick={(e) => {
-                                    if (e.ctrlKey || e.metaKey || e.shiftKey) {
-                                        e.stopPropagation();
-                                        setSelectedIds(prev =>
-                                            prev.includes(note.id)
-                                                ? prev.filter(id => id !== note.id)
-                                                : [...prev, note.id]
-                                        );
-                                    } else {
-                                        if (selectedIds.length > 0) {
-                                            // Se houver seleção, clica limpa a seleção (comportamento padrão de explorer)
-                                            setSelectedIds([]);
-                                        } else {
-                                            onOpenNote(note.id);
-                                        }
-                                    }
-                                }}
-                                className="liquid-item"
-                                style={{
-                                    background: isSelected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.03)',
-                                    borderRadius: '16px',
-                                    padding: '20px',
-                                    cursor: 'pointer',
-                                    border: isSelected ? '2px solid #10b981' : '1px solid transparent',
-                                    transition: 'all 0.2s',
-                                    display: 'flex', flexDirection: 'column', gap: '12px',
-                                    height: '140px',
-                                    position: 'relative'
-                                }}
-                                onMouseEnter={e => {
-                                    if (!isSelected) {
-                                        e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                                        e.currentTarget.style.transform = 'translateY(-4px)';
-                                        e.currentTarget.style.borderColor = 'var(--accent-glow)';
-                                    }
-                                }}
-                                onMouseLeave={e => {
-                                    if (!isSelected) {
-                                        e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
-                                        e.currentTarget.style.transform = 'none';
-                                        e.currentTarget.style.borderColor = 'transparent';
-                                    }
-                                }}
-                            >
-                                <div style={{ fontSize: '2rem' }}>{getIcon(note.type)}</div>
-                                <div>
-                                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                        {note.title}
-                                    </h3>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                                        {new Date(note.createdAt).toLocaleDateString()}
-                                    </div>
-                                </div>
-                                {isSelected && <div style={{ position: 'absolute', top: 10, right: 10, color: '#10b981' }}>✅</div>}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>
+                {childNotes.map(note => {
+                    const isSelected = selectedIds.includes(note.id);
+                    return (
+                        <div
+                            key={note.id}
+                            onClick={(e) => {
+                                if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                                    e.stopPropagation();
+                                    setSelectedIds(prev => prev.includes(note.id) ? prev.filter(id => id !== note.id) : [...prev, note.id]);
+                                } else {
+                                    if (selectedIds.length > 0) setSelectedIds([]);
+                                    else onOpenNote(note.id);
+                                }
+                            }}
+                            className={`glass-panel liquid-item ${isSelected ? 'active' : ''}`}
+                            style={{
+                                background: isSelected ? 'rgba(99, 102, 241, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                                borderRadius: '16px', padding: '24px', cursor: 'pointer',
+                                border: isSelected ? '2px solid var(--accent-color)' : '1px solid rgba(255, 255, 255, 0.1)',
+                                backdropFilter: 'blur(10px)', transition: 'all 0.3s ease',
+                                display: 'flex', flexDirection: 'column', gap: '12px', height: '160px', position: 'relative'
+                            }}
+                            onMouseEnter={e => {
+                                if (!isSelected) {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                                    e.currentTarget.style.transform = 'translateY(-4px)';
+                                }
+                            }}
+                            onMouseLeave={e => {
+                                if (!isSelected) {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                                    e.currentTarget.style.transform = 'none';
+                                }
+                            }}
+                        >
+                            <div style={{ color: 'var(--accent-color)' }}>{getIcon(note.type)}</div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {note.title}
+                                </h3>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                                    {new Date(note.createdAt).toLocaleDateString()}
+                                </p>
                             </div>
-                        );
-                    })}
-                </div>
-            )}
+                            {isSelected && <div style={{ position: 'absolute', top: 10, right: 10, color: 'var(--accent-color)' }}>✅</div>}
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 };

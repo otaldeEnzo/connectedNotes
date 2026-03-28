@@ -174,18 +174,19 @@ const MiniMap = ({
                 bottom: 0,
                 right: 0,
                 width: `${MAP_WIDTH}px`,
-                background: 'rgba(15, 23, 42, 0.4)',
-                backdropFilter: 'blur(4px)',
-                borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
-                zIndex: 1000,
+                background: 'var(--glass-bg)',
+                backdropFilter: 'blur(16px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(16px) saturate(160%)',
+                borderLeft: '1px solid var(--glass-border)',
+                zIndex: 20000,
                 cursor: 'pointer',
                 userSelect: 'none',
                 touchAction: 'none',
                 overflow: 'hidden',
                 transition: 'background 0.2s'
             }}
-            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(15, 23, 42, 0.6)'}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(15, 23, 42, 0.4)'}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--glass-bg-hover)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--glass-bg)'}
         >
             <div style={{ position: 'relative', width: '100%', height: '100%' }}>
                 {/* Visual Elements */}

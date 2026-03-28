@@ -13,7 +13,7 @@ import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import Image from '@tiptap/extension-image';
 import { FontSize } from '../../extensions/FontSize';
-import { Bold, Italic, Underline as UnderlineIcon, List, CheckSquare, AlignLeft, AlignCenter, AlignRight, AlignJustify, Palette, Highlighter, Image as ImageIcon } from 'lucide-react';
+import { Bold, Italic, Underline as UnderlineIcon, List, CheckSquare, AlignLeft, AlignCenter, AlignRight, AlignJustify, Palette, Highlighter, Image as ImageIcon, Indent, Outdent } from 'lucide-react';
 
 const TextEditor = ({ note, updateContent }) => {
     const editor = useEditor({
@@ -214,6 +214,15 @@ const TextEditor = ({ note, updateContent }) => {
                 </button>
                 <button onClick={() => editor.chain().focus().toggleTaskList().run()} style={{ ...toolbarBtnStyle, backgroundColor: editor.isActive('taskList') ? 'var(--accent-color-transparent)' : 'transparent' }}>
                     <CheckSquare size={18} />
+                </button>
+
+                <div style={{ width: '1px', height: '24px', background: 'var(--border-color)', margin: '0 4px' }} />
+
+                <button onClick={() => editor.chain().focus().sinkListItem('listItem').sinkListItem('taskItem').run()} style={toolbarBtnStyle} title="Aumentar Recuo">
+                    <Indent size={18} />
+                </button>
+                <button onClick={() => editor.chain().focus().liftListItem('listItem').liftListItem('taskItem').run()} style={toolbarBtnStyle} title="Diminuir Recuo">
+                    <Outdent size={18} />
                 </button>
                 <button
                     onClick={() => {

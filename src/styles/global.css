@@ -21,8 +21,6 @@
   --color-border-color: var(--border-color);
 }
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
-
 :root {
   --font-main: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
 
@@ -789,9 +787,12 @@ textarea.nodrag:focus {
 
 /* --- Tab Bar Pill (Floating Top) --- */
 .tab-bar {
+  --sw: var(--sidebar-width, 260px);
+  --left-area: calc(var(--sw) + 24px + 32px);
+  /* Sidebar width + left pos + extra gap */
   position: absolute;
   top: 24px;
-  left: 50%;
+  left: calc(var(--left-area) + (100vw - var(--left-area)) / 2);
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -802,10 +803,16 @@ textarea.nodrag:focus {
   z-index: 44;
   border-radius: 9999px;
   width: max-content;
-  max-width: 85vw;
+  max-width: calc(100vw - var(--left-area) - 48px);
   transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
-    left 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    left 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+    max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: auto;
+}
+
+.tab-bar.sidebar-closed {
+  left: 50%;
+  max-width: 85vw;
 }
 
 /* Divider in Tab Bar */
@@ -857,8 +864,9 @@ textarea.nodrag:focus {
   cursor: pointer;
   transition: all 0.3s ease;
   white-space: nowrap;
-  max-width: 180px;
-  min-width: 0;
+  max-width: 200px;
+  min-width: 100px;
+  flex-shrink: 0;
   color: rgba(255, 255, 255, 0.5);
   font-size: 12px;
   font-weight: 500;
@@ -1160,18 +1168,13 @@ textarea.nodrag:focus {
 /* --- Command Palette Styles --- */
 .command-palette-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
   z-index: 10000;
   display: flex;
   align-items: flex-start;
   justify-content: center;
   padding-top: 15vh;
-  animation: fadeIn 0.15s ease-out;
 }
 
 @keyframes fadeIn {
@@ -1187,25 +1190,25 @@ textarea.nodrag:focus {
 .command-palette {
   width: 90%;
   max-width: 640px;
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
-  border-radius: 16px;
-  box-shadow: var(--glass-shadow);
-  overflow: hidden;
-  animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-top-color: var(--glass-border-top) !important;
+  border-left-color: var(--glass-border-left) !important;
+  border-radius: 24px;
+  box-shadow: var(--glass-shadow) !important;
 }
 
 @keyframes slideDown {
   from {
     opacity: 0;
-    transform: translateY(-10px) scale(0.98);
+    transform: translateY(-10px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
@@ -1290,8 +1293,18 @@ textarea.nodrag:focus {
 }
 
 .command-item.selected {
-  background: rgba(99, 102, 241, 0.15);
-  border: 1px solid rgba(99, 102, 241, 0.3);
+  background: var(--accent-gradient);
+  color: white;
+  border-radius: 12px;
+  transform: scale(1.02);
+  box-shadow: 0 8px 24px var(--accent-glow);
+}
+
+.command-item.selected .command-label,
+.command-item.selected .command-shortcut,
+.command-item.selected .command-icon {
+  color: white !important;
+  opacity: 1 !important;
 }
 
 .command-item.disabled {
@@ -1631,6 +1644,67 @@ textarea.nodrag:focus {
     transform: translateY(0);
   }
 }
+
+/* ====== Responsive Improvements ====== */
+
+/* Tablets and Phones */
+@media (max-width: 1024px) {
+  .sidebar-pill {
+    position: absolute !important;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 85% !important;
+    z-index: 5000;
+  }
+}
+
+@media (max-width: 768px) {
+  .settings-modal-content {
+    width: 95% !important;
+    height: 95% !important;
+    max-height: 95vh !important;
+  }
+
+  .settings-tabs-container {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    justify-content: flex-start !important;
+  }
+
+  .settings-tab-btn {
+    flex: 0 0 auto !important;
+    min-width: 100px;
+  }
+
+  .tab-bar {
+    padding-left: 10px !important;
+    gap: 8px !important;
+  }
+
+  .tab-bar-divider {
+    display: none;
+  }
+
+  .floating-toolbar {
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    bottom: 20px !important;
+    width: 90% !important;
+  }
+}
+
+/* Small Phones */
+@media (max-width: 480px) {
+  .tab-item .tab-title {
+    max-width: 80px;
+  }
+
+  .glass-extreme {
+    padding: 1rem !important;
+  }
+}
+
 
 
 .tag-dropdown-item {

@@ -123,7 +123,7 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
             headerActions={headerActions}
             canvasScale={canvasScale}
             canvasPan={canvasPan}
-            className="min-w-[220px]"
+            className="max-w-[800px]"
         >
             <div className="flex items-center justify-center p-8 min-h-[100px] overflow-hidden">
                 {isEditing ?

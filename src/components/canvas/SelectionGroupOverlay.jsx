@@ -1,6 +1,6 @@
 import React from 'react';
 
-const SelectionGroupOverlay = ({ bounds, onResize, onMove, onStartInteraction, onEndInteraction, onDoubleClick, isLocked, activeTool, canvasScale, canvasPan }) => {
+const SelectionGroupOverlay = ({ bounds, onResize, onMove, onStartInteraction, onEndInteraction, onDoubleClick, isLocked, activeTool, canvasScale, canvasPan, isFreeformOnly }) => {
     if (!bounds) return null;
 
     const s = canvasScale ?? 1;
@@ -85,7 +85,7 @@ const SelectionGroupOverlay = ({ bounds, onResize, onMove, onStartInteraction, o
             }}
         >
             {/* Movement Backplane (Border only) */}
-            {!isLocked && (
+            {!isLocked && !isFreeformOnly && (
                 <div 
                     onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e); }}
                     style={{
@@ -117,7 +117,7 @@ const SelectionGroupOverlay = ({ bounds, onResize, onMove, onStartInteraction, o
                 </div>
             )}
 
-            {!isLocked && (
+            {!isLocked && !isFreeformOnly && (
                 <>
                     {/* Handles aligned perfectly with block edges */}
                     <div 

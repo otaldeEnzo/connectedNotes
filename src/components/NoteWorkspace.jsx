@@ -129,6 +129,12 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
         return window.isOverInteractiveBlock === true;
     }, []);
 
+    // Reset view on note change
+    useEffect(() => {
+        setScale(1);
+        setPanOffset({ x: 0, y: 0 });
+    }, [activeNoteId]);
+
     // Simplified Mouse Tracking for Panning
     const handlePointerDown = (e) => {
         if (!canNav) return;
@@ -301,7 +307,17 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
             case 'mermaid':
                 return <MermaidEditor note={activeNote} updateContent={updateContent} />;
             case 'mindmap':
-                return <MindmapEditor note={activeNote} {...commonProps} ref={canvasRef} />;
+                return (
+                    <MindmapEditor
+                        note={activeNote}
+                        updateContent={updateContent}
+                        scale={scale || 1}
+                        panOffset={panOffset || { x: 0, y: 0 }}
+                        containerRef={containerRef}
+                        setAiPanel={setAiPanel}
+                        ref={canvasRef}
+                    />
+                );
             case 'folder':
                 return (
                     <FolderView
@@ -382,14 +398,16 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
                     width: '12000px', // Massive workspace for large notes
                     height: '12000px', // Massive workspace for large notes
                     pointerEvents: 'none',
-                    opacity: 0, // Opacity: 0 is safer than visibility: hidden for capture
+                    opacity: 1, // Opacity: 1 is required for capture
                     zIndex: -1,
-                    overflow: 'visible'
+                    overflow: 'visible',
+                    background: 'var(--canvas-bg-color)'
                 }}>
                     {shadowNote.type === 'canvas' ? (
                         <CanvasArea
                             note={shadowNote}
                             ref={hiddenEditorRef}
+                            isShadow={true}
                             scale={1}
                             panOffset={{ x: 0, y: 0 }}
                             updateContent={() => { }} // Noop for capture

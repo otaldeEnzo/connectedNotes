@@ -145,20 +145,24 @@ const MindmapNode = ({ node, onUpdate, onAddChild, onDelete, isRoot, onDragStart
                 touchAction: 'none'
             }}
         >
-            <div className={`glass-panel node-item ${isSelected ? 'selected' : ''} ${(node.color || isRoot) ? 'has-color' : ''}`} style={{
-                padding: '12px 24px',
+            <div className={`node-item ${isSelected ? 'selected' : ''} ${(node.color || isRoot) ? 'has-color' : ''}`} style={{
+                padding: '14px 28px',
                 borderRadius: '16px',
                 minWidth: '140px',
                 textAlign: 'center',
                 position: 'relative',
-                color: (isRoot || node.color) ? 'white' : 'var(--text-primary)',
+                color: '#ffffff', // Explicit high-contrast white
                 cursor: isEditing ? 'text' : 'grab',
                 background: node.color
-                    ? (isSelected ? `${node.color}ff` : node.color)
-                    : (isRoot ? 'var(--accent-gradient)' : (isSelected ? 'rgba(59, 130, 246, 0.25)' : null)),
-                border: isSelected ? '4px solid var(--accent-color)' : (node.color ? `1px solid ${node.color}88` : '1px solid var(--glass-border)'),
+                    ? (isSelected ? node.color : `${node.color}ff`) // Completely Solid !
+                    : (isRoot ? 'var(--accent-gradient)' : (isSelected ? 'rgba(59, 130, 246, 0.95)' : 'rgba(39, 39, 42, 0.95)')),
+                border: isSelected ? '2px solid rgba(255,255,255,0.8)' : (node.color ? `1px solid rgba(255,255,255,0.2)` : '1px solid var(--glass-border)'),
                 WebkitFontSmoothing: 'antialiased',
-                backdropFilter: (isSelected || node.color || isRoot) ? 'none' : 'blur(12px)'
+                MozOsxFontSmoothing: 'grayscale',
+                backdropFilter: 'none', // Removed blur entirely from colored nodes to fix text blurriness
+                boxShadow: node.color 
+                    ? `0 10px 30px ${node.color}44, inset 0 1px 1px rgba(255,255,255,0.2)` 
+                    : (isSelected ? '0 0 25px var(--accent-glow)' : 'var(--glass-shadow)')
             }}>
                 {isEditing ? (
                     <input
@@ -457,6 +461,7 @@ const MindmapEditor = forwardRef(({ note, updateContent, scale, panOffset, conta
     }, []);
 
     const handleAddChild = (parentId) => {
+        if (!note?.content?.root) return;
         const branchColors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4'];
         const parent = findNode(note.content.root, parentId);
         let newColor = parent?.color || null;
@@ -661,23 +666,37 @@ const MindmapEditor = forwardRef(({ note, updateContent, scale, panOffset, conta
     };
 
     const renderLines = (node) => {
-        if (!node.children) return null;
+        if (!node || !node.children) return null;
         return node.children.map(child => {
             const startX = tempPositions[node.id]?.x ?? node.x;
             const startY = tempPositions[node.id]?.y ?? node.y;
             const endX = tempPositions[child.id]?.x ?? child.x;
             const endY = tempPositions[child.id]?.y ?? child.y;
 
+            // Curved line (Bézier)
+            const midX = (startX + endX) / 2;
+            const pathD = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
+            const color = child.color || 'var(--accent-glow)';
+
             return (
                 <React.Fragment key={`line-${child.id}`}>
-                    <line
-                        x1={startX}
-                        y1={startY}
-                        x2={endX}
-                        y2={endY}
-                        stroke={child.color || 'var(--accent-glow)'}
-                        strokeWidth="2"
-                        strokeOpacity={child.color ? "0.6" : "0.4"}
+                    {/* Shadow/Glow layer */}
+                    <path
+                        d={pathD}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth="4"
+                        strokeOpacity="0.15"
+                        style={{ filter: 'blur(2px)' }}
+                    />
+                    {/* Main line layer */}
+                    <path
+                        d={pathD}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth="2.5"
+                        strokeOpacity={child.color ? "0.8" : "0.5"}
+                        strokeLinecap="round"
                     />
                     {renderLines(child)}
                 </React.Fragment>
@@ -685,7 +704,13 @@ const MindmapEditor = forwardRef(({ note, updateContent, scale, panOffset, conta
         });
     };
 
-    if (!note.content.root) return null;
+    if (!note?.content?.root) {
+        return (
+            <div className="flex items-center justify-center w-full h-full text-white/20 uppercase tracking-widest text-xs font-bold">
+                Inicializando Mapa Mental...
+            </div>
+        );
+    }
     const finalNodes = flattenNodes(note.content.root).map(n => ({
         ...n,
         // Apply temporary positions if dragging
@@ -698,7 +723,7 @@ const MindmapEditor = forwardRef(({ note, updateContent, scale, panOffset, conta
         <div
             onPointerDown={handleContainerDown}
             style={{
-                width: '100%', height: '100%', overflow: 'hidden',
+                width: '100%', height: '100%', overflow: 'visible',
                 position: 'relative', background: 'transparent',
                 cursor: draggingNodeId ? 'grabbing' : 'default',
                 userSelect: (draggingNodeId || selectionRect) ? 'none' : 'auto'
@@ -709,7 +734,7 @@ const MindmapEditor = forwardRef(({ note, updateContent, scale, panOffset, conta
                 transformOrigin: '0 0',
                 position: 'absolute', top: 0, left: 0
             }}>
-                <svg style={{ position: 'absolute', top: 0, left: 0, width: '50000px', height: '50000px', pointerEvents: 'none', overflow: 'visible' }}>
+                <svg style={{ position: 'absolute', top: 0, left: 0, width: '50000px', height: '50000px', pointerEvents: 'none', overflow: 'visible', zIndex: 0 }}>
                     {renderLines(note.content.root)}
                 </svg>
 

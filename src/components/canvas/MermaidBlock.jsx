@@ -3,7 +3,7 @@ import mermaid from 'mermaid';
 import BlockWrapper from './BlockWrapper';
 import { Settings, Save, AlertCircle, Maximize2 } from 'lucide-react';
 
-const MermaidBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeBlock, onInteract, isEditing, setEditing, isDragging, canvasScale, canvasPan }) => {
+const MermaidBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeBlock, onInteract, isEditing, setEditing, isDragging, canvasScale, canvasPan, isShadow }) => {
     const [code, setCode] = useState(block.code || 'graph TD;\nA-->B;\nA-->C;\nB-->D;\nC-->D;');
     const [svgContent, setSvgContent] = useState('');
     const [error, setError] = useState(null);
@@ -28,7 +28,7 @@ const MermaidBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
         const renderDiagram = async () => {
             if (!code) return;
             try {
-                const id = `mermaid-${block.id.toString().replace(/[^a-zA-Z0-9]/g, '')}`;
+                const id = `mermaid-${block.id.toString().replace(/[^a-zA-Z0-9]/g, '')}${isShadow ? '-shadow' : ''}`;
                 const { svg } = await mermaid.render(id, code);
                 setSvgContent(svg);
                 setError(null);
@@ -92,8 +92,8 @@ const MermaidBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
             <button
                 onClick={(e) => { e.stopPropagation(); if (setEditing) setEditing(!isEditing); if (isEditing) handleSave(); }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 duration-300
-                    ${isEditing 
-                        ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' 
+                    ${isEditing
+                        ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
                         : 'bg-white/5 text-white/60 hover:text-white hover:bg-white/10 dark:bg-white/5'
                     }`}
             >
@@ -128,19 +128,23 @@ const MermaidBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
             canvasScale={canvasScale}
             canvasPan={canvasPan}
             headerActions={headerActions}
-            className="min-w-[400px] min-h-[300px]"
+            className="max-w-[1200px]"
         >
             <div className="flex flex-col w-full h-full min-h-[200px] overflow-hidden">
                 {isEditing ? (
                     <div className="flex-1 w-full h-full relative p-4 animate-in slide-in-from-top-4 duration-500" onPointerDown={e => e.stopPropagation()}>
-                        <textarea
-                            autoFocus
-                            value={code}
-                            onChange={(e) => setCode(e.target.value)}
-                            onKeyDown={e => e.stopPropagation()}
-                            className="w-full h-full bg-transparent text-emerald-400/90 font-mono text-sm leading-relaxed p-4 rounded-2xl outline-none focus:ring-1 focus:ring-emerald-500/30 resize-none scrollbar-hide"
-                            placeholder="graph TD; ..."
-                        />
+                        <div className="w-full h-full glass-extreme relative overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
+                            <textarea
+                                autoFocus
+                                value={code}
+                                onChange={(e) => setCode(e.target.value)}
+                                onKeyDown={e => e.stopPropagation()}
+                                className="w-full h-full bg-transparent text-emerald-400/90 font-mono text-sm leading-relaxed p-6 outline-none focus:ring-1 focus:ring-emerald-500/30 resize-none scrollbar-hide relative z-10"
+                                placeholder="graph TD; ..."
+                            />
+                            {/* Decorative blur background inside editor */}
+                            <div className="absolute inset-0 bg-emerald-500/5 pointer-events-none" />
+                        </div>
                     </div>
                 ) : (
                     <div
@@ -168,7 +172,7 @@ const MermaidBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
                                 }}
                             />
                         )}
-                        
+
                         {/* Interactive Hint */}
                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-white/10 backdrop-blur-md px-3 py-1 rounded-full text-[10px] text-white/60 font-medium pointer-events-none tracking-tight">
                             Scroll Zoom • Drag Pan
@@ -176,7 +180,7 @@ const MermaidBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
                     </div>
                 )}
             </div>
-            
+
             {/* SVG Styles - Refined for Transparent/Glass Feel */}
             <style>{`.mermaid svg { background: transparent !important; max-width: 100% !important; height: auto !important; overflow: visible !important; } .mermaid .edgePath path { stroke: rgba(255, 255, 255, 0.4) !important; stroke-width: 1.5px !important; } .mermaid .node rect, .mermaid .node circle, .mermaid .node polygon { fill: rgba(255, 255, 255, 0.05) !important; stroke: rgba(255, 255, 255, 0.2) !important; } .mermaid text { fill: rgba(255, 255, 255, 0.8) !important; font-family: 'Plus Jakarta Sans', sans-serif !important; }`}</style>
         </BlockWrapper>

@@ -548,56 +548,76 @@ const GraphView = ({ isOpen, onClose }) => {
 
     return (
         <ReactFlowProvider>
-            <div className="graph-view-overlay" onClick={onClose}>
-                <div className="graph-view-container" onClick={(e) => e.stopPropagation()}>
-                    <div className="graph-view-header">
+            <div 
+                className="graph-view-overlay" 
+                onClick={onClose}
+                style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    backdropFilter: 'none' // Remove duplicate blur to focus on container blur
+                }}
+            >
+                <div 
+                    className="graph-view-container glass-extreme" 
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                        background: 'var(--glass-bg)',
+                        backdropFilter: 'blur(var(--glass-blur)) saturate(200%) brightness(1.1)',
+                        WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(200%) brightness(1.1)',
+                        border: '1px solid var(--glass-border)',
+                        borderTopColor: 'var(--glass-border-top)',
+                        borderLeftColor: 'var(--glass-border-left)',
+                        boxShadow: 'var(--glass-shadow)'
+                    }}
+                >
+                    <div className="graph-view-header" style={{ background: 'rgba(255, 255, 255, 0.02)', borderBottom: '1px solid var(--border-color)' }}>
                         <div className="graph-view-title">
-                            <h2>🕸️ Graph View</h2>
-                            <span className="graph-view-subtitle">{nodes.length} notas • {edges.length} conexões</span>
+                            <h2 style={{ color: 'var(--text-primary)' }}>🕸️ Graph View</h2>
+                            <span className="graph-view-subtitle" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>{nodes.length} notas • {edges.length} conexões</span>
                         </div>
                         <div className="graph-view-actions">
-                            <button className="graph-view-action-btn" onClick={handleResetLayout} title="Resetar Layout (Física)">
+                            <button className="graph-view-action-btn liquid-button" onClick={handleResetLayout} title="Resetar Layout (Física)" style={{ background: 'var(--glass-bg-hover)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
                                 <RefreshCw size={18} />
                             </button>
-                            <button className="graph-view-close" onClick={onClose}>✕</button>
+                            <button className="graph-view-close liquid-button" onClick={onClose} style={{ background: 'var(--glass-bg-hover)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>✕</button>
                         </div>
                     </div>
 
-                    <div className="graph-view-controls-bar">
-                        <div className="graph-controls-group search">
-                            <Search className="control-icon" size={16} />
+                    <div className="graph-view-controls-bar" style={{ background: 'rgba(255, 255, 255, 0.01)', borderBottom: '1px solid var(--border-color)' }}>
+                        <div className="graph-controls-group search" style={{ background: 'var(--glass-bg-hover)', border: '1px solid var(--glass-border)' }}>
+                            <Search className="control-icon" size={16} style={{ color: 'var(--accent-color)' }} />
                             <input
                                 type="text"
                                 className="graph-view-search-input"
                                 placeholder="Buscar título ou #tag..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
+                                style={{ color: 'var(--text-primary)' }}
                             />
                         </div>
 
                         <div className="graph-controls-group tags" ref={dropdownRef}>
-                            <button className={`graph-control-btn ${selectedTags.length > 0 ? 'active' : ''}`} onClick={() => setShowTagsDropdown(!showTagsDropdown)}>
+                            <button className={`graph-control-btn liquid-button ${selectedTags.length > 0 ? 'active' : ''}`} onClick={() => setShowTagsDropdown(!showTagsDropdown)} style={{ background: 'var(--glass-bg-hover)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
                                 <Hash size={16} />
                                 <span>Tags {selectedTags.length > 0 && `(${selectedTags.length})`}</span>
                                 <ChevronDown size={14} className={showTagsDropdown ? 'rotate' : ''} />
                             </button>
                             {showTagsDropdown && (
-                                <div className="graph-tags-dropdown">
+                                <div className="graph-tags-dropdown glass-extreme" style={{ background: 'var(--glass-bg-floating)', backdropFilter: 'blur(32px)' }}>
                                     {allUniqueTags.length > 0 ? (
                                         allUniqueTags.map(tag => (
-                                            <div key={tag} className={`tag-dropdown-item ${selectedTags.includes(tag) ? 'selected' : ''}`} onClick={() => toggleTag(tag)}>
-                                                <div className="tag-checkbox">{selectedTags.includes(tag) && <Check size={12} />}</div>
+                                            <div key={tag} className={`tag-dropdown-item liquid-item ${selectedTags.includes(tag) ? 'selected' : ''}`} onClick={() => toggleTag(tag)} style={{ color: 'var(--text-primary)' }}>
+                                                <div className="tag-checkbox" style={{ borderColor: 'var(--glass-border)' }}>{selectedTags.includes(tag) && <Check size={12} />}</div>
                                                 <span>#{tag}</span>
                                             </div>
                                         ))
-                                    ) : <div className="tag-dropdown-empty">Nenhuma tag cadastrada</div>}
+                                    ) : <div className="tag-dropdown-empty" style={{ color: 'var(--text-secondary)' }}>Nenhuma tag cadastrada</div>}
                                 </div>
                             )}
                         </div>
 
                         <div className="graph-controls-group type">
-                            <LayoutGrid className="control-icon" size={16} />
-                            <select className="graph-view-type-select" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                            <LayoutGrid className="control-icon" size={16} style={{ color: 'var(--accent-color)' }} />
+                            <select className="graph-view-type-select" value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ background: 'var(--glass-bg-hover)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}>
                                 <option value="all">Todos os Tipos</option>
                                 <option value="text">📝 Texto</option>
                                 <option value="canvas">🎨 Canvas</option>
@@ -620,16 +640,16 @@ const GraphView = ({ isOpen, onClose }) => {
                         />
                     </div>
 
-                    <div className="graph-view-footer-legend">
+                    <div className="graph-view-footer-legend" style={{ background: 'rgba(255, 255, 255, 0.02)', borderTop: '1px solid var(--border-color)' }}>
                         <div className="legend-dots">
-                            <div className="legend-item"><span className="dot text"></span> Texto</div>
-                            <div className="legend-item"><span className="dot canvas"></span> Canvas</div>
-                            <div className="legend-item"><span className="dot mindmap"></span> Mindmap</div>
-                            <div className="legend-item"><span className="dot code"></span> Código</div>
-                            <div className="legend-item"><span className="dot folder"></span> Pastas</div>
+                            <div className="legend-item" style={{ color: 'var(--text-primary)' }}><span className="dot text"></span> Texto</div>
+                            <div className="legend-item" style={{ color: 'var(--text-primary)' }}><span className="dot canvas"></span> Canvas</div>
+                            <div className="legend-item" style={{ color: 'var(--text-primary)' }}><span className="dot mindmap"></span> Mindmap</div>
+                            <div className="legend-item" style={{ color: 'var(--text-primary)' }}><span className="dot code"></span> Código</div>
+                            <div className="legend-item" style={{ color: 'var(--text-primary)' }}><span className="dot folder"></span> Pastas</div>
                         </div>
-                        <div className="legend-info">
-                            Arraste para fixar notas • Layout Híbrido Horizontal • Clique duplo para abrir
+                        <div className="legend-info" style={{ color: 'var(--text-secondary)' }}>
+                            Arraste para fixar • Layout Híbrido • Duplo clique para abrir
                         </div>
                     </div>
                 </div>

@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNotes } from '../contexts/NotesContext';
 import {
   DndContext,
@@ -257,10 +258,11 @@ const RootDropTarget = ({ isDragging }) => {
   );
 };
 
-const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode }) => {
+const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onToggleSidebar }) => {
   const { notes, addNote, moveNote, allTags, filterTag, setFilterTag, activeNoteId, activeNote } = useNotes();
   const [activeDragItem, setActiveDragItem] = useState(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [addMenuPos, setAddMenuPos] = useState({ top: 0, left: 0 });
   const rootNote = notes['root'];
 
   const sensors = useSensors(
@@ -318,37 +320,66 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode }) =>
         {/* Header */}
         <div className="pt-5 px-5 pb-3 border-b border-white/10">
           <div className="flex justify-between items-center mb-3 relative">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={onToggleSidebar}
+                className="liquid-button p-2.5 rounded-xl bg-white/5 border border-white/10 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer flex items-center justify-center lg:hidden"
+                title="Recolher Sidebar"
+              >
+                <SidebarIcons.X />
+              </button>
               <h2 className="text-[1.1rem] font-bold text-[var(--text-primary)]">Notas</h2>
             </div>
 
             <div className="relative">
               <button
-                onClick={() => setShowAddMenu(!showAddMenu)}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setAddMenuPos({ top: rect.bottom + 8, left: rect.left });
+                  setShowAddMenu(!showAddMenu);
+                }}
                 className="liquid-button bg-[var(--accent-gradient)] text-white border-none rounded-xl px-4 py-2 cursor-pointer text-[0.85rem] flex items-center gap-2 font-semibold shadow-[0_8px_20px_-4px_var(--accent-glow)]"
               >
                 <SidebarIcons.Plus /> Nova
               </button>
 
-              {showAddMenu && (
-                <div className="glass-panel absolute top-[calc(100%+8px)] right-0 w-[180px] p-2 z-[1000] rounded-xl border border-[var(--glass-border)] shadow-glass flex flex-col gap-1">
-                  {[
-                    { type: 'text', label: 'Nota de Texto', icon: SidebarIcons.Text },
-                    { type: 'code', label: 'Nota de Código', icon: SidebarIcons.Code },
-                    { type: 'canvas', label: 'Canvas Infinito', icon: SidebarIcons.Canvas },
-                    { type: 'mermaid', label: 'Diagrama Mermaid', icon: SidebarIcons.Mermaid },
-                    { type: 'mindmap', label: 'Mapa Mental', icon: SidebarIcons.Mindmap },
-                    { type: 'folder', label: 'Nova Pasta', icon: SidebarIcons.Folder },
-                  ].map(opt => (
-                    <button
-                      key={opt.type}
-                      className="liquid-item flex py-2 px-3 border-none bg-transparent hover:bg-white/5 text-[var(--text-primary)] text-[0.85rem] cursor-pointer items-center gap-2.5 rounded-lg text-left transition-colors"
-                      onClick={() => { addNote('root', opt.type); setShowAddMenu(false); }}
-                    >
-                      <span className="opacity-70"><opt.icon /></span> {opt.label}
-                    </button>
-                  ))}
-                </div>
+              {showAddMenu && createPortal(
+                <>
+                  <div 
+                    onClick={() => setShowAddMenu(false)} 
+                    style={{ position: 'fixed', inset: 0, zIndex: 999998 }} 
+                  />
+                  <div 
+                    className="glass-panel w-[200px] p-2 z-[999999] rounded-xl border border-white/25 shadow-[0_15px_40px_rgba(0,0,0,0.6)] flex flex-col gap-1.5"
+                    style={{
+                      position: 'fixed',
+                      top: addMenuPos.top,
+                      left: addMenuPos.left,
+                      background: 'rgba(30, 30, 35, 0.95)',
+                      backdropFilter: 'blur(24px) saturate(160%) brightness(1.1)',
+                      animation: 'fadeIn 0.2s ease-out'
+                    }}
+                  >
+                    {[
+                      { type: 'text', label: 'Nota de Texto', icon: SidebarIcons.Text },
+                      { type: 'code', label: 'Nota de Código', icon: SidebarIcons.Code },
+                      { type: 'canvas', label: 'Canvas Infinito', icon: SidebarIcons.Canvas },
+                      { type: 'mermaid', label: 'Diagrama Mermaid', icon: SidebarIcons.Mermaid },
+                      { type: 'mindmap', label: 'Mapa Mental', icon: SidebarIcons.Mindmap },
+                      { type: 'folder', label: 'Nova Pasta', icon: SidebarIcons.Folder },
+                    ].map(opt => (
+                      <button
+                        key={opt.type}
+                        className="liquid-item flex py-2.5 px-3 border-none bg-transparent hover:bg-white/10 text-[var(--text-primary)] text-[0.85rem] cursor-pointer items-center gap-3 rounded-lg text-left transition-all"
+                        onClick={() => { addNote('root', opt.type); setShowAddMenu(false); }}
+                      >
+                        <span className="opacity-80 flex items-center justify-center scale-110 text-[var(--accent-color)]"><opt.icon /></span>
+                        <span className="font-medium">{opt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>,
+                document.body
               )}
             </div>
           </div>

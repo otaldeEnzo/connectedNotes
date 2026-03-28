@@ -291,21 +291,22 @@ const PickerTreeNode = ({ nodeId, level, notes, openTabs, onSelect, expandedFold
     );
 };
 
-const TagPopoverContent = ({ onClose }) => {
-    const { activeNote, updateNoteTags } = useNotes();
+const TagPopoverContent = ({ onClose, position }) => {
+    const { activeNote, updateNoteTags, allTags, deleteTagGlobally } = useNotes();
     const note = activeNote;
 
     if (!note) return null;
 
-    return (
-        <div className="glass-extreme" style={{
-            position: 'absolute',
-            top: '48px',
-            right: '8px',
+    return createPortal(
+        <div id="tag-popover-portal" className="glass-extreme" style={{
+            position: 'fixed',
+            top: position?.top || '48px',
+            left: position?.left || 'auto',
+            right: position?.left ? 'auto' : '8px',
             width: '260px',
             padding: '16px',
             borderRadius: '16px',
-            zIndex: 1000,
+            zIndex: 2147483647, /* Z-index máximo via portal para sobressair a interface inferior */
             boxShadow: 'var(--glass-shadow)',
             animation: 'slideDown 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)'
         }}>
@@ -317,19 +318,35 @@ const TagPopoverContent = ({ onClose }) => {
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Nenhuma tag</span>
                 )}
                 {(note.tags || []).map(tag => (
-                    <div key={tag} style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        background: 'rgba(99, 102, 241, 0.15)',
-                        padding: '4px 8px',
-                        borderRadius: '12px',
-                        fontSize: '0.75rem',
-                        color: 'var(--accent-color)'
-                    }}>
+                    <div
+                        key={tag}
+                        onContextMenu={(e) => {
+                            if (e.shiftKey) {
+                                e.preventDefault();
+                                if (window.confirm(`Deseja deletar a tag #${tag} de TODAS as notas permanentemente?`)) {
+                                    deleteTagGlobally(tag);
+                                }
+                            }
+                        }}
+                        title="Shift + Clique Direito para deletar globalmente"
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: 'rgba(99, 102, 241, 0.15)',
+                            padding: '4px 10px',
+                            borderRadius: '12px',
+                            fontSize: '0.8rem',
+                            color: 'var(--accent-color)',
+                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                            transition: 'all 0.2s ease',
+                            cursor: 'default'
+                        }}
+                    >
                         <span>#{tag}</span>
                         <button
-                            onClick={() => {
+                            onClick={(e) => {
+                                e.stopPropagation();
                                 const newTags = (note.tags || []).filter(t => t !== tag);
                                 updateNoteTags(note.id, newTags);
                             }}
@@ -338,27 +355,83 @@ const TagPopoverContent = ({ onClose }) => {
                                 border: 'none',
                                 cursor: 'pointer',
                                 color: 'var(--text-secondary)',
-                                fontSize: '14px',
-                                padding: 0,
-                                display: 'flex'
+                                fontWeight: 'bold',
+                                fontSize: '1.2rem',
+                                padding: '0 2px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                transition: 'color 0.2s',
+                                lineHeight: 1
                             }}
-                        >×</button>
+                            onMouseOver={(e) => e.target.style.color = 'var(--text-primary)'}
+                            onMouseOut={(e) => e.target.style.color = 'var(--text-secondary)'}
+                            title="Remover desta nota"
+                        >
+                            ×
+                        </button>
                     </div>
                 ))}
             </div>
+
+            {/* Tags Recomendadas / Sistema */}
+            {allTags && allTags.length > 0 && (
+                <div style={{ marginBottom: '12px' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '6px', opacity: 0.8 }}>
+                        Sugestões (Shift + Clique Dir para DELETAR global):
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                        {allTags.filter(t => !(note.tags || []).includes(t)).slice(0, 10).map(t => (
+                            <button
+                                key={t}
+                                onClick={() => updateNoteTags(note.id, [...(note.tags || []), t])}
+                                onContextMenu={(e) => {
+                                    if (e.shiftKey) {
+                                        e.preventDefault();
+                                        if (window.confirm(`Deseja deletar a tag #${t} de TODAS as notas permanentemente?`)) {
+                                            deleteTagGlobally(t);
+                                        }
+                                    }
+                                }}
+                                style={{
+                                    background: 'rgba(255, 255, 255, 0.06)',
+                                    border: '1px solid var(--glass-border)',
+                                    borderRadius: '8px',
+                                    padding: '3px 8px',
+                                    fontSize: '0.75rem',
+                                    color: 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                }}
+                                onMouseOver={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)';
+                                    e.currentTarget.style.color = 'var(--text-primary)';
+                                }}
+                                onMouseOut={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                                    e.currentTarget.style.color = 'var(--text-secondary)';
+                                }}
+                            >
+                                +{t}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <input
                 type="text"
                 placeholder="Adicionar tag..."
                 autoFocus
                 style={{
                     width: '100%',
-                    padding: '8px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--canvas-bg-color)',
+                    padding: '8px 12px',
+                    borderRadius: '10px',
+                    border: '1px solid var(--glass-border)',
+                    background: 'rgba(255, 255, 255, 0.05)',
                     color: 'var(--text-primary)',
                     fontSize: '0.85rem',
-                    outline: 'none'
+                    outline: 'none',
+                    transition: 'border-color 0.3s ease, background 0.3s ease'
                 }}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter' && e.target.value.trim()) {
@@ -373,22 +446,52 @@ const TagPopoverContent = ({ onClose }) => {
                     if (e.key === 'Escape') onClose();
                 }}
             />
-        </div>
+
+            {/* Metadados da Nota */}
+            <div style={{
+                marginTop: '16px',
+                paddingTop: '12px',
+                borderTop: '1px solid var(--glass-border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+                opacity: 0.6,
+                fontSize: '0.7rem',
+                color: 'var(--text-secondary)'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Criada em:</span>
+                    <span style={{ color: 'var(--text-primary)' }}>
+                        {note.createdAt ? new Date(note.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '---'}
+                    </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Última atualização:</span>
+                    <span style={{ color: 'var(--text-primary)' }}>
+                        {note.updatedAt ? new Date(note.updatedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '---'}
+                    </span>
+                </div>
+            </div>
+        </div>,
+        document.body
     );
 };
 
 
 const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShowTagPopover, isSidebarOpen, onToggleSidebar }) => {
     const {
-        notes, openTabs, activeNoteId, selectNote, closeTab,
+        notes, openTabs, activeNoteId, selectNote, closeTab, addNote,
         reorderTabs, updateNoteTitle, closeOtherTabs, closeTabsToRight
     } = useNotes();
     const [showNotePicker, setShowNotePicker] = useState(false);
+    const [showPickerAddMenu, setShowPickerAddMenu] = useState(false);
     const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+    const [tagMenuPosition, setTagMenuPosition] = useState({ top: 0, left: 0 });
     const [expandedFolders, setExpandedFolders] = useState({});
     const [searchQuery, setSearchQuery] = useState('');
     const [contextMenu, setContextMenu] = useState(null);
     const buttonRef = useRef(null);
+    const tagButtonRef = useRef(null);
     const searchInputRef = useRef(null);
     const scrollRef = useRef(null);
 
@@ -412,22 +515,41 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
 
     // Close menu when clicking outside
     useEffect(() => {
-        if (!showNotePicker) return;
+        if (!showNotePicker && !showTagPopover) return;
 
         const handleClickOutside = (e) => {
-            if (buttonRef.current && buttonRef.current.contains(e.target)) {
-                return;
-            }
+            if (buttonRef.current && buttonRef.current.contains(e.target)) return;
+            if (tagButtonRef.current && tagButtonRef.current.contains(e.target)) return;
+
             const menuElement = document.getElementById('tab-picker-portal');
-            if (menuElement && menuElement.contains(e.target)) {
-                return;
-            }
+            if (menuElement && menuElement.contains(e.target)) return;
+
+            const tagMenuElement = document.getElementById('tag-popover-portal');
+            if (tagMenuElement && tagMenuElement.contains(e.target)) return;
+
             setShowNotePicker(false);
+            setShowPickerAddMenu(false);
+            setShowTagPopover(false);
         };
 
         document.addEventListener('mousedown', handleClickOutside, true);
         return () => document.removeEventListener('mousedown', handleClickOutside, true);
-    }, [showNotePicker]);
+    }, [showNotePicker, showTagPopover]);
+
+    // Auto-scroll to active tab
+    useEffect(() => {
+        if (!activeNoteId || !scrollRef.current) return;
+
+        // Pequeno delay para garantir que o DOM da nova aba já exista se for recém-criada
+        const timeoutId = setTimeout(() => {
+            const activeTab = scrollRef.current.querySelector(`.tab-item.active`);
+            if (activeTab) {
+                activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            }
+        }, 100);
+
+        return () => clearTimeout(timeoutId);
+    }, [activeNoteId, openTabs.length]);
 
     // Auto-focus search input when picker opens
     useEffect(() => {
@@ -550,31 +672,113 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
             .map(node => node.id || node);
     }, [searchQuery, notes]);
 
+    // Cálculo do caminho (Breadcrumbs)
+    const breadcrumbs = useMemo(() => {
+        const path = [];
+        let currentId = activeNoteId;
+
+        while (currentId && currentId !== 'root') {
+            const note = notes[currentId];
+            if (!note) break;
+            path.unshift({ id: currentId, title: note.title, type: note.type });
+
+            // Encontrar pai
+            currentId = Object.keys(notes).find(key =>
+                notes[key]?.children?.includes(currentId)
+            );
+        }
+
+        // Adicionar Raiz se não estiver vazia
+        if (notes['root']) {
+            path.unshift({ id: 'root', title: notes['root'].title, type: 'folder' });
+        }
+
+        // Remove a nota atual da trilha, mantendo apenas as pastas (o "caminho" até a nota)
+        if (path.length > 0 && path[path.length - 1].id === activeNoteId) {
+            path.pop();
+        }
+
+        return path;
+    }, [activeNoteId, notes]);
+
     return (
         <div className={`tab-bar glass-extreme ${!isSidebarOpen ? 'sidebar-closed' : ''}`}>
-            {/* Sidebar Toggle */}
-            <button
-                onClick={onToggleSidebar}
-                style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'rgba(255,255,255,0.5)',
-                    cursor: 'pointer',
-                    padding: '6px',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transition: 'all 0.2s ease',
-                    flexShrink: 0
-                }}
-                title={isSidebarOpen ? 'Fechar Sidebar' : 'Abrir Sidebar'}
-            >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <line x1="9" y1="3" x2="9" y2="21" />
-                </svg>
-            </button>
+            {/* Sidebar Toggle & Breadcrumbs */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                <button
+                    onClick={onToggleSidebar}
+                    className="liquid-button"
+                    style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'rgba(255,255,255,0.5)',
+                        cursor: 'pointer',
+                        padding: '6px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s ease',
+                    }}
+                    title={isSidebarOpen ? 'Fechar Sidebar' : 'Abrir Sidebar'}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <line x1="9" y1="3" x2="9" y2="21" />
+                    </svg>
+                </button>
+
+                {breadcrumbs.length > 0 && <div className="tab-bar-divider" />}
+
+                {/* Breadcrumbs Container - Mostra apenas o caminho das pastas */}
+                {breadcrumbs.length > 0 && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '2px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        color: 'rgba(255,255,255,0.4)',
+                        padding: '0 8px',
+                        maxWidth: isSidebarOpen ? '150px' : '300px',
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0
+                    }}>
+                        {breadcrumbs.map((crumb, idx) => (
+                            <React.Fragment key={crumb.id}>
+                                <button
+                                    onClick={() => selectNote(crumb.id, true)}
+                                    className="liquid-item"
+                                    style={{
+                                        padding: '4px 6px',
+                                        borderRadius: '6px',
+                                        background: 'transparent',
+                                        color: 'inherit',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}
+                                >
+                                    {idx === 0 ? (
+                                        <span style={{ fontSize: '14px' }}>🏠</span>
+                                    ) : (
+                                        <span style={{ opacity: 0.7, display: 'flex' }}>
+                                            {TypeIcons[crumb.type] || TypeIcons.text}
+                                        </span>
+                                    )}
+                                </button>
+                                {idx < breadcrumbs.length - 1 && (
+                                    <span style={{ opacity: 0.2, margin: '0 1px', fontSize: '10px' }}>/</span>
+                                )}
+                            </React.Fragment>
+                        ))}
+                    </div>
+                )}
+            </div>
 
             <div className="tab-bar-divider" />
 
@@ -587,6 +791,7 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                     ref={scrollRef}
                     className="tab-bar-scroll"
                     onWheel={handleWheel}
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', overflowX: 'auto', gap: '4px', padding: '0 4px' }}
                 >
                     <SortableContext
                         items={openTabs}
@@ -615,7 +820,7 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                         ref={buttonRef}
                         className={`tab-add-btn liquid-button ${showNotePicker ? 'active' : ''}`}
                         onClick={handlePickerClick}
-                        title="Abrir nota em nova aba"
+                        title="Abrir ou Criar Nota"
                         style={{
                             width: '32px',
                             height: '32px',
@@ -629,9 +834,8 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                             color: showNotePicker ? 'var(--accent-color)' : 'var(--text-secondary)'
                         }}
                     >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="12" y1="5" x2="12" y2="19" />
-                            <line x1="5" y1="12" x2="19" y2="12" />
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                         </svg>
                     </button>
                 </div>
@@ -649,8 +853,20 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                 {/* Tag Button */}
                 <div style={{ position: 'relative' }}>
                     <button
+                        ref={tagButtonRef}
                         className="liquid-button"
-                        onClick={() => setShowTagPopover(prev => !prev)}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (!showTagPopover && tagButtonRef.current) {
+                                const rect = tagButtonRef.current.getBoundingClientRect();
+                                const pWidth = 260;
+                                let left = rect.left - pWidth + rect.width;
+                                if (left < 16) left = 16;
+                                setTagMenuPosition({ top: rect.bottom + 8, left: left });
+                                setShowNotePicker(false);
+                            }
+                            setShowTagPopover(prev => !prev);
+                        }}
                         style={{
                             background: showTagPopover ? 'var(--accent-color-transparent)' : 'rgba(255, 255, 255, 0.05)',
                             border: '1px solid ' + (showTagPopover ? 'var(--accent-glow)' : 'var(--glass-border)'),
@@ -674,7 +890,10 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                     </button>
 
                     {showTagPopover && (
-                        <TagPopoverContent onClose={() => setShowTagPopover(false)} />
+                        <TagPopoverContent
+                            onClose={() => setShowTagPopover(false)}
+                            position={tagMenuPosition}
+                        />
                     )}
                 </div>
 
@@ -718,7 +937,7 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
             {showNotePicker && createPortal(
                 <div
                     id="tab-picker-portal"
-                    className="tab-note-picker"
+                    className="tab-note-picker glass-extreme"
                     style={{
                         position: 'fixed',
                         top: menuPosition.top,
@@ -726,7 +945,83 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                         zIndex: 2147483647
                     }}
                 >
-                    <div className="tab-note-picker-search">
+                    <div style={{ padding: '12px', borderBottom: '1px solid var(--glass-border)', position: 'relative' }}>
+                        <button
+                            onClick={() => setShowPickerAddMenu(!showPickerAddMenu)}
+                            className="liquid-button"
+                            style={{
+                                background: 'var(--accent-gradient)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '10px',
+                                padding: '8px 16px',
+                                cursor: 'pointer',
+                                fontSize: '0.85rem',
+                                fontWeight: '600',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                width: '100%',
+                                justifyContent: 'center',
+                                boxShadow: '0 8px 16px var(--accent-glow)'
+                            }}
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            Nova
+                        </button>
+
+                        {/* Dropdown Options - Liquid Glass Menu */}
+                        {showPickerAddMenu && (
+                            <div className="glass-panel" style={{
+                                position: 'absolute',
+                                top: 'calc(100% + 4px)',
+                                left: '12px',
+                                right: '12px',
+                                padding: '8px',
+                                borderRadius: '12px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                zIndex: 1001,
+                                animation: 'slideDown 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)'
+                            }}>
+                                {[
+                                    { type: 'text', label: 'Nota de Texto', icon: TypeIcons.text },
+                                    { type: 'code', label: 'Nota de Código', icon: TypeIcons.code },
+                                    { type: 'canvas', label: 'Canvas Infinito', icon: TypeIcons.canvas },
+                                    { type: 'mermaid', label: 'Diagrama Mermaid', icon: TypeIcons.mermaid },
+                                    { type: 'mindmap', label: 'Mapa Mental', icon: TypeIcons.mindmap },
+                                    { type: 'folder', label: 'Nova Pasta', icon: TypeIcons.folder },
+                                ].map(opt => (
+                                    <button
+                                        key={opt.type}
+                                        className="liquid-item"
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                            padding: '8px 12px', borderRadius: '8px', border: 'none',
+                                            background: 'transparent', color: 'var(--text-primary)',
+                                            cursor: 'pointer', textAlign: 'left', fontSize: '0.85rem'
+                                        }}
+                                        onClick={() => {
+                                            addNote('root', opt.type);
+                                            setShowNotePicker(false);
+                                            setShowPickerAddMenu(false);
+                                        }}
+                                    >
+                                        <span style={{ opacity: 0.7, display: 'flex' }}>{opt.icon}</span>
+                                        {opt.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="tab-note-picker-search" style={{
+                        opacity: showPickerAddMenu ? 0.2 : 1,
+                        filter: showPickerAddMenu ? 'blur(4px)' : 'none',
+                        pointerEvents: showPickerAddMenu ? 'none' : 'auto',
+                        transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)'
+                    }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
                         </svg>
@@ -738,7 +1033,12 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
-                    <div className="tab-note-picker-tree">
+                    <div className="tab-note-picker-tree" style={{
+                        opacity: showPickerAddMenu ? 0.2 : 1,
+                        filter: showPickerAddMenu ? 'blur(4px)' : 'none',
+                        pointerEvents: showPickerAddMenu ? 'none' : 'auto',
+                        transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)'
+                    }}>
                         {filteredRootChildren.length > 0 ? (
                             filteredRootChildren.map(childId => (
                                 <PickerTreeNode

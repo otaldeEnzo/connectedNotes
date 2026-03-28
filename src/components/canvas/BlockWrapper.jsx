@@ -86,7 +86,7 @@ const BlockWrapper = forwardRef(
       const checkVisibility = () => {
         const viewportW = window.innerWidth;
         const viewportH = window.innerHeight;
-        const margin = 300; 
+        const margin = 300;
         const bWidth = (block.width || 400) * s;
         const bHeight = (block.height || 300) * s;
         const inViewport = (
@@ -110,8 +110,8 @@ const BlockWrapper = forwardRef(
         for (let entry of entries) {
           const { width, height } = entry.contentRect;
           // Only update if significantly changed to avoid loops
-          if (Math.abs(width - (block.measuredWidth || 0)) > 1 || 
-              Math.abs(height - (block.measuredHeight || 0)) > 1) {
+          if (Math.abs(width - (block.measuredWidth || 0)) > 1 ||
+            Math.abs(height - (block.measuredHeight || 0)) > 1) {
             updateBlock(block.id, { measuredWidth: width, measuredHeight: height });
           }
         }
@@ -128,7 +128,7 @@ const BlockWrapper = forwardRef(
         style={{
           left: screenX,
           top: screenY,
-          transform: `scale(${s * (isDragging ? 1.02 : 1)})`,
+          transform: `translateZ(0) scale(${s * (isDragging ? 1.02 : 1)})`,
           transformOrigin: '0 0',
           width: useFixed && block.width ? `${block.width}px` : "auto",
           height: useFixed && block.height ? `${block.height}px` : "auto",
@@ -176,7 +176,7 @@ const BlockWrapper = forwardRef(
         }}
       >
         {toolbarContent}
-        <div 
+        <div
           className={`glass-extreme w-full h-full flex flex-col rounded-[2.5rem] transition-[box-shadow,border-color,background] duration-300 ${allowOverflow ? '' : 'overflow-hidden'} ${shadowTailwind}`}
           style={{
             background: "var(--glass-bg) !important",
@@ -189,7 +189,7 @@ const BlockWrapper = forwardRef(
           }}
         >
           {/* Header - Unified Transparent */}
-          <div 
+          <div
             className="block-header flex items-center justify-between px-6 py-4 cursor-grab active:cursor-grabbing"
             data-drag-handle="true"
           >

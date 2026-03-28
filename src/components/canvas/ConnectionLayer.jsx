@@ -70,9 +70,9 @@ const ConnectionLayer = ({ connections, allBlocks, tempConnection, scale, onSele
         const angleEnd = Math.atan2(end.y - cp2.y, end.x - cp2.x);
 
         const isSelected = selectedIds.includes(conn.id);
-        const baseColor = resolveColor(conn.color || '#888');
-        const color = isSelected ? 'var(--accent-color)' : baseColor;
-        const width = isSelected ? 3 : 2;
+        const baseColor = resolveColor(conn.color || 'var(--text-primary)');
+        const color = baseColor;
+        const width = 2; // Base Width
 
         const strokeDash = conn.lineStyle === 'dashed' ? [8, 6] : (conn.lineStyle === 'dotted' ? [3, 4] : null);
 
@@ -88,6 +88,20 @@ const ConnectionLayer = ({ connections, allBlocks, tempConnection, scale, onSele
                     if (onSelect) onSelect(conn.id, e.evt.shiftKey);
                 }}
             >
+                {/* Destaque de Seleção (Aura/Contorno) */}
+                {isSelected && (
+                    <Path
+                        data={d}
+                        stroke="#6366f1"
+                        strokeWidth={8 / scale}
+                        opacity={0.6}
+                        lineCap="round"
+                        lineJoin="round"
+                        dash={[6, 6]}
+                        listening={false}
+                    />
+                )}
+
                 {/* Hit Area (Invisible, wider) */}
                 <Path data={d} stroke="transparent" strokeWidth={15 / scale} fill="transparent" listening={true} />
 

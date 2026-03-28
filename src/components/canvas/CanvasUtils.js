@@ -87,15 +87,15 @@ export const getBlockDimensions = (block) => {
     }
 
     // 3. Estimativas para blocos sem dimensões (ex: criação inicial)
-    if (block.type === 'text' || block.content?.startsWith('<')) {
+    if (block.type === 'text' || (typeof block.content === 'string' && block.content.startsWith('<'))) {
         const contentLen = block.content ? block.content.length : 0;
-        const estWidth = Math.max(350, contentLen * 9 + 24);
-        const estHeight = Math.max(120, (block.content.split('\n').length * 20) + 56);
+        const estWidth = Math.max(30, contentLen * 9 + 24);
+        const estHeight = Math.max(30, (block.content.split('\n').length * 20) + 56);
         return { width: estWidth, height: estHeight };
     }
 
-    if (block.type === 'math' || block.content?.includes('\\')) {
-        return { width: 250, height: 110 };
+    if (block.type === 'math' || (typeof block.content === 'string' && block.content.includes('\\'))) {
+        return { width: 100, height: 60 };
     }
 
     if (block.type === 'mermaid' || block.code) {
@@ -138,7 +138,38 @@ export const getStrokeBounds = (points) => {
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY, right: maxX, bottom: maxY };
 };
 
-export const getGroupBounds = (blocks = [], strokes = []) => {
+export const getConnectionBounds = (connection, allBlocks) => {
+    const start = getAnchorPointById(connection.fromId, connection.fromSide, allBlocks);
+    const end = getAnchorPointById(connection.toId, connection.toSide, allBlocks);
+    if (!start || !end) return null;
+
+    const dist = Math.hypot(end.x - start.x, end.y - start.y);
+    const controlDist = Math.max(dist * 0.5, 50);
+
+    let cp1 = { x: start.x, y: start.y };
+    let cp2 = { x: end.x, y: end.y };
+
+    if (connection.fromSide === 'top') cp1.y -= controlDist;
+    if (connection.fromSide === 'bottom') cp1.y += controlDist;
+    if (connection.fromSide === 'left') cp1.x -= controlDist;
+    if (connection.fromSide === 'right') cp1.x += controlDist;
+
+    if (connection.toSide === 'top') cp2.y -= controlDist;
+    if (connection.toSide === 'bottom') cp2.y += controlDist;
+    if (connection.toSide === 'left') cp2.x -= controlDist;
+    if (connection.toSide === 'right') cp2.x += controlDist;
+
+    const points = [start, end, cp1, cp2];
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    points.forEach(p => {
+        if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y;
+    });
+
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY, right: maxX, bottom: maxY };
+};
+
+export const getGroupBounds = (blocks = [], strokes = [], connections = [], allBlocks = []) => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     let hasItems = false;
     blocks.forEach(b => {
@@ -154,6 +185,14 @@ export const getGroupBounds = (blocks = [], strokes = []) => {
         const b = getStrokeBounds(s.points);
         if (b) { hasItems = true; if (b.x < minX) minX = b.x; if (b.y < minY) minY = b.y; if (b.right > maxX) maxX = b.right; if (b.bottom > maxY) maxY = b.bottom; }
     });
+    connections.forEach(conn => {
+        const b = getConnectionBounds(conn, allBlocks);
+        if (b) {
+            hasItems = true;
+            if (b.x < minX) minX = b.x; if (b.y < minY) minY = b.y;
+            if (b.right > maxX) maxX = b.right; if (b.bottom > maxY) maxY = b.bottom;
+        }
+    });
     if (!hasItems) return null;
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 };
@@ -168,10 +207,10 @@ export const isBlockIntersecting = (block, rect) => {
     return (bx < rx + rw && bx + bw > rx && by < ry + rh && by + bh > ry);
 };
 
-export const isPointInBlock = (block, point) => {
+export const isPointInBlock = (block, point, padding = 0) => {
     const { width, height } = getBlockDimensions(block);
-    return point.x >= block.x && point.x <= block.x + width &&
-        point.y >= block.y && point.y <= block.y + height;
+    return point.x >= block.x - padding && point.x <= block.x + width + padding &&
+        point.y >= block.y - padding && point.y <= block.y + height + padding;
 };
 
 export const isStrokeInRect = (stroke, rect) => {
@@ -273,7 +312,7 @@ export const getAnchorPointById = (id, side, allBlocks, hoveredId) => {
     if (!b) return null;
 
     // Use common logic for all blocks - this now includes measured dimensions
-    const isMath = b.type === 'math' || b.content?.includes('\\');
+    const isMath = b.type === 'math' || (typeof b.content === 'string' && b.content.includes('\\'));
     const { width, height, xOffset, yOffset } = getEffectiveMathDimensions(b, isMath && (id === hoveredId));
 
     const x = (b.x || 0) - xOffset;

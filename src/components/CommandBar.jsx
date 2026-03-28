@@ -162,25 +162,51 @@ const CommandBar = ({ isOpen, onClose }) => {
     if (!isOpen) return null;
 
     return (
-        <div style={{
-            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-            backgroundColor: 'rgba(0, 0, 0, 0.6)',
-            backdropFilter: 'blur(4px)',
-            zIndex: 99999,
-            display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '10vh'
-        }} onMouseDown={onClose}>
-            <div style={{
-                width: '600px', maxWidth: '90%', maxHeight: '60vh',
-                backgroundColor: '#1e293b', // Force Slate 800 solid color
-                boxShadow: '0 0 0 1px rgba(255, 255, 255, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.5)', // Brighter border
-                border: '1px solid #475569', // Slate 600 border
-                borderRadius: '16px',
-                overflow: 'hidden', display: 'flex', flexDirection: 'column'
-            }} onMouseDown={e => e.stopPropagation()}>
-
+        <div 
+            className="command-bar-overlay" 
+            onMouseDown={onClose} 
+            style={{
+                position: 'fixed', 
+                inset: 0, 
+                zIndex: 99999,
+                display: 'flex', 
+                justifyContent: 'center', 
+                alignItems: 'flex-start', 
+                paddingTop: '10vh',
+                background: 'rgba(0, 0, 0, 0.3)',
+            }}
+        >
+            <div 
+                className="command-bar-panel" 
+                onMouseDown={e => e.stopPropagation()}
+                style={{
+                    width: '640px', 
+                    maxWidth: '90%', 
+                    maxHeight: '70vh',
+                    background: 'var(--glass-bg)',
+                    backdropFilter: 'blur(var(--glass-blur)) saturate(200%) brightness(1.1)',
+                    WebkitBackdropFilter: 'blur(var(--glass-blur)) saturate(200%) brightness(1.1)',
+                    border: '1px solid var(--glass-border)',
+                    borderTopColor: 'var(--glass-border-top)',
+                    borderLeftColor: 'var(--glass-border-left)',
+                    borderRadius: '24px',
+                    boxShadow: 'var(--glass-shadow)',
+                    overflow: 'hidden', 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    animation: 'slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+                }}
+            >
                 {/* Header / Input */}
-                <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                <div style={{ 
+                    padding: '20px', 
+                    borderBottom: '1px solid var(--border-color)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '14px',
+                    background: 'rgba(255, 255, 255, 0.02)'
+                }}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" strokeWidth="2.5" style={{ opacity: 0.8 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                     <input
                         ref={inputRef}
                         value={query}
@@ -188,53 +214,119 @@ const CommandBar = ({ isOpen, onClose }) => {
                         onKeyDown={handleListKeyDown}
                         placeholder="Pesquisar notas, conteúdo ou tags (Ctrl+F)..."
                         style={{
-                            flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                            fontSize: '18px', color: 'var(--text-primary)'
+                            flex: 1, 
+                            background: 'transparent', 
+                            border: 'none', 
+                            outline: 'none',
+                            fontSize: '18px', 
+                            color: 'var(--text-primary)',
+                            fontWeight: '500'
                         }}
                     />
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', background: 'var(--bg-tertiary)', padding: '2px 6px', borderRadius: '4px' }}>Esc</div>
+                    <div style={{ 
+                        fontSize: '11px', 
+                        color: 'var(--text-secondary)', 
+                        background: 'var(--glass-bg-hover)', 
+                        padding: '4px 8px', 
+                        borderRadius: '6px',
+                        border: '1px solid var(--glass-border)',
+                        fontWeight: '600',
+                        letterSpacing: '0.5px'
+                    }}>ESC</div>
                 </div>
 
                 {/* Results List */}
-                <div style={{ overflowY: 'auto', padding: '8px' }}>
+                <div style={{ 
+                    overflowY: 'auto', 
+                    padding: '12px',
+                    scrollbarWidth: 'none'
+                }}>
                     {results.length === 0 && query.trim() !== '' && (
-                        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                            Nenhuma nota encontrada.
+                        <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-secondary)', opacity: 0.7 }}>
+                            Nenhuma nota encontrada para "{query}"
                         </div>
                     )}
                     {results.length === 0 && query.trim() === '' && (
-                        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                            Digite para pesquisar...
+                        <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-secondary)', opacity: 0.7 }}>
+                            Comece a digitar para encontrar suas conexões...
                         </div>
                     )}
 
-                    {results.map((item, index) => (
-                        <div
-                            key={item.id}
-                            onMouseEnter={() => setSelectedIndex(index)}
-                            onClick={() => handleSelect(item.id)}
-                            style={{
-                                padding: '12px 16px',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                backgroundColor: index === selectedIndex ? 'var(--accent-color)' : 'transparent',
-                                color: index === selectedIndex ? 'white' : 'var(--text-primary)',
-                                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                            }}
-                        >
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                <div style={{ fontWeight: 500 }}>{item.title}</div>
-                                {item.matchType !== 'Title' && (
-                                    <div style={{ fontSize: '12px', opacity: 0.8, display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                        <span style={{ textTransform: 'uppercase', fontSize: '10px', fontWeight: 'bold' }}>{item.matchType}</span>
-                                        <span>&bull;</span>
-                                        <span>"{item.snippet}"</span>
-                                    </div>
-                                )}
+                    {results.map((item, index) => {
+                        const isSelected = index === selectedIndex;
+                        return (
+                            <div
+                                key={item.id}
+                                onMouseEnter={() => setSelectedIndex(index)}
+                                onClick={() => handleSelect(item.id)}
+                                style={{
+                                    padding: '14px 18px',
+                                    borderRadius: '16px',
+                                    cursor: 'pointer',
+                                    background: isSelected ? 'var(--accent-gradient)' : 'transparent',
+                                    transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                                    transform: isSelected ? 'scale(1.02)' : 'scale(1)',
+                                    boxShadow: isSelected ? '0 8px 20px var(--accent-glow)' : 'none',
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: 'center',
+                                    marginBottom: '4px'
+                                }}
+                            >
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <div style={{ 
+                                        fontWeight: '600', 
+                                        color: isSelected ? 'white' : 'var(--text-primary)',
+                                        fontSize: '15px'
+                                    }}>{item.title}</div>
+                                    {item.matchType !== 'Title' && (
+                                        <div style={{ 
+                                            fontSize: '12px', 
+                                            color: isSelected ? 'white' : 'var(--text-secondary)', 
+                                            opacity: 0.8, 
+                                            display: 'flex', 
+                                            gap: '8px', 
+                                            alignItems: 'center' 
+                                        }}>
+                                            <span style={{ 
+                                                textTransform: 'uppercase', 
+                                                fontSize: '10px', 
+                                                fontWeight: '800',
+                                                background: isSelected ? 'rgba(255,255,255,0.2)' : 'var(--accent-color-transparent)',
+                                                color: isSelected ? 'white' : 'var(--accent-color)',
+                                                padding: '1px 5px',
+                                                borderRadius: '3px'
+                                            }}>{item.matchType}</span>
+                                            <span>"{item.snippet}"</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div style={{ 
+                                    fontSize: '11px', 
+                                    color: isSelected ? 'white' : 'var(--text-secondary)',
+                                    opacity: 0.6,
+                                    textTransform: 'capitalize',
+                                    fontWeight: '500'
+                                }}>{item.type}</div>
                             </div>
-                            <div style={{ fontSize: '12px', opacity: 0.6 }}>{item.type}</div>
-                        </div>
-                    ))}
+                        );
+                    })}
+                </div>
+
+                {/* Footer hints */}
+                <div style={{
+                    padding: '10px 20px',
+                    borderTop: '1px solid var(--border-color)',
+                    display: 'flex',
+                    gap: '16px',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    opacity: 0.6,
+                    justifyContent: 'center',
+                    background: 'rgba(255, 255, 255, 0.01)'
+                }}>
+                    <span>↑↓ navegar</span>
+                    <span>↵ abrir</span>
                 </div>
             </div>
         </div>

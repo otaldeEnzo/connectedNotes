@@ -32,36 +32,53 @@ const Icons = {
   Pentagon: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l9 7-3 12H6l-3-12 9-7z" /></svg>,
   Hexagon: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l8.66 5v10L12 22l-8.66-5V7L12 2z" /></svg>,
   Octagon: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="7 2h10l5 5v10l-5 5H7l-5-5V7l5-5z" /></svg>,
-  Diamond: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l10 10-10 10-10-10z" /></svg>
+  Diamond: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l10 10-10 10-10-10z" /></svg>,
+  Maximize: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
 };
 
 // --- Componentes Locais ---
 
-const ToolbarButton = ({ icon: Icon, label, onClick, isActive, color, className = "", style = {} }) => (
-  <button
-    onClick={onClick}
-    title={label}
-    className={`liquid-item toolbar-btn ${isActive ? 'active' : ''} ${className}`}
-    style={{
-      background: isActive ? 'rgba(124, 58, 237, 0.25)' : 'transparent',
-      border: 'none',
-      borderRadius: '10px',
-      padding: '8px',
-      margin: '0 1px',
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      flexShrink: 0,
-      color: isActive ? '#ffffff' : 'rgba(255,255,255,0.5)',
-      transition: 'all 0.3s ease',
-      boxShadow: isActive ? '0 0 16px rgba(124, 58, 237, 0.5)' : 'none',
-      ...style
-    }}
-  >
-    <Icon />
-  </button>
-);
+const ToolbarButton = ({ icon: Icon, label, onClick, isActive, color, className = "", style = {}, toolId }) => {
+  const [pulse, setPulse] = useState(false);
+
+  useEffect(() => {
+    const handleShortcut = (e) => {
+      if (e.detail?.tool === toolId) {
+        setPulse(true);
+        setTimeout(() => setPulse(false), 600);
+      }
+    };
+    window.addEventListener('toolShortcutTriggered', handleShortcut);
+    return () => window.removeEventListener('toolShortcutTriggered', handleShortcut);
+  }, [toolId]);
+
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      className={`liquid-item toolbar-btn ${isActive ? 'active' : ''} ${pulse ? 'shortcut-pulse' : ''} ${className}`}
+      style={{
+        background: isActive ? 'var(--accent-gradient)' : 'transparent',
+        border: 'none',
+        borderRadius: '10px',
+        padding: '8px',
+        margin: '0 1px',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        color: (isActive || pulse) ? '#ffffff' : 'rgba(255,255,255,0.5)',
+        transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        boxShadow: pulse ? '0 0 25px var(--accent-glow)' : (isActive ? '0 0 16px rgba(124, 58, 237, 0.5)' : 'none'),
+        transform: pulse ? 'scale(1.2)' : 'scale(1)',
+        ...style
+      }}
+    >
+      <Icon />
+    </button>
+  );
+};
 
 const ColorDot = ({ color, width, selected, onClick, onRemove, onEdit, isHighlighter }) => {
   const editInputRef = useRef(null);
@@ -110,7 +127,7 @@ const FloatingToolbar = ({
   activeForcedShape, setActiveForcedShape,
   sidebarWidth = 0
 }) => {
-  const { activeNoteId, activeNote, updateNoteBackground, setDefaultBackground, updateNoteContent } = useNotes();
+  const { activeNoteId, activeNote, updateNoteBackground, updateNoteBackgroundSize, setDefaultBackground, updateNoteContent } = useNotes();
   const fileInputRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -149,11 +166,60 @@ const FloatingToolbar = ({
   }, [showShapeMenu, activeForcedShape, setActiveForcedShape]);
 
   const [isDragging, setIsDragging] = useState(false);
-  const [orientation, setOrientation] = useState('horizontal'); // 'horizontal' | 'vertical'
-  const [position, setPosition] = useState(() => {
-    const saved = localStorage.getItem('connected-notes-toolbar-pos');
-    return saved ? JSON.parse(saved) : { x: window.innerWidth / 2, y: window.innerHeight - 60 };
+  const [orientation, setOrientation] = useState(() => {
+    return localStorage.getItem('connected-notes-toolbar-orientation') || 'horizontal';
   });
+  
+  // New positioning strategy: Save side + distance to edge
+  const [position, setPosition] = useState(() => {
+    const saved = localStorage.getItem('connected-notes-toolbar-anchor');
+    if (saved) {
+      const anchor = JSON.parse(saved);
+      const winW = window.innerWidth;
+      const winH = window.innerHeight;
+      
+      let x = winW / 2;
+      let y = winH - 60;
+      
+      if (anchor.sideX === 'left') x = anchor.offsetX;
+      else if (anchor.sideX === 'right') x = winW - anchor.offsetX;
+      
+      if (anchor.sideY === 'top') y = anchor.offsetY;
+      else if (anchor.sideY === 'bottom') y = winH - anchor.offsetY;
+      
+      return { x, y };
+    }
+    return { x: window.innerWidth / 2, y: window.innerHeight - 60 };
+  });
+
+  // Keep position updated during resize using the same anchor logic
+  useEffect(() => {
+    const handleResize = () => {
+      const saved = localStorage.getItem('connected-notes-toolbar-anchor');
+      if (saved) {
+        const anchor = JSON.parse(saved);
+        const winW = window.innerWidth;
+        const winH = window.innerHeight;
+        
+        setPosition(prev => {
+          let x = prev.x;
+          let y = prev.y;
+          
+          if (anchor.sideX === 'left') x = anchor.offsetX;
+          else if (anchor.sideX === 'right') x = winW - anchor.offsetX;
+          
+          if (anchor.sideY === 'top') y = anchor.offsetY;
+          else if (anchor.sideY === 'bottom') y = winH - anchor.offsetY;
+          
+          return { x, y };
+        });
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const dragStartRef = useRef({ x: 0, y: 0, initialX: 0, initialY: 0 });
   const lastBoundaryRef = useRef(sidebarWidth > 0 ? sidebarWidth + 56 : 60);
 
@@ -179,7 +245,7 @@ const FloatingToolbar = ({
     }
 
   lastBoundaryRef.current = currentBoundary;
-  }, [sidebarWidth, isDragging, orientation, position.x]);
+  }, [sidebarWidth, isDragging, orientation]);
 
   // Click away to close submenus and discovery (ColorPicker)
   useEffect(() => {
@@ -271,7 +337,20 @@ const FloatingToolbar = ({
     setOrientation(snappedOrientation);
     setIsDragging(false);
 
-    localStorage.setItem('connected-notes-toolbar-pos', JSON.stringify(finalPos));
+    // Save Anchor Logic (Distance to closest edge)
+    const sideX = (snappedX < winW / 2) ? 'left' : 'right';
+    const sideY = (snappedY < winH / 2) ? 'top' : 'bottom';
+    
+    const anchor = {
+      sideX,
+      sideY,
+      offsetX: sideX === 'left' ? snappedX : winW - snappedX,
+      offsetY: sideY === 'top' ? snappedY : winH - snappedY
+    };
+
+    localStorage.setItem('connected-notes-toolbar-anchor', JSON.stringify(anchor));
+    localStorage.setItem('connected-notes-toolbar-orientation', snappedOrientation);
+
     if (containerRef.current) containerRef.current.releasePointerCapture(e.pointerId);
   };
 
@@ -412,26 +491,64 @@ const FloatingToolbar = ({
           ),
           justifyContent: 'center'
         }}>
-          {[
-            { id: 'dots', label: 'Pontilhado' },
-            { id: 'lines', label: 'Pautado' },
-            { id: 'grid', label: 'Quadriculado' },
-            { id: 'blank', label: 'Branco' }
-          ].map(p => (
-            <button
-              key={p.id}
-              className="liquid-button"
-              onClick={() => handleSetPaper(p.id)}
-              style={{
-                background: paperPattern === p.id ? 'var(--accent-color)' : 'transparent',
-                color: paperPattern === p.id ? 'white' : 'var(--text-primary)',
-                border: '1px solid var(--border-color)', borderRadius: '10px',
-                padding: '6px 12px', fontSize: '0.85rem', cursor: 'pointer'
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
+          <div style={{ display: 'flex', flexDirection: orientation === 'horizontal' ? 'row' : 'column', gap: '8px' }}>
+            {[
+              { id: 'dots', label: 'Pontilhado' },
+              { id: 'lines', label: 'Pautado' },
+              { id: 'grid', label: 'Quadriculado' },
+              { id: 'blank', label: 'Branco' }
+            ].map(p => (
+              <button
+                key={p.id}
+                className="liquid-button"
+                onClick={() => handleSetPaper(p.id)}
+                style={{
+                  background: (activeNote?.content?.background || 'dots') === p.id ? 'var(--accent-color)' : 'transparent',
+                  color: (activeNote?.content?.background || 'dots') === p.id ? 'white' : 'var(--text-primary)',
+                  border: '1px solid var(--border-color)', borderRadius: '10px',
+                  padding: '6px 12px', fontSize: '0.85rem', cursor: 'pointer'
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {paperPattern !== 'blank' && (
+            <>
+              <div style={{ width: orientation === 'horizontal' ? '1px' : '80%', height: orientation === 'horizontal' ? '20px' : '1px', background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '2px' }}>
+                {[
+                  { label: 'P', value: 25, title: 'Baixo' },
+                  { label: 'M', value: 45, title: 'Médio' },
+                  { label: 'G', value: 80, title: 'Grande' }
+                ].map((stage) => {
+                  const isSelected = (activeNote?.content?.backgroundSize || 45) === stage.value;
+                  return (
+                    <button
+                      key={stage.value}
+                      onClick={() => activeNoteId && updateNoteBackgroundSize(activeNoteId, stage.value)}
+                      title={stage.title}
+                      style={{
+                        padding: '4px 10px',
+                        border: 'none',
+                        borderRadius: '10px',
+                        fontSize: '0.7rem',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        background: isSelected ? 'var(--accent-gradient)' : 'transparent',
+                        color: isSelected ? 'white' : 'rgba(255,255,255,0.5)',
+                        transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                        minWidth: '28px'
+                      }}
+                    >
+                      {stage.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -703,8 +820,8 @@ const FloatingToolbar = ({
           }}>
             <input type="file" accept="application/pdf" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileChange} />
 
-            <ToolbarButton icon={Icons.Cursor} label="Cursor" isActive={activeTool === 'cursor'} onClick={() => { setActiveTool('cursor'); closeAllSubMenus(); }} />
-            <ToolbarButton icon={Icons.AI} label="AI" isActive={activeTool === 'ai-lasso'} onClick={() => { setActiveTool('ai-lasso'); closeAllSubMenus(); }} />
+            <ToolbarButton toolId="cursor" icon={Icons.Cursor} label="Cursor" isActive={activeTool === 'cursor'} onClick={() => { setActiveTool('cursor'); closeAllSubMenus(); }} />
+            <ToolbarButton toolId="ai-lasso" icon={Icons.AI} label="AI" isActive={activeTool === 'ai-lasso'} onClick={() => { setActiveTool('ai-lasso'); closeAllSubMenus(); }} />
 
             <div style={{ width: orientation === 'horizontal' ? '1px' : '12px', height: orientation === 'horizontal' ? '12px' : '1px', background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
 
@@ -736,19 +853,19 @@ const FloatingToolbar = ({
                 gap: '8px', padding: '8px', borderRadius: '16px',
                 transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)', zIndex: 10
               }} className="glass-extreme">
-                <ToolbarButton icon={Icons.Type} label="Texto" isActive={activeTool === 'text'} onClick={() => { setActiveTool('text'); setShowAddInMenu(false); }} />
-                <ToolbarButton icon={Icons.Math} label="Fórmula" isActive={activeTool === 'math'} onClick={() => { setActiveTool('math'); setShowAddInMenu(false); }} />
-                <ToolbarButton icon={Icons.Code} label="GGB" isActive={activeTool === 'ggb'} onClick={() => { setActiveTool('ggb'); setShowAddInMenu(false); }} />
-                <ToolbarButton icon={Icons.Mermaid} label="Diagram" isActive={activeTool === 'mermaid'} onClick={() => { setActiveTool('mermaid'); setShowAddInMenu(false); }} />
-                <ToolbarButton icon={Icons.Mindmap} label="Mindmap" isActive={activeTool === 'mindmap'} onClick={() => { setActiveTool('mindmap'); setShowAddInMenu(false); }} />
+                <ToolbarButton toolId="text" icon={Icons.Type} label="Texto" isActive={activeTool === 'text'} onClick={() => { setActiveTool('text'); setShowAddInMenu(false); }} />
+                <ToolbarButton toolId="math" icon={Icons.Math} label="Fórmula" isActive={activeTool === 'math'} onClick={() => { setActiveTool('math'); setShowAddInMenu(false); }} />
+                <ToolbarButton toolId="ggb" icon={Icons.Code} label="GGB" isActive={activeTool === 'ggb'} onClick={() => { setActiveTool('ggb'); setShowAddInMenu(false); }} />
+                <ToolbarButton toolId="mermaid" icon={Icons.Mermaid} label="Diagram" isActive={activeTool === 'mermaid'} onClick={() => { setActiveTool('mermaid'); setShowAddInMenu(false); }} />
+                <ToolbarButton toolId="mindmap" icon={Icons.Mindmap} label="Mindmap" isActive={activeTool === 'mindmap'} onClick={() => { setActiveTool('mindmap'); setShowAddInMenu(false); }} />
               </div>
             </div>
 
             <div style={{ width: orientation === 'horizontal' ? '1px' : '12px', height: orientation === 'horizontal' ? '12px' : '1px', background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
 
-            <ToolbarButton icon={Icons.Pen} label="Caneta" isActive={activeTool === 'pen'} onClick={() => { setActiveTool('pen'); setPenType('pen'); closeAllSubMenus(); }} />
-            <ToolbarButton icon={Icons.Highlighter} label="Marca-texto" isActive={activeTool === 'highlighter'} onClick={() => { setActiveTool('highlighter'); setPenType('highlighter'); closeAllSubMenus(); }} />
-            <ToolbarButton icon={Icons.Eraser} label="Borracha" isActive={activeTool === 'eraser'} onClick={() => { setActiveTool('eraser'); closeAllSubMenus(); }} />
+            <ToolbarButton toolId="pen" icon={Icons.Pen} label="Caneta" isActive={activeTool === 'pen'} onClick={() => { setActiveTool('pen'); setPenType('pen'); closeAllSubMenus(); }} />
+            <ToolbarButton toolId="highlighter" icon={Icons.Highlighter} label="Marca-texto" isActive={activeTool === 'highlighter'} onClick={() => { setActiveTool('highlighter'); setPenType('highlighter'); closeAllSubMenus(); }} />
+            <ToolbarButton toolId="eraser" icon={Icons.Eraser} label="Borracha" isActive={activeTool === 'eraser'} onClick={() => { setActiveTool('eraser'); closeAllSubMenus(); }} />
 
             <div style={{ width: orientation === 'horizontal' ? '1px' : '12px', height: orientation === 'horizontal' ? '12px' : '1px', background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
 

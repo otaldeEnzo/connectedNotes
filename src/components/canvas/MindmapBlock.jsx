@@ -99,10 +99,10 @@ const MindmapBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
             canvasScale={canvasScale}
             canvasPan={canvasPan}
             headerActions={headerActions}
-            className="min-w-[400px] min-h-[350px]"
+            className="max-w-[1200px]"
         >
             <div
-                className="flex flex-col w-full h-full relative block-interactivity-isolation cursor-grab active:cursor-grabbing group/mindmap overflow-hidden select-none animate-in fade-in duration-500"
+                className="flex flex-col w-full h-full relative block-interactivity-isolation cursor-grab active:cursor-grabbing group/mindmap overflow-visible select-none animate-in fade-in duration-500"
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
@@ -114,10 +114,10 @@ const MindmapBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
                 }}
             >
                 <div 
-                    className="transition-transform duration-300 ease-out h-full"
+                    className="transition-transform duration-300 ease-out"
                     style={{
                         transform: isEditing ? 'none' : `scale(${transform.scale})`,
-                        transformOrigin: 'center center'
+                        transformOrigin: 'center center',
                     }}
                 >
                     <MindmapEditor

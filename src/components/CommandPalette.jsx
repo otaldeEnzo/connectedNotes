@@ -1,14 +1,21 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNotes } from '../contexts/NotesContext';
 
 const CommandPalette = ({ isOpen, onClose, onExecuteCommand }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [recentCommands, setRecentCommands] = useState([]);
+    const [mounted, setMounted] = useState(false);
     const inputRef = useRef(null);
     const listRef = useRef(null);
 
     const { notes, activeNoteId, createNote, deleteNote, selectNote, openTabs } = useNotes();
+
+    useEffect(() => {
+        setMounted(true);
+        return () => setMounted(false);
+    }, []);
 
     // Command Registry
     const commands = useMemo(() => [
@@ -374,13 +381,33 @@ const CommandPalette = ({ isOpen, onClose, onExecuteCommand }) => {
         }
     }, []);
 
-    if (!isOpen) return null;
+    if (!isOpen || !mounted || !document.body) return null;
 
     let flatIndex = 0;
 
-    return (
-        <div className="command-palette-overlay" onClick={onClose}>
-            <div className="command-palette" onClick={(e) => e.stopPropagation()}>
+    return createPortal(
+        <div 
+            className="command-palette-overlay" 
+            onClick={onClose} 
+            style={{ 
+                position: 'fixed',
+                inset: 0,
+                zIndex: 999998,
+                background: 'rgba(0, 0, 0, 0.3)',
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                paddingTop: '15vh'
+            }}
+        >
+            <div
+                className="command-palette"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                    zIndex: 999999,
+                    position: 'relative'
+                }}
+            >
                 <div className="command-palette-header">
                     <input
                         ref={inputRef}
@@ -438,7 +465,8 @@ const CommandPalette = ({ isOpen, onClose, onExecuteCommand }) => {
                     <span>esc fechar</span>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

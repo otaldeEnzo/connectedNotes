@@ -113,6 +113,51 @@ function AppContent() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeNoteId, openTabs, selectNote, closeTab, addNote, restoreTab]);
 
+  // Quick Tool Shortcuts (Alpha-numeric 1-6) - for Canvas Productivity
+  useEffect(() => {
+    if (activeNote?.type !== 'canvas') return;
+
+    const handleQuickTools = (e) => {
+      // Don't trigger if typing in any text field
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const toolMap = {
+        '1': 'cursor',
+        '2': 'ai-lasso',
+        '3': 'pen',
+        '4': 'highlighter',
+        '5': 'eraser',
+        '6': 'text'
+      };
+
+      if (toolMap[e.key]) {
+        e.preventDefault();
+        setActiveTool(toolMap[e.key]);
+        // Trigger a visual feedback event for the toolbar
+        window.dispatchEvent(new CustomEvent('toolShortcutTriggered', { detail: { tool: toolMap[e.key] } }));
+      }
+    };
+
+    window.addEventListener('keydown', handleQuickTools);
+    return () => window.removeEventListener('keydown', handleQuickTools);
+  }, [activeNote?.type, setActiveTool]);
+
+  // Handle auto-collapsing sidebar on small screens
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        setIsSidebarOpen(false);
+      }
+    };
+    
+    // Check initial state
+    handleResize();
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // ... (rest of effects)
 
 
@@ -494,6 +539,7 @@ function AppContent() {
             onOpenSearch={() => setIsSearchOpen(true)}
             onToggleTheme={toggleTheme}
             onOpenSettings={() => setIsSettingsOpen(true)}
+            onToggleSidebar={toggleSidebar}
             isDarkMode={isDarkMode}
           />
         </div>

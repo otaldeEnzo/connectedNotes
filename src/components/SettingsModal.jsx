@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { validateKey } from '../services/AIService';
 import { useNotes } from '../contexts/NotesContext';
 
@@ -51,9 +52,9 @@ const GlassInput = ({ ...props }) => (
     style={{
       width: '100%', padding: '14px 18px', borderRadius: '14px',
       border: '1px solid rgba(255,255,255,0.15)',
-      background: 'rgba(0,0,0,0.3)', color: '#ffffff',
+      background: 'rgba(255,255,255,0.05)', color: 'inherit',
       outline: 'none', fontSize: '0.95rem',
-      boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.4)',
+      boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.1)',
       transition: 'all 0.2s ease',
       height: '50px',
       boxSizing: 'border-box',
@@ -61,13 +62,13 @@ const GlassInput = ({ ...props }) => (
     }}
     onFocus={(e) => {
       e.target.style.borderColor = 'var(--accent-color)';
-      e.target.style.boxShadow = 'inset 0 2px 10px rgba(0,0,0,0.5), 0 0 0 3px rgba(139, 92, 246, 0.15)';
-      e.target.style.background = 'rgba(0,0,0,0.4)';
+      e.target.style.boxShadow = 'inset 0 2px 10px rgba(0,0,0,0.15), 0 0 0 3px var(--accent-glow)';
+      e.target.style.background = 'rgba(255,255,255,0.08)';
     }}
     onBlur={(e) => {
       e.target.style.borderColor = 'rgba(255,255,255,0.15)';
-      e.target.style.boxShadow = 'inset 0 2px 10px rgba(0,0,0,0.4)';
-      e.target.style.background = 'rgba(0,0,0,0.3)';
+      e.target.style.boxShadow = 'inset 0 2px 10px rgba(0,0,0,0.1)';
+      e.target.style.background = 'rgba(255,255,255,0.05)';
     }}
   />
 );
@@ -148,7 +149,81 @@ const GlassSelect = ({ value, options, onChange, label }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const [rect, setRect] = useState(null);
+
+  const updateRect = () => {
+    if (containerRef.current) {
+      setRect(containerRef.current.getBoundingClientRect());
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      updateRect();
+      window.addEventListener('scroll', updateRect, true);
+      window.addEventListener('resize', updateRect);
+    }
+    return () => {
+      window.removeEventListener('scroll', updateRect, true);
+      window.removeEventListener('resize', updateRect);
+    };
+  }, [isOpen]);
+
   const selectedOption = options.find(o => o.id === value) || options[0];
+
+  // Usando um portal "simulado" com position fixed para garantir que o blur funcione (separado do stacking context do modal)
+  const dropdown = isOpen && rect && (
+    <div
+      className="glass-extreme"
+      style={{
+        position: 'fixed', 
+        top: `${rect.bottom + 8}px`, 
+        left: `${rect.left}px`,
+        width: `${rect.width}px`,
+        zIndex: 100000, 
+        borderRadius: '14px',
+        padding: '6px', 
+        overflow: 'hidden', 
+        animation: 'slideDown 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        background: 'var(--glass-bg-floating)',
+        backdropFilter: 'blur(32px) saturate(180%) brightness(1.2)',
+        WebkitBackdropFilter: 'blur(32px) saturate(180%) brightness(1.2)',
+        border: '1px solid rgba(255, 255, 255, 0.2)',
+        boxShadow: 'var(--glass-shadow), 0 20px 40px rgba(0,0,0,0.4)',
+        pointerEvents: 'auto'
+      }}
+    >
+      {options.map(opt => (
+        <div
+          key={opt.id}
+          onClick={() => { onChange(opt.id); setIsOpen(false); }}
+          className="liquid-item"
+          style={{
+            padding: '12px 14px', borderRadius: '10px', cursor: 'pointer',
+            fontSize: '0.9rem', color: value === opt.id ? 'var(--accent-color)' : 'var(--text-primary)',
+            background: value === opt.id ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+            fontWeight: value === opt.id ? 700 : 500,
+            display: 'flex', alignItems: 'center', gap: '10px'
+          }}
+          onMouseEnter={(e) => { 
+            if (value !== opt.id) {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; 
+              e.currentTarget.style.transform = 'translateX(4px)';
+            }
+          }}
+          onMouseLeave={(e) => { 
+            if (value !== opt.id) {
+              e.currentTarget.style.background = 'transparent'; 
+              e.currentTarget.style.transform = 'translateX(0)';
+            }
+          }}
+        >
+          {value === opt.id && <span style={{ width: '4px', height: '14px', background: 'var(--accent-color)', borderRadius: '2px' }} />}
+          {opt.label}
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', pointerEvents: 'auto' }}>
@@ -158,44 +233,18 @@ const GlassSelect = ({ value, options, onChange, label }) => {
         style={{
           width: '100%', height: '50px', padding: '0 18px', borderRadius: '14px',
           border: '1px solid rgba(255,255,255,0.15)',
-          background: 'rgba(0,0,0,0.3)', color: '#ffffff',
+          background: 'rgba(255,255,255,0.05)', color: 'inherit',
           fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           cursor: 'pointer', boxSizing: 'border-box', transition: 'all 0.3s ease',
-          boxShadow: isOpen ? '0 0 0 3px rgba(139, 92, 246, 0.2)' : 'inset 0 2px 10px rgba(0,0,0,0.4)',
+          boxShadow: isOpen ? '0 0 0 3px var(--accent-glow)' : 'inset 0 2px 10px rgba(0,0,0,0.1)',
         }}
       >
-        <span>{selectedOption?.label || ''}</span>
+        <span style={{ fontWeight: 500 }}>{selectedOption?.label || ''}</span>
         <span style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s', opacity: 0.5 }}>▼</span>
       </div>
 
-      {isOpen && (
-        <div
-          className="glass-extreme"
-          style={{
-            position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0,
-            zIndex: 100, borderRadius: '14px',
-            padding: '6px', overflow: 'hidden', animation: 'fadeIn 0.2s ease',
-          }}
-        >
-          {options.map(opt => (
-            <div
-              key={opt.id}
-              onClick={() => { onChange(opt.id); setIsOpen(false); }}
-              className="liquid-item"
-              style={{
-                padding: '12px 14px', borderRadius: '10px', cursor: 'pointer',
-                fontSize: '0.9rem', color: value === opt.id ? 'var(--accent-color)' : 'white',
-                background: value === opt.id ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
-                fontWeight: value === opt.id ? 700 : 500
-              }}
-              onMouseEnter={(e) => { if (value !== opt.id) e.target.style.background = 'rgba(255,255,255,0.05)'; }}
-              onMouseLeave={(e) => { if (value !== opt.id) e.target.style.background = 'transparent'; }}
-            >
-              {opt.label}
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Renderizado no body via Portal para ser imune ao transform do Modal e resolver Scroll Offset */}
+      {isOpen && rect && createPortal(dropdown, document.body)}
     </div>
   );
 };
@@ -433,7 +482,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
 
   const renderAppearance = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div className="glass-extreme" style={{ padding: '16px', borderRadius: '16px' }}>
+      <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', background: 'var(--glass-bg)' }}>
         <label style={{ display: 'block', marginBottom: '12px', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>
           CHAVE DE API (GOOGLE GEMINI)
         </label>
@@ -462,7 +511,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
         </div>
       </div>
 
-      <div className="glass-extreme" style={{ padding: '16px', borderRadius: '16px' }}>
+      <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', background: 'var(--glass-bg)' }}>
         <label style={{ display: 'block', marginBottom: '16px', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>TEMAS PADRÃO</label>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
           {standardThemes.map(theme => (
@@ -542,7 +591,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
         )}
       </div>
 
-      <div className="glass-extreme" style={{ padding: '16px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--glass-bg)' }}>
         <GlassSlider
           label="Tamanho da Fonte" unit="px"
           min={12} max={18} value={tempAppearance.fontSize}
@@ -572,7 +621,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
 
   const renderEditor = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div className="glass-extreme" style={{ padding: '16px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--glass-bg)' }}>
         <GlassSelect
           label="TIPO DE NOTA PADRÃO"
           options={NOTE_TYPES}
@@ -587,7 +636,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
         />
       </div>
 
-      <div className="glass-extreme" style={{ padding: '16px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--glass-bg)' }}>
         <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>EDITOR DE CÓDIGO</label>
 
         <GlassToggle
@@ -612,7 +661,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
 
   const renderData = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div className="glass-extreme" style={{ padding: '16px', borderRadius: '16px' }}>
+      <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', background: 'var(--glass-bg)' }}>
         <label style={{ display: 'block', marginBottom: '16px', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>BACKUP E SINCRONIZAÇÃO</label>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <button
@@ -641,7 +690,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
         </div>
       </div>
 
-      <div className="glass-extreme" style={{ padding: '16px', borderRadius: '16px' }}>
+      <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', background: 'var(--glass-bg)' }}>
         <label style={{ display: 'block', marginBottom: '16px', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px', color: '#fda4af' }}>ZONA DE PERIGO</label>
         {!showClearConfirm ? (
           <button
@@ -708,20 +757,22 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 3000,
+      backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 3000,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      backdropFilter: 'blur(8px)',
+      backdropFilter: 'blur(60px) saturate(180%) brightness(0.8)',
+      WebkitBackdropFilter: 'blur(60px) saturate(180%) brightness(0.8)',
       animation: 'fadeIn 0.3s ease'
     }} onClick={onClose}>
       <div
-        className="glass-extreme"
+        className="glass-extreme settings-modal-content"
         onClick={(e) => e.stopPropagation()}
         style={{
           padding: '0', borderRadius: '32px', width: '92%', maxWidth: '520px',
-          color: '#ffffff',
+          color: 'var(--text-primary)',
           maxHeight: '88vh', display: 'flex', flexDirection: 'column',
-          overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)',
-          boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
+          overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)',
+          background: 'var(--glass-bg-floating)',
+          boxShadow: 'var(--glass-shadow), 0 30px 80px rgba(0,0,0,0.5)',
           animation: 'modalScale 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)'
         }}
       >
@@ -752,13 +803,17 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', padding: '0 12px', background: 'rgba(0,0,0,0.1)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <div 
+          className="settings-tabs-container"
+          style={{ display: 'flex', padding: '0 12px', background: 'rgba(0,0,0,0.1)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+        >
           {TABS.map(tab => {
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
+                className="settings-tab-btn"
                 style={{
                   flex: 1, padding: '16px 4px', border: 'none', background: 'transparent',
                   cursor: 'pointer', fontSize: '0.8rem', fontWeight: isActive ? 700 : 500,

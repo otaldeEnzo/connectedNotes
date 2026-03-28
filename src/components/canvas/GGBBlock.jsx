@@ -18,7 +18,7 @@ const loadGGBScript = () => {
     return ggbScriptPromise;
 };
 
-const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool, isDragging, canvasScale, canvasPan }) => {
+const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool, isDragging, canvasScale, canvasPan, isShadow }) => {
     const containerRef = useRef(null);
     const cardRef = useRef(null);
     const appletRef = useRef(null);
@@ -26,10 +26,10 @@ const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool,
     const ggbPanRef = useRef({ isPanning: false });
     const [isLoaded, setIsLoaded] = useState(false);
     const [isCentered, setIsCentered] = useState(false);
-    const [showInput, setShowInput] = useState(!!block.expression);
+    const [showInput, setShowInput] = useState(!block.expression);
     const [inputExpression, setInputExpression] = useState(block.expression ?? '');
-    const [currentTitle, setCurrentTitle] = useState(block.expression ? `Gráfico de ${block.expression}` : 'Gráfico GeoGebra');
-    const appletId = useRef(`ggb_${block.id.toString().replace(/\./g, '_')}`);
+    const [currentTitle, setCurrentTitle] = useState(block.expression ? (block.customTitle || `Gráfico de ${block.expression}`) : 'Gráfico GeoGebra');
+    const appletId = useRef(`ggb_${block.id.toString().replace(/\./g, '_')}${isShadow ? '_shadow' : ''}`);
 
     const blockWidth = block.width || 500;
     const blockHeight = block.height || 400;
@@ -118,13 +118,15 @@ const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool,
                         // Fail silently for perspective errors
                     }
 
-                    if (block.commands) {
-                        block.commands.forEach(cmd => {
-                            try { api.evalCommand(cmd); } catch (e) { }
-                        });
-                    } else if (block.expression) {
-                        try { api.evalCommand(block.expression); } catch (e) { }
-                    }
+                    setTimeout(() => {
+                        if (block.commands) {
+                            block.commands.forEach(cmd => {
+                                try { api.evalCommand(cmd); } catch (e) { }
+                            });
+                        } else if (block.expression) {
+                            try { api.evalCommand(block.expression); } catch (e) { }
+                        }
+                    }, 100);
                 },
                 ...block.ggbParameters
             };
