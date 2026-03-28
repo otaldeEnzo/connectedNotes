@@ -70,9 +70,12 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
         onPlot(mathExpr);
     };
 
-    const handleDoubleClick = (e) => {
-        e.stopPropagation();
-        setEditing(true);
+    const handleContentClick = (e) => {
+        if (!e.target.closest('.block-header')) {
+            e.stopPropagation();
+            // Pequeno delay para garantir que o onPointerDown global do canvas já executou
+            setTimeout(() => setEditing(true), 10);
+        }
     };
 
     const dotColor = block.color === 'amber' ? '#f59e0b' : (block.color === 'cyan' ? '#06b6d4' : '#f59e0b');
@@ -83,7 +86,7 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
             <button
                 disabled={isProcessing}
                 onClick={handleSolve}
-                className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 active:scale-95 transition-all duration-300 disabled:opacity-50"
+                className="p-1.5 rounded-lg bg-[var(--glass-surface)] text-[var(--text-primary)] opacity-50 hover:opacity-100 hover:text-white active:scale-95 transition-all duration-300 disabled:opacity-50 liquid-button"
                 title="Resolver com AI"
             >
                 {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
@@ -91,14 +94,14 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
             <button
                 disabled={isProcessing}
                 onClick={handleSteps}
-                className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 active:scale-95 transition-all duration-300 disabled:opacity-50"
+                className="p-1.5 rounded-lg bg-[var(--glass-surface)] text-[var(--text-primary)] opacity-50 hover:opacity-100 hover:text-white active:scale-95 transition-all duration-300 disabled:opacity-50 liquid-button"
                 title="Ver Passos"
             >
                 {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <ListChecks size={12} />}
             </button>
             <button
                 onClick={handlePlotRequest}
-                className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 active:scale-95 transition-all duration-300"
+                className="p-1.5 rounded-lg bg-[var(--glass-surface)] text-[var(--text-primary)] opacity-50 hover:opacity-100 hover:text-white active:scale-95 transition-all duration-300 liquid-button"
                 title="Plotar Gráfico"
             >
                 <BarChart3 size={12} />
@@ -116,8 +119,13 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
             isDragging={isDragging}
             isDarkMode={isDarkMode}
             onClose={removeBlock}
-            onInteract={onInteract}
-            onDoubleClick={handleDoubleClick}
+            onInteract={(id, e) => {
+                if (e.target.closest('.block-header')) {
+                    onInteract && onInteract(id, e);
+                } else {
+                    handleContentClick(e);
+                }
+            }}
             onRename={(id, name) => updateBlock(id, { customTitle: name })}
             updateBlock={updateBlock}
             headerActions={headerActions}
@@ -129,24 +137,27 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
                 {isEditing ?
                     <textarea
                         autoFocus
+                        className="no-interact bg-transparent border-none text-[var(--text-primary)] text-xl font-mono text-center outline-none resize-none w-full animate-in zoom-in-95 duration-300 pointer-events-auto"
                         value={block.content}
                         onChange={(e) => updateBlock(block.id, { content: e.target.value })}
                         onBlur={() => { setEditing(false); if (saveHistory) saveHistory(); }}
+                        onPointerDown={e => e.stopPropagation()}
                         onMouseDown={e => e.stopPropagation()}
-                        className="bg-transparent border-none text-white text-xl font-mono text-center outline-none resize-none w-full animate-in zoom-in-95 duration-300"
+                        onClick={e => e.stopPropagation()}
                         placeholder="Ex: E = mc^2"
                         rows={2}
                     />
                     :
                     <div
                         ref={containerRef}
-                        className="text-white text-3xl font-light text-center w-full animate-in fade-in zoom-in-95 duration-300 cursor-text hover:scale-[1.02] transition-transform"
+                        onClick={handleContentClick}
+                        className="text-[var(--text-primary)] text-3xl font-light text-center w-full animate-in fade-in zoom-in-95 duration-300 cursor-text hover:scale-[1.02] transition-transform"
                     />
                 }
             </div>
-            
+
             {/* KaTeX Support - Keep font sizes consistent */}
-            <style>{`.katex { font-size: 1.2em !important; color: white !important; }`}</style>
+            <style>{`.katex { font-size: 1.2em !important; color: var(--text-primary) !important; }`}</style>
         </BlockWrapper>
     );
 };

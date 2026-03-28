@@ -70,7 +70,7 @@ const ConnectionLayer = ({ connections, allBlocks, tempConnection, scale, onSele
         const angleEnd = Math.atan2(end.y - cp2.y, end.x - cp2.x);
 
         const isSelected = selectedIds.includes(conn.id);
-        const baseColor = resolveColor(conn.color || 'var(--text-primary)');
+        const baseColor = resolveColor(conn.color || 'var(--text-primary)', document.body.dataset.theme === 'dark');
         const color = baseColor;
         const width = 2; // Base Width
 

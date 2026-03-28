@@ -45,9 +45,9 @@ const BlockWrapper = forwardRef(
       cyan: "hover:shadow-[0_20px_50px_rgba(6,182,212,0.3)]",
       fuchsia: "hover:shadow-[0_20px_50px_rgba(217,70,239,0.3)]",
       emerald: "hover:shadow-[0_20px_50px_rgba(16,185,129,0.3)]",
-      rose: "hover:shadow-[0_20px_50px_rgba(244,63,94,0.3)]",
-      amber: "hover:shadow-[0_20px_50px_rgba(245,158,11,0.3)]",
       blue: "hover:shadow-[0_20px_50px_rgba(59,130,246,0.3)]",
+      amber: "hover:shadow-[0_20px_50px_rgba(245,158,11,0.3)]",
+      rose: "hover:shadow-[0_20px_50px_rgba(244,63,94,0.35)]",
     };
 
     const shadowTailwind = colorShadows[block.color] || colorShadows["violet"];
@@ -135,7 +135,7 @@ const BlockWrapper = forwardRef(
           zIndex: isEditing ? 1000 : isDragging ? 1001 : block.zIndex || 50,
         }}
         onPointerDown={(e) => {
-          if (e.target.closest("button") || e.target.closest("input") || e.target.closest(".no-interact")) {
+          if (e.target.closest("button") || e.target.closest("input") || e.target.closest(".no-interact") || isRenamingTitle) {
             e.stopPropagation();
             return;
           }
@@ -150,6 +150,7 @@ const BlockWrapper = forwardRef(
           }
 
           if (e.target.closest(".block-content") && isEditing) {
+            e.stopPropagation();
             return;
           }
 
@@ -157,19 +158,12 @@ const BlockWrapper = forwardRef(
           onInteract && onInteract(block.id, e);
         }}
         onMouseEnter={() => {
-          if (block.expression !== undefined || block.code !== undefined || block.type === 'mindmap') {
+          if (block.expression !== undefined || block.code !== undefined || block.type === 'mindmap' || block.type === 'math') {
             window.isOverInteractiveBlock = true;
           }
         }}
         onMouseLeave={() => {
           window.isOverInteractiveBlock = false;
-        }}
-        onDoubleClick={(e) => {
-          if (e.target.closest(".block-header") && !e.target.closest("button")) {
-            handleTitleDoubleClick(e);
-            return;
-          }
-          if (onDoubleClick) onDoubleClick(e);
         }}
         onKeyDown={(e) => {
           if (isEditing || isRenamingTitle) e.stopPropagation();
@@ -177,12 +171,12 @@ const BlockWrapper = forwardRef(
       >
         {toolbarContent}
         <div
-          className={`glass-extreme w-full h-full flex flex-col rounded-[2.5rem] transition-[box-shadow,border-color,background] duration-300 ${allowOverflow ? '' : 'overflow-hidden'} ${shadowTailwind}`}
+          className={`glass-extreme glass-card w-full h-full flex flex-col rounded-[2.5rem] transition-[box-shadow,border-color,background] duration-300 ${allowOverflow ? '' : 'overflow-hidden'} ${shadowTailwind}`}
           style={{
-            background: "var(--glass-bg) !important",
-            backdropFilter: isVisible ? `blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important` : 'none',
-            WebkitBackdropFilter: isVisible ? `blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important` : 'none',
-            border: '1.5px solid var(--glass-border) !important',
+            background: "var(--glass-bg)",
+            backdropFilter: isVisible ? `blur(var(--glass-blur)) saturate(250%) brightness(0.95)` : 'none',
+            WebkitBackdropFilter: isVisible ? `blur(var(--glass-blur)) saturate(250%) brightness(0.95)` : 'none',
+            border: '1.5px solid var(--glass-border)',
             boxShadow: `var(--glass-shadow), 0 0 0 calc(var(--select-opacity, 0) * 2px) var(--accent-color)`,
             "--select-opacity": isSelected ? 1 : 0,
             ...style,
@@ -210,10 +204,18 @@ const BlockWrapper = forwardRef(
                     if (e.key === "Escape") setIsRenamingTitle(false);
                   }}
                   onPointerDown={(e) => e.stopPropagation()}
-                  className="bg-transparent border-none border-b border-accent-color text-white/90 text-[0.85rem] font-semibold tracking-tight outline-none px-0.5 min-w-[40px] max-w-[200px]"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                  className="no-interact bg-transparent border-none border-b border-accent-color text-[var(--text-primary)] text-[0.85rem] font-semibold tracking-tight outline-none px-0.5 min-w-[40px] max-w-[200px] pointer-events-auto relative z-[10001]"
                 />
               ) : (
-                <span className="text-white/80 text-[0.85rem] font-semibold tracking-tight uppercase opacity-60 group-hover:opacity-100 transition-opacity">
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTitleDoubleClick(e);
+                  }}
+                  className="text-[var(--text-primary)] text-[0.85rem] font-semibold tracking-tight uppercase opacity-60 hover:opacity-100 transition-opacity cursor-text no-interact"
+                >
                   {displayTitle}
                 </span>
               )}
@@ -222,7 +224,7 @@ const BlockWrapper = forwardRef(
             <div className="flex items-center gap-2">
               {headerActions}
               <button
-                className="p-2 rounded-xl hover:bg-white/10 text-white/40 hover:text-white transition-all duration-300 active:scale-90"
+                className="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] opacity-40 hover:opacity-100 transition-all duration-300 active:scale-90"
                 onClick={(e) => {
                   e.stopPropagation();
                   onClose && onClose(block.id);

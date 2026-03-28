@@ -61,33 +61,41 @@ const BlockHandles = ({ block, type, onStartConnection, onCompleteConnection, is
             zIndex: 200
         }}>
             {/* Top */}
-            <div className="connector-handle"
-                data-block-id={block.id} data-side="top"
-                onPointerDown={(e) => onStartConnection(e, block.id, 'top')}
-                onPointerUp={(e) => onCompleteConnection && onCompleteConnection(e, block.id, 'top')}
-                {...handleHoverProps}
-                style={{ ...handleStyle, top: -22, left: '50%', transform: 'translateX(-50%)' }} />
+            {type !== 'pdf' && (
+                <div className="connector-handle"
+                    data-block-id={block.id} data-side="top"
+                    onPointerDown={(e) => onStartConnection(e, block.id, 'top')}
+                    onPointerUp={(e) => onCompleteConnection && onCompleteConnection(e, block.id, 'top')}
+                    {...handleHoverProps}
+                    style={{ ...handleStyle, top: -22, left: '50%', transform: 'translateX(-50%)' }} />
+            )}
             {/* Bottom */}
-            <div className="connector-handle"
-                data-block-id={block.id} data-side="bottom"
-                onPointerDown={(e) => onStartConnection(e, block.id, 'bottom')}
-                onPointerUp={(e) => onCompleteConnection && onCompleteConnection(e, block.id, 'bottom')}
-                {...handleHoverProps}
-                style={{ ...handleStyle, bottom: -22, left: '50%', transform: 'translateX(-50%)' }} />
+            {type !== 'pdf' && (
+                <div className="connector-handle"
+                    data-block-id={block.id} data-side="bottom"
+                    onPointerDown={(e) => onStartConnection(e, block.id, 'bottom')}
+                    onPointerUp={(e) => onCompleteConnection && onCompleteConnection(e, block.id, 'bottom')}
+                    {...handleHoverProps}
+                    style={{ ...handleStyle, bottom: -22, left: '50%', transform: 'translateX(-50%)' }} />
+            )}
             {/* Left */}
-            <div className="connector-handle"
-                data-block-id={block.id} data-side="left"
-                onPointerDown={(e) => onStartConnection(e, block.id, 'left')}
-                onPointerUp={(e) => onCompleteConnection && onCompleteConnection(e, block.id, 'left')}
-                {...handleHoverProps}
-                style={{ ...handleStyle, top: '50%', left: -22, transform: 'translateY(-50%)' }} />
+            {type !== 'pdf' && (
+                <div className="connector-handle"
+                    data-block-id={block.id} data-side="left"
+                    onPointerDown={(e) => onStartConnection(e, block.id, 'left')}
+                    onPointerUp={(e) => onCompleteConnection && onCompleteConnection(e, block.id, 'left')}
+                    {...handleHoverProps}
+                    style={{ ...handleStyle, top: '50%', left: -22, transform: 'translateY(-50%)' }} />
+            )}
             {/* Right */}
-            <div className="connector-handle"
-                data-block-id={block.id} data-side="right"
-                onPointerDown={(e) => onStartConnection(e, block.id, 'right')}
-                onPointerUp={(e) => onCompleteConnection && onCompleteConnection(e, block.id, 'right')}
-                {...handleHoverProps}
-                style={{ ...handleStyle, top: '50%', right: -22, transform: 'translateY(-50%)' }} />
+            {type !== 'pdf' && (
+                <div className="connector-handle"
+                    data-block-id={block.id} data-side="right"
+                    onPointerDown={(e) => onStartConnection(e, block.id, 'right')}
+                    onPointerUp={(e) => onCompleteConnection && onCompleteConnection(e, block.id, 'right')}
+                    {...handleHoverProps}
+                    style={{ ...handleStyle, top: '50%', right: -22, transform: 'translateY(-50%)' }} />
+            )}
         </div>
     );
 };

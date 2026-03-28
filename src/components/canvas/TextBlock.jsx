@@ -87,7 +87,7 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
     // Common Tailwind button class for toolbar
     const toolBtnClass = (isActive) => `
         p-2 rounded-xl transition-all duration-300 flex items-center justify-center 
-        ${isActive ? 'bg-accent-color text-white' : 'hover:bg-white/10 text-white/60 hover:text-white'}
+        ${isActive ? 'bg-accent-color text-white' : 'hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] opacity-60 hover:opacity-100'}
         active:scale-95
     `;
 
@@ -125,20 +125,20 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
                             background: 'var(--glass-bg-floating)',
                             backdropFilter: 'blur(32px) saturate(180%) brightness(1.1)',
                             WebkitBackdropFilter: 'blur(32px) saturate(180%) brightness(1.1)',
-                            border: '1.5px solid rgba(255, 255, 255, 0.2)',
-                            boxShadow: 'var(--glass-shadow), 0 20px 50px rgba(0,0,0,0.3)'
+                            border: '1.5px solid var(--glass-border)',
+                            boxShadow: 'var(--glass-shadow), 0 20px 50px rgba(0,0,0,0.1)'
                         }}
                         onPointerDown={(e) => { e.stopPropagation(); if (e.target.tagName !== 'SELECT') e.preventDefault(); }}
                         onMouseDown={(e) => { e.stopPropagation(); if (e.target.tagName !== 'SELECT') e.preventDefault(); }}
                     >
-                        <div className="flex items-center gap-2 pr-4 border-r border-white/10">
+                        <div className="flex items-center gap-2 pr-4 border-r border-[var(--glass-border)]">
                             <select
-                                className="bg-transparent text-white/80 text-sm font-medium outline-none cursor-pointer p-1 hover:text-white transition-colors"
+                                className="bg-transparent text-[var(--text-secondary)] text-sm font-medium outline-none cursor-pointer p-1 transition-colors"
                                 value={editor.getAttributes('textStyle').fontSize || '16px'}
                                 onChange={(e) => editor.chain().focus().setFontSize(e.target.value).run()}
                             >
                                 {fontSizes.map(size => (
-                                    <option key={size} value={size} className="bg-[#1e1e2e] text-white">{size}</option>
+                                    <option key={size} value={size} className="bg-[var(--glass-bg-floating)] text-[var(--text-primary)]">{size}</option>
                                 ))}
                             </select>
                         </div>
@@ -177,7 +177,7 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
                         </div>
 
                         <div className="flex items-center gap-1.5 ml-2">
-                            {['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#ffffff'].map(c => (
+                            {['#ef4444', '#f59e0b', '#10b981', '#3b82f6', 'var(--text-primary)'].map(c => (
                                 <button
                                     key={c}
                                     onClick={() => editor.chain().focus().setColor(c).run()}
@@ -193,7 +193,7 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
             <div className={`p-6 pb-8 transition-colors duration-500`}>
                 <EditorContent
                     editor={editor}
-                    className="ProseMirror-container text-white/90"
+                    className="ProseMirror-container text-[var(--text-primary)]"
                     style={{
                         height: '100%',
                         cursor: isEditing ? 'text' : 'grab',

@@ -405,7 +405,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
     const newTheme = {
       id: newId,
       name: 'Novo Tema',
-      colors: { bg: '#202020', text: '#ffffff', accent: '#ff0055' }
+      colors: { bg: '#202020ff', text: '#ffffffff', accent: '#ff0055ff' }
     };
     setEditingTheme(newTheme);
     setIsCreating(true);
@@ -579,9 +579,32 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <GlassInput type="text" value={editingTheme.name} onChange={(e) => updateEditingName(e.target.value)} placeholder="Nome do Tema" />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><span style={{ fontSize: '0.85rem' }}>Fundo</span><input type="color" value={editingTheme.colors.bg} onChange={(e) => updateEditingColor('bg', e.target.value)} style={{ width: '28px', height: '28px', border: '2px solid rgba(255,255,255,0.2)', borderRadius: '50%', cursor: 'pointer', background: 'transparent' }} /></div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><span style={{ fontSize: '0.85rem' }}>Texto</span><input type="color" value={editingTheme.colors.text} onChange={(e) => updateEditingColor('text', e.target.value)} style={{ width: '28px', height: '28px', border: '2px solid rgba(255,255,255,0.2)', borderRadius: '50%', cursor: 'pointer', background: 'transparent' }} /></div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><span style={{ fontSize: '0.85rem' }}>Destaque</span><input type="color" value={editingTheme.colors.accent} onChange={(e) => updateEditingColor('accent', e.target.value)} style={{ width: '28px', height: '28px', border: '2px solid rgba(255,255,255,0.2)', borderRadius: '50%', cursor: 'pointer', background: 'transparent' }} /></div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><span style={{ fontSize: '0.85rem' }}>Fundo (ARGB)</span><input type="color" value={editingTheme.colors.bg.substring(0, 7)} onChange={(e) => updateEditingColor('bg', e.target.value + (editingTheme.colors.bg.substring(7) || 'ff'))} style={{ width: '28px', height: '28px', border: '2px solid rgba(255,255,255,0.2)', borderRadius: '50%', cursor: 'pointer', background: 'transparent' }} /></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input type="range" min="0" max="255" value={parseInt(editingTheme.colors.bg.substring(7) || 'ff', 16)} onChange={(e) => {
+                  const alpha = parseInt(e.target.value).toString(16).padStart(2, '0');
+                  updateEditingColor('bg', editingTheme.colors.bg.substring(0, 7) + alpha);
+                }} style={{ flex: 1 }} />
+                <span style={{ fontSize: '0.7rem', width: '30px', opacity: 0.6 }}>{Math.round(parseInt(editingTheme.colors.bg.substring(7) || 'ff', 16) / 2.55)}%</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}><span style={{ fontSize: '0.85rem' }}>Texto (ARGB)</span><input type="color" value={editingTheme.colors.text.substring(0, 7)} onChange={(e) => updateEditingColor('text', e.target.value + (editingTheme.colors.text.substring(7) || 'ff'))} style={{ width: '28px', height: '28px', border: '2px solid rgba(255,255,255,0.2)', borderRadius: '50%', cursor: 'pointer', background: 'transparent' }} /></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input type="range" min="0" max="255" value={parseInt(editingTheme.colors.text.substring(7) || 'ff', 16)} onChange={(e) => {
+                  const alpha = parseInt(e.target.value).toString(16).padStart(2, '0');
+                  updateEditingColor('text', editingTheme.colors.text.substring(0, 7) + alpha);
+                }} style={{ flex: 1 }} />
+                <span style={{ fontSize: '0.7rem', width: '30px', opacity: 0.6 }}>{Math.round(parseInt(editingTheme.colors.text.substring(7) || 'ff', 16) / 2.55)}%</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}><span style={{ fontSize: '0.85rem' }}>Destaque (ARGB)</span><input type="color" value={editingTheme.colors.accent.substring(0, 7)} onChange={(e) => updateEditingColor('accent', e.target.value + (editingTheme.colors.accent.substring(7) || 'ff'))} style={{ width: '28px', height: '28px', border: '2px solid rgba(255,255,255,0.2)', borderRadius: '50%', cursor: 'pointer', background: 'transparent' }} /></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input type="range" min="0" max="255" value={parseInt(editingTheme.colors.accent.substring(7) || 'ff', 16)} onChange={(e) => {
+                  const alpha = parseInt(e.target.value).toString(16).padStart(2, '0');
+                  updateEditingColor('accent', editingTheme.colors.accent.substring(0, 7) + alpha);
+                }} style={{ flex: 1 }} />
+                <span style={{ fontSize: '0.7rem', width: '30px', opacity: 0.6 }}>{Math.round(parseInt(editingTheme.colors.accent.substring(7) || 'ff', 16) / 2.55)}%</span>
+              </div>
               <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                 <button onClick={handleSaveTheme} className="liquid-button" style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: 'var(--accent-color)', color: 'white', cursor: 'pointer', fontWeight: 600 }}>Salvar</button>
                 <button onClick={() => handleDeleteTheme(editingTheme.id)} className="liquid-button" style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}>Excluir</button>

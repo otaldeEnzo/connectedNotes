@@ -1,11 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  /* Liquid Glass Design Tokens */
-  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  /* Liquid Glass Design Tokens (Moscaro & Neo-Light) */
+  --shadow-glass: 0 20px 50px rgba(30, 41, 59, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.6);
   --shadow-glass-dark: inset 0 1px 1px rgba(255, 255, 255, 0.18), 0 25px 60px rgba(0, 0, 0, 0.5);
 
-  --color-glass-light: rgba(255, 255, 255, 0.45);
+  --color-glass-light: rgba(255, 255, 255, 0.4);
+  /* Refração Glacial Moscaro */
   --color-glass-dark: rgba(255, 255, 255, 0.03);
 
   --blur-glass: 60px;
@@ -23,39 +24,37 @@
 
 :root {
   --font-main: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
-
-  /* --- Paleta Liquid Glass (Tema Claro) --- */
-  --bg-color: #f8fafc;
-  --sidebar-bg: rgba(255, 255, 255, 0.35);
-  --canvas-bg-color: rgba(255, 255, 255, 0.2);
-
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
+  /* Moscaro Liquid Glass - Ultra-Transparent Crystal Light */
+  --bg-color: #f1f5f9;
+  --text-primary: #000000;
+  --text-secondary: #000000;
   --accent-color: #6366f1;
-  --accent-glow: rgba(99, 102, 241, 0.5);
-  --border-color: rgba(0, 0, 0, 0.08);
-  --dot-color: rgba(0, 0, 0, 0.05);
-  /* Suave no claro */
+  --accent-glow: rgba(99, 102, 241, 0.4);
+  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  --sidebar-bg: rgba(255, 255, 255, 0.3);
+  /* Transparência Radical */
+  --border-color: rgba(0, 0, 0, 0.1);
+  --glass-bg: rgba(255, 255, 255, 0.25);
+  /* Liquid Glass Puro */
+  --glass-bg-floating: rgba(255, 255, 255, 0.5);
+  --glass-bg-hover: rgba(255, 255, 255, 0.35);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-border-top: rgba(255, 255, 255, 0.95);
+  --glass-border-left: rgba(255, 255, 255, 0.6);
+  --glass-shadow:
+    0 30px 60px rgba(15, 23, 42, 0.15),
+    0 0 0 1px rgba(255, 255, 255, 0.7);
+  --glass-blur: 60px;
+  --glass-surface: rgba(0, 0, 0, 0.05);
+  /* Mais visível sobre transparência */
+  --glass-surface-focus: rgba(0, 0, 0, 0.1);
 
-  /* Liquid Glass Core */
-  --glass-bg: rgba(255, 255, 255, 0.12);
-  --glass-bg-floating: rgba(255, 255, 255, 0.65);
-  --glass-bg-hover: rgba(255, 255, 255, 0.18);
-  --glass-border: rgba(0, 0, 0, 0.08);
-  --glass-border-top: rgba(255, 255, 255, 0.6);
-  --glass-border-left: rgba(255, 255, 255, 0.3);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.4);
-  --glass-blur: 40px;
+  /* --- Configurações das Bolhas (Blobs) --- */
+  --blob-opacity: 0.12;
+  --blob-blur: 180px;
+  --blob-blend: multiply;
+  /* Funciona melhor no fundo claro */
 
-  /* Organic Dynamic Mesh Gradient - Refined for V2 */
-  --bg-gradient: radial-gradient(at 0% 0%, rgba(220, 230, 255, 0.4) 0px, transparent 50%),
-    radial-gradient(at 100% 0%, rgba(238, 242, 255, 0.8) 0px, transparent 50%),
-    radial-gradient(at 50% 50%, rgba(210, 220, 255, 0.3) 0px, transparent 50%),
-    radial-gradient(at 0% 100%, rgba(220, 230, 255, 0.4) 0px, transparent 50%),
-    radial-gradient(at 100% 100%, rgba(200, 210, 255, 0.4) 0px, transparent 50%),
-    #f8fafc;
-
-  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
   --accent-color-transparent: rgba(99, 102, 241, 0.12);
 
   /* Highlight Colors (Light Mode - Pastel) */
@@ -71,6 +70,7 @@
   --graph-edge-tag: rgba(99, 102, 241, 0.2);
   --graph-edge-hier: rgba(99, 102, 241, 0.4);
   --node-bg: #ffffff;
+  --text-inverse: #ffffff;
 }
 
 /* --- Tema Escuro (Ativado via classe .dark-mode no body) --- */
@@ -101,8 +101,16 @@
     inset 0 1px 1px rgba(255, 255, 255, 0.18),
     0 25px 60px rgba(0, 0, 0, 0.5);
   --glass-blur: 60px;
+  --glass-surface: rgba(255, 255, 255, 0.05);
+  --glass-surface-focus: rgba(255, 255, 255, 0.08);
 
   --bg-gradient: none;
+
+  /* --- Configurações das Bolhas (Blobs - Dark) --- */
+  --blob-opacity: 0.18;
+  --blob-blur: 150px;
+  --blob-blend: screen;
+  /* Brilha no fundo escuro */
 
   /* Custom Highlight Colors (Dark Mode) */
   --mj-highlight-yellow: rgba(255, 235, 59, 0.3);
@@ -117,6 +125,7 @@
   --graph-edge-tag: rgba(129, 140, 248, 0.2);
   --graph-edge-hier: rgba(129, 140, 248, 0.4);
   --node-bg: rgba(255, 255, 255, 0.05);
+  --text-inverse: #ffffff;
 }
 
 /* --- Nord Theme --- */
@@ -133,13 +142,17 @@
   --border-color: rgba(236, 239, 244, 0.1);
   --dot-color: rgba(236, 239, 244, 0.05);
 
-  --glass-bg: rgba(46, 52, 64, 0.7);
-  --glass-bg-floating: rgba(30, 34, 42, 0.98);
-  --glass-bg-hover: rgba(59, 66, 82, 0.8);
-  --glass-border: rgba(236, 239, 244, 0.1);
-  --glass-border-top: rgba(236, 239, 244, 0.2);
-  --glass-border-left: rgba(236, 239, 244, 0.15);
-  --glass-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+  /* Liquid Glass Core (Moscaro) - Nord */
+  --glass-bg: rgba(236, 239, 244, 0.03);
+  --glass-bg-floating: rgba(30, 34, 42, 0.85);
+  --glass-bg-hover: rgba(236, 239, 244, 0.06);
+  --glass-border: rgba(236, 239, 244, 0.12);
+  --glass-border-top: rgba(236, 239, 244, 0.25);
+  --glass-border-left: rgba(236, 239, 244, 0.18);
+  --glass-shadow: inset 0 1px 1px rgba(236, 239, 244, 0.18), 0 25px 60px rgba(0, 0, 0, 0.5);
+  --glass-blur: 60px;
+  --glass-surface: rgba(236, 239, 244, 0.05);
+  --glass-surface-focus: rgba(236, 239, 244, 0.08);
 
   --bg-gradient: linear-gradient(-45deg, #2e3440, #3b4252, #434c5e, #2e3440);
 
@@ -172,12 +185,17 @@
   --border-color: rgba(235, 219, 178, 0.1);
   --dot-color: rgba(235, 219, 178, 0.05);
 
-  --glass-bg: rgba(40, 40, 40, 0.7);
-  --glass-bg-floating: rgba(25, 25, 25, 0.98);
-  --glass-bg-hover: rgba(50, 50, 50, 0.8);
-  --glass-border: rgba(235, 219, 178, 0.1);
-  --glass-border-top: rgba(235, 219, 178, 0.2);
-  --glass-border-left: rgba(235, 219, 178, 0.15);
+  /* Liquid Glass Core (Moscaro) - Gruvbox */
+  --glass-bg: rgba(235, 219, 178, 0.03);
+  --glass-bg-floating: rgba(25, 25, 25, 0.85);
+  --glass-bg-hover: rgba(235, 219, 178, 0.06);
+  --glass-border: rgba(235, 219, 178, 0.12);
+  --glass-border-top: rgba(235, 219, 178, 0.25);
+  --glass-border-left: rgba(235, 219, 178, 0.18);
+  --glass-shadow: inset 0 1px 1px rgba(235, 219, 178, 0.18), 0 25px 60px rgba(0, 0, 0, 0.5);
+  --glass-blur: 60px;
+  --glass-surface: rgba(235, 219, 178, 0.05);
+  --glass-surface-focus: rgba(235, 219, 178, 0.08);
 
   --bg-gradient: linear-gradient(-45deg, #282828, #3c3836, #32302f, #1d2021);
 
@@ -210,12 +228,17 @@
   --border-color: rgba(248, 248, 242, 0.1);
   --dot-color: rgba(248, 248, 242, 0.05);
 
-  --glass-bg: rgba(40, 42, 54, 0.7);
-  --glass-bg-floating: rgba(20, 21, 30, 0.98);
-  --glass-bg-hover: rgba(50, 52, 64, 0.8);
-  --glass-border: rgba(189, 147, 249, 0.2);
-  --glass-border-top: rgba(189, 147, 249, 0.3);
-  --glass-border-left: rgba(189, 147, 249, 0.15);
+  /* Liquid Glass Core (Moscaro) - Dracula */
+  --glass-bg: rgba(248, 248, 242, 0.03);
+  --glass-bg-floating: rgba(20, 21, 30, 0.85);
+  --glass-bg-hover: rgba(248, 248, 242, 0.06);
+  --glass-border: rgba(189, 147, 249, 0.12);
+  --glass-border-top: rgba(189, 147, 249, 0.25);
+  --glass-border-left: rgba(189, 147, 249, 0.18);
+  --glass-shadow: inset 0 1px 1px rgba(189, 147, 249, 0.18), 0 25px 60px rgba(0, 0, 0, 0.5);
+  --glass-blur: 60px;
+  --glass-surface: rgba(248, 248, 242, 0.05);
+  --glass-surface-focus: rgba(248, 248, 242, 0.08);
 
   --bg-gradient: linear-gradient(-45deg, #282a36, #44475a, #6272a4, #282a36);
 
@@ -248,12 +271,17 @@
   --border-color: rgba(255, 255, 255, 0.15);
   --dot-color: rgba(255, 255, 255, 0.08);
 
-  --glass-bg: rgba(0, 0, 0, 0.8);
-  --glass-bg-floating: rgba(10, 10, 10, 0.98);
-  --glass-bg-hover: rgba(20, 20, 20, 0.9);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-border-top: rgba(255, 255, 255, 0.2);
-  --glass-border-left: rgba(255, 255, 255, 0.15);
+  /* Liquid Glass Core (Moscaro) - Midnight */
+  --glass-bg: rgba(229, 229, 229, 0.03);
+  --glass-bg-floating: rgba(10, 10, 10, 0.85);
+  --glass-bg-hover: rgba(229, 229, 229, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-border-top: rgba(255, 255, 255, 0.25);
+  --glass-border-left: rgba(255, 255, 255, 0.18);
+  --glass-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.18), 0 25px 60px rgba(0, 0, 0, 0.5);
+  --glass-blur: 60px;
+  --glass-surface: rgba(229, 229, 229, 0.05);
+  --glass-surface-focus: rgba(229, 229, 229, 0.08);
 
   --bg-gradient: linear-gradient(180deg, #000000, #050505);
 
@@ -316,17 +344,20 @@ body.gradient-enabled {
   position: absolute;
   inset: 0;
   z-index: 0;
-  background: #09090b;
+  background: var(--bg-color);
+  /* Agora segue o tema! */
   overflow: hidden;
+  transition: background 0.8s ease-in-out;
 }
 
 .blob {
   position: absolute;
   border-radius: 50%;
-  filter: blur(150px);
-  mix-blend-mode: screen;
-  opacity: 0.18;
+  filter: blur(var(--blob-blur));
+  mix-blend-mode: var(--blob-blend);
+  opacity: var(--blob-opacity);
   will-change: transform;
+  transition: all 0.8s ease-in-out;
 }
 
 .blob-violet {
@@ -416,23 +447,18 @@ body.gradient-enabled {
 }
 
 /* ====== EXTREME LIQUID GLASS BLOCKS ====== */
-.glass-card {
-  background: var(--glass-bg) !important;
-  backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
-  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1)) !important;
-  border-top-color: var(--glass-border-top, var(--glass-border)) !important;
-  border-left-color: var(--glass-border-left, var(--glass-border)) !important;
-  border-radius: 2.5rem;
-  transition: opacity 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  /* Support floating toolbars; internal content is rounded via .glass-card-content */
+.glass-card,
+.block-wrapper {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.05);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.05);
+  border: 1px solid var(--glass-border);
+  border-top-color: var(--glass-border-top);
+  border-left-color: var(--glass-border-left);
   box-shadow: var(--glass-shadow);
-  will-change: transform-scale, opacity, box-shadow;
-  transform-style: flat;
+  border-radius: 20px;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* Hover gradient sheen */
@@ -495,7 +521,7 @@ body.gradient-enabled {
 .glass-card-title {
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 
@@ -636,21 +662,35 @@ body.gradient-enabled {
 /* Extreme Liquid Glass — the core aesthetic */
 .glass-extreme {
   background: var(--glass-bg) !important;
-  backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
+  backdrop-filter: blur(var(--glass-blur)) saturate(250%) brightness(0.95) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(250%) brightness(0.95) !important;
   border: 1px solid var(--glass-border) !important;
   border-top-color: var(--glass-border-top) !important;
   border-left-color: var(--glass-border-left) !important;
   box-shadow: var(--glass-shadow);
   transition: opacity 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Moscaro / Liquid Glass Sheen */
+.glass-extreme::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg,
+      rgba(255, 255, 255, 0.12) 0%,
+      rgba(255, 255, 255, 0.04) 40%,
+      transparent 100%);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .glass-extreme:hover {
   background: var(--glass-bg-hover);
-  box-shadow:
-    inset 0 1px 2px rgba(255, 255, 255, 0.25),
-    0 30px 70px rgba(0, 0, 0, 0.6);
-  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+  border-color: var(--glass-border-top);
 }
 
 /* Legacy glass-panel — keep for blocks */
@@ -688,7 +728,10 @@ body.gradient-enabled {
 }
 
 .liquid-button:hover:not(:active) {
-  transform: scale(1.05);
+  transform: scale(1.06);
+  background: var(--accent-gradient) !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 20px -4px var(--accent-glow);
 }
 
 .liquid-item {
@@ -697,7 +740,8 @@ body.gradient-enabled {
 
 .liquid-item:hover {
   filter: drop-shadow(0 4px 12px var(--accent-glow));
-  background-color: rgba(255, 255, 255, 0.05);
+  background: var(--accent-gradient) !important;
+  color: #ffffff !important;
 }
 
 .liquid-item:active {
@@ -867,24 +911,26 @@ textarea.nodrag:focus {
   max-width: 200px;
   min-width: 100px;
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 500;
+  opacity: 0.8;
 }
 
 .tab-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(124, 58, 237, 0.1);
+  color: var(--text-primary);
+  opacity: 1;
 }
 
 .tab-item.active {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
-  border-top-color: rgba(255, 255, 255, 0.3);
-  color: #ffffff;
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border);
+  border-top-color: var(--accent-color);
+  color: var(--text-primary);
+  opacity: 1;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.15),
-    0 4px 12px rgba(0, 0, 0, 0.2);
+    0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .tab-item.active .tab-icon {
@@ -999,9 +1045,10 @@ textarea.nodrag:focus {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border: 1px dashed var(--border-color);
   background: transparent;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-secondary);
+  opacity: 0.5;
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
@@ -1190,7 +1237,7 @@ textarea.nodrag:focus {
 .command-palette {
   width: 90%;
   max-width: 640px;
-  background: var(--glass-bg) !important;
+  background: var(--glass-bg-floating) !important;
   backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(200%) brightness(1.1) !important;
   border: 1px solid var(--glass-border) !important;
@@ -1220,7 +1267,7 @@ textarea.nodrag:focus {
 .command-palette-input {
   width: 100%;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--glass-surface);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   color: var(--text-primary);
@@ -1230,7 +1277,7 @@ textarea.nodrag:focus {
 }
 
 .command-palette-input:focus {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--glass-surface-focus);
   border-color: var(--accent-color);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
@@ -1294,7 +1341,7 @@ textarea.nodrag:focus {
 
 .command-item.selected {
   background: var(--accent-gradient);
-  color: white;
+  color: var(--text-inverse);
   border-radius: 12px;
   transform: scale(1.02);
   box-shadow: 0 8px 24px var(--accent-glow);
@@ -1303,7 +1350,7 @@ textarea.nodrag:focus {
 .command-item.selected .command-label,
 .command-item.selected .command-shortcut,
 .command-item.selected .command-icon {
-  color: white !important;
+  color: var(--text-inverse) !important;
   opacity: 1 !important;
 }
 
@@ -1334,7 +1381,7 @@ textarea.nodrag:focus {
   font-size: 11px;
   padding: 4px 8px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--glass-surface);
   color: var(--text-secondary);
   font-family: 'Courier New', monospace;
   border: 1px solid var(--border-color);
@@ -1417,7 +1464,7 @@ textarea.nodrag:focus {
   justify-content: space-between;
   padding: 16px 24px;
   border-bottom: 1px solid var(--border-color);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--glass-surface);
 }
 
 .graph-view-header h2 {
@@ -1434,7 +1481,7 @@ textarea.nodrag:focus {
 }
 
 .graph-view-action-btn {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--glass-surface);
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   cursor: pointer;
@@ -1450,12 +1497,13 @@ textarea.nodrag:focus {
 
 .graph-view-action-btn:hover {
   background: rgba(99, 102, 241, 0.15);
+  background: var(--glass-surface);
   border-color: var(--primary-color);
   color: var(--primary-color);
 }
 
 .graph-view-close {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--glass-surface);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   width: 32px;
@@ -1463,9 +1511,8 @@ textarea.nodrag:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
   color: var(--text-secondary);
-  font-size: 16px;
+  cursor: pointer;
   transition: all 0.2s ease;
 }
 
@@ -1949,12 +1996,12 @@ textarea.nodrag:focus {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.react-flow__minimap {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
-  border-radius: 8px;
+.sidebar-bg {
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.05);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) brightness(1.05);
+  border-right: 1px solid var(--glass-border);
+  box-shadow: 10px 0 40px rgba(30, 41, 59, 0.05);
 }
 
 
@@ -2008,4 +2055,85 @@ textarea.nodrag:focus {
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+.glass-extreme::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+/* Portal menu animations */
+@keyframes moscaro-in-up {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px) scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+@keyframes moscaro-in-down {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -12px) scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+@keyframes moscaro-in-right {
+  from {
+    opacity: 0;
+    transform: translate(-12px, -50%) scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+  }
+}
+
+@keyframes moscaro-in-left {
+  from {
+    opacity: 0;
+    transform: translate(12px, -50%) scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }

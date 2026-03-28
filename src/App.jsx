@@ -342,10 +342,14 @@ function AppContent() {
         root.style.setProperty('--accent-glow', hexToRgba(accent, 0.5));
 
         root.style.setProperty('--border-color', hexToRgba(text, 0.1));
-        root.style.setProperty('--glass-bg', hexToRgba(bg, 0.7));
+        root.style.setProperty('--glass-bg', hexToRgba(text, 0.03));
+        root.style.setProperty('--glass-bg-floating', hexToRgba(bg, 0.85));
+        root.style.setProperty('--glass-bg-hover', hexToRgba(text, 0.06));
         root.style.setProperty('--glass-border', hexToRgba(text, 0.12));
         root.style.setProperty('--glass-border-top', hexToRgba(text, 0.25));
         root.style.setProperty('--glass-border-left', hexToRgba(text, 0.18));
+        root.style.setProperty('--glass-blur', '60px');
+        root.style.setProperty('--glass-shadow', `inset 0 1px 1px ${hexToRgba(text, 0.18)}, 0 25px 60px rgba(0,0,0,0.5)`);
         root.style.setProperty('--mj-mark-text', '#ffffff');
 
         root.style.setProperty('--bg-gradient', `linear-gradient(135deg, ${bg}, ${hexToRgba(bg, 0.8)})`);

@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react';
+import { resolveColor } from './CanvasUtils';
 
 const MiniMap = ({
     blocks,
@@ -11,7 +12,18 @@ const MiniMap = ({
     activeNoteType
 }) => {
     const mapRef = useRef(null);
+    const [isDarkMode, setIsDarkMode] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
+
+    useEffect(() => {
+        const checkDarkMode = () => {
+            setIsDarkMode(document.documentElement.classList.contains('dark-mode') || document.body.classList.contains('dark-mode'));
+        };
+        checkDarkMode();
+        const observer = new MutationObserver(checkDarkMode);
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        return () => observer.disconnect();
+    }, []);
 
     const viewW = viewportWidth / scale;
     const viewH = viewportHeight / scale;
@@ -190,7 +202,7 @@ const MiniMap = ({
         >
             <div style={{ position: 'relative', width: '100%', height: '100%' }}>
                 {/* Visual Elements */}
-                <div style={{ pointerEvents: 'none', opacity: 0.6 }}>
+                <div style={{ pointerEvents: 'none', opacity: 1.0 }}>
                     {blocks.map(b => (
                         <div
                             key={b.id}
@@ -198,10 +210,11 @@ const MiniMap = ({
                                 position: 'absolute',
                                 left: `${(b.x - bounds.x) * ratio}px`,
                                 top: `${(b.y - bounds.y) * ratio}px`,
-                                width: `${Math.max(1, (b.width || 200) * ratio)}px`,
-                                height: `${Math.max(1, (b.height || 100) * ratio)}px`,
-                                background: 'rgba(255, 255, 255, 0.2)',
-                                borderRadius: '1px'
+                                width: `${Math.max(1.5, (b.width || 200) * ratio)}px`,
+                                height: `${Math.max(1.5, (b.height || 100) * ratio)}px`,
+                                background: b.color ? resolveColor(b.color, isDarkMode) : (isDarkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)'),
+                                borderRadius: '1px',
+                                boxShadow: '0 0 1px rgba(0,0,0,0.2)'
                             }}
                         />
                     ))}
@@ -213,6 +226,7 @@ const MiniMap = ({
                             if (p.x < sMinX) sMinX = p.x; if (p.x > sMaxX) sMaxX = p.x;
                             if (p.y < sMinY) sMinY = p.y; if (p.y > sMaxY) sMaxY = p.y;
                         }
+                        const strokeColor = resolveColor(s.color, isDarkMode);
                         return (
                             <div
                                 key={s.id}
@@ -220,9 +234,10 @@ const MiniMap = ({
                                     position: 'absolute',
                                     left: `${(sMinX - bounds.x) * ratio}px`,
                                     top: `${(sMinY - bounds.y) * ratio}px`,
-                                    width: `${Math.max(0.5, (sMaxX - sMinX) * ratio)}px`,
-                                    height: `${Math.max(0.5, (sMaxY - sMinY) * ratio)}px`,
-                                    background: 'rgba(255, 255, 255, 0.1)',
+                                    width: `${Math.max(1, (sMaxX - sMinX) * ratio)}px`,
+                                    height: `${Math.max(1, (sMaxY - sMinY) * ratio)}px`,
+                                    background: strokeColor,
+                                    opacity: s.type === 'highlighter' ? 0.4 : 0.8
                                 }}
                             />
                         );

@@ -711,7 +711,8 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                     style={{
                         background: 'transparent',
                         border: 'none',
-                        color: 'rgba(255,255,255,0.5)',
+                        color: 'var(--text-secondary)',
+                        opacity: 0.6,
                         cursor: 'pointer',
                         padding: '6px',
                         borderRadius: '8px',
@@ -728,7 +729,7 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                     </svg>
                 </button>
 
-                {breadcrumbs.length > 0 && <div className="tab-bar-divider" />}
+                {breadcrumbs.length > 0 && <div className="tab-bar-divider" style={{ background: 'var(--border-color)', width: '1px', height: '20px', opacity: 0.5 }} />}
 
                 {/* Breadcrumbs Container - Mostra apenas o caminho das pastas */}
                 {breadcrumbs.length > 0 && (
@@ -738,7 +739,8 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                         gap: '2px',
                         fontSize: '11px',
                         fontWeight: '600',
-                        color: 'rgba(255,255,255,0.4)',
+                        color: 'var(--text-secondary)',
+                        opacity: 0.7,
                         padding: '0 8px',
                         maxWidth: isSidebarOpen ? '150px' : '300px',
                         overflow: 'hidden',
@@ -780,7 +782,7 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                 )}
             </div>
 
-            <div className="tab-bar-divider" />
+            <div className="tab-bar-divider" style={{ background: 'var(--border-color)', width: '1px', height: '24px', opacity: 0.5 }} />
 
             <DndContext
                 sensors={sensors}

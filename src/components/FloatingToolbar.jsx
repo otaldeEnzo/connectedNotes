@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { useNotes } from '../contexts/NotesContext';
 import ColorPicker from './ColorPicker';
 
@@ -11,9 +12,9 @@ const Icons = {
   Highlighter: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l-6 6v3h9l3-3"></path><path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"></path></svg>,
   Type: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>,
   Eraser: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.998 8.798l6-6.002 12.004 12.004-6.002 6.002L2.998 8.798z"></path><path d="M11 5l6 6"></path></svg>,
-  Math: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 4H6l8 8-8 8h12"></path></svg>,
+  Math: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 7V4H6l6 8-6 8h12v-3"></path></svg>,
   PDF: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>,
-  Code: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>,
+  Code: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><path d="M18 9c-6 0-9 6-12 9" stroke="var(--accent-color)" strokeWidth="2.5"></path><circle cx="18" cy="9" r="2" fill="var(--accent-color)"></circle></svg>,
   Paper: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>,
   AI: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"></path></svg>,
   Sun: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="3"></line></svg>,
@@ -22,8 +23,8 @@ const Icons = {
   Shapes: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="7" cy="7" r="5"></circle><rect x="13" y="13" width="8" height="8" rx="1"></rect><path d="M12 2l3 5h-6l3-5z"></path></svg>,
   Plus: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
   ChevronUp: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>,
-  Mermaid: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>,
-  Mindmap: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 9V5"></path><path d="M12 15v4"></path><path d="M15 12h4"></path><path d="M9 12H5"></path><circle cx="12" cy="3" r="2"></circle><circle cx="12" cy="21" r="2"></circle><circle cx="21" cy="12" r="2"></circle><circle cx="3" cy="12" r="2"></circle></svg>,
+  Mermaid: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect><path d="M10 6h4v4" opacity="0.5"></path><path d="M17 14v-4h-4" opacity="0.5"></path><path d="M7 10v4h4" opacity="0.5"></path></svg>,
+  Mindmap: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="2.5"></circle><path d="M12 9.5V5M12 14.5v4.5M14.5 12h4.5M9.5 12H5"></path><circle cx="12" cy="3" r="1.5" opacity="0.6"></circle><circle cx="12" cy="21" r="1.5" opacity="0.6"></circle><circle cx="21" cy="12" r="1.5" opacity="0.6"></circle><circle cx="3" cy="12" r="1.5" opacity="0.6"></circle></svg>,
   Rectangle: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect></svg>,
   Circle: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9"></circle></svg>,
   Ellipse: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="12" rx="10" ry="6"></ellipse></svg>,
@@ -33,7 +34,16 @@ const Icons = {
   Hexagon: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l8.66 5v10L12 22l-8.66-5V7L12 2z" /></svg>,
   Octagon: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="7 2h10l5 5v10l-5 5H7l-5-5V7l5-5z" /></svg>,
   Diamond: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l10 10-10 10-10-10z" /></svg>,
-  Maximize: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+  Maximize: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>,
+  DynamicPen: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+      <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
+      <path d="M2.5 13.5l1.5-1.5m4-4l1.5-1.5" stroke="var(--accent-color)" opacity="0.6" />
+      <circle cx="11" cy="11" r="1.5" fill="var(--accent-color)" />
+      <path d="M20 4l-1 1m0-1l1 1" stroke="var(--accent-color)" />
+    </svg>
+  )
 };
 
 // --- Componentes Locais ---
@@ -68,11 +78,25 @@ const ToolbarButton = ({ icon: Icon, label, onClick, isActive, color, className 
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
-        color: (isActive || pulse) ? '#ffffff' : 'rgba(255,255,255,0.5)',
+        color: (isActive || pulse) ? '#ffffff' : 'var(--text-primary)',
+        opacity: (isActive || pulse) ? 1 : 0.6,
         transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
         boxShadow: pulse ? '0 0 25px var(--accent-glow)' : (isActive ? '0 0 16px rgba(124, 58, 237, 0.5)' : 'none'),
         transform: pulse ? 'scale(1.2)' : 'scale(1)',
-        ...style
+      }}
+      onMouseEnter={(e) => {
+        if (!isActive && !pulse) {
+          e.currentTarget.style.transform = 'scale(1.1)';
+          e.currentTarget.style.backgroundColor = 'var(--glass-surface-focus)';
+          e.currentTarget.style.opacity = '1';
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!isActive && !pulse) {
+          e.currentTarget.style.transform = 'scale(1)';
+          e.currentTarget.style.backgroundColor = 'transparent';
+          e.currentTarget.style.opacity = '0.6';
+        }
       }}
     >
       <Icon />
@@ -130,6 +154,9 @@ const FloatingToolbar = ({
   const { activeNoteId, activeNote, updateNoteBackground, updateNoteBackgroundSize, setDefaultBackground, updateNoteContent } = useNotes();
   const fileInputRef = useRef(null);
   const containerRef = useRef(null);
+  const mainBarRef = useRef(null);
+  const plusBtnRef = useRef(null);
+  const [plusMenuPos, setPlusMenuPos] = useState(null);
 
   const [showPaperMenu, setShowPaperMenu] = useState(false);
   const [showShapeMenu, setShowShapeMenu] = useState(false);
@@ -169,7 +196,7 @@ const FloatingToolbar = ({
   const [orientation, setOrientation] = useState(() => {
     return localStorage.getItem('connected-notes-toolbar-orientation') || 'horizontal';
   });
-  
+
   // New positioning strategy: Save side + distance to edge
   const [position, setPosition] = useState(() => {
     const saved = localStorage.getItem('connected-notes-toolbar-anchor');
@@ -177,16 +204,16 @@ const FloatingToolbar = ({
       const anchor = JSON.parse(saved);
       const winW = window.innerWidth;
       const winH = window.innerHeight;
-      
+
       let x = winW / 2;
       let y = winH - 60;
-      
+
       if (anchor.sideX === 'left') x = anchor.offsetX;
       else if (anchor.sideX === 'right') x = winW - anchor.offsetX;
-      
+
       if (anchor.sideY === 'top') y = anchor.offsetY;
       else if (anchor.sideY === 'bottom') y = winH - anchor.offsetY;
-      
+
       return { x, y };
     }
     return { x: window.innerWidth / 2, y: window.innerHeight - 60 };
@@ -200,17 +227,17 @@ const FloatingToolbar = ({
         const anchor = JSON.parse(saved);
         const winW = window.innerWidth;
         const winH = window.innerHeight;
-        
+
         setPosition(prev => {
           let x = prev.x;
           let y = prev.y;
-          
+
           if (anchor.sideX === 'left') x = anchor.offsetX;
           else if (anchor.sideX === 'right') x = winW - anchor.offsetX;
-          
+
           if (anchor.sideY === 'top') y = anchor.offsetY;
           else if (anchor.sideY === 'bottom') y = winH - anchor.offsetY;
-          
+
           return { x, y };
         });
       }
@@ -244,7 +271,7 @@ const FloatingToolbar = ({
       }
     }
 
-  lastBoundaryRef.current = currentBoundary;
+    lastBoundaryRef.current = currentBoundary;
   }, [sidebarWidth, isDragging, orientation]);
 
   // Click away to close submenus and discovery (ColorPicker)
@@ -262,6 +289,16 @@ const FloatingToolbar = ({
     return () => document.removeEventListener('pointerdown', handleClickOutside);
   }, []);
 
+  // Monitoramento do Tema para Caneta Dinâmica
+  useEffect(() => {
+    if (penConfig.isDynamic) {
+      const newAutoColor = isDarkMode ? '#f8fafc' : '#0f172a';
+      if (penConfig.color !== newAutoColor) {
+        setPenConfig(prev => ({ ...prev, color: newAutoColor }));
+      }
+    }
+  }, [isDarkMode, penConfig.isDynamic, setPenConfig]);
+
   // Close ColorPicker on tool change
   useEffect(() => {
     setShowDiscovery(null);
@@ -270,6 +307,8 @@ const FloatingToolbar = ({
   const handlePointerDown = (e) => {
     if (!e.target.closest('.drag-handle')) return;
     setIsDragging(true);
+    closeAllSubMenus();
+    setShowDiscovery(null);
     if (containerRef.current) containerRef.current.setPointerCapture(e.pointerId);
   };
 
@@ -340,7 +379,7 @@ const FloatingToolbar = ({
     // Save Anchor Logic (Distance to closest edge)
     const sideX = (snappedX < winW / 2) ? 'left' : 'right';
     const sideY = (snappedY < winH / 2) ? 'top' : 'bottom';
-    
+
     const anchor = {
       sideX,
       sideY,
@@ -418,27 +457,62 @@ const FloatingToolbar = ({
         willChange: 'top, left, transform'
       }}
     >
+      {/* Menu de Extras (+) */}
+      {!isDragging && showAddInMenu && (
+        <div className="glass-extreme" style={{
+          padding: '10px', borderRadius: '18px',
+          display: 'flex',
+          flexDirection: orientation === 'horizontal' ? 'row' : 'column',
+          gap: '10px', alignItems: 'center',
+          pointerEvents: 'auto',
+          position: 'absolute',
+          opacity: isDragging ? 0.4 : 1,
+          ...(orientation === 'horizontal'
+            ? {
+                left: '50%', transform: 'translateX(-50%)',
+                ...(isTopSide ? { top: 'calc(100% + 16px)', animation: 'moscaro-in-up 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' } : { bottom: 'calc(100% + 16px)', animation: 'moscaro-in-down 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' })
+              }
+            : {
+                top: '50%', transform: 'translateY(-50%)',
+                ...(isLeftSide ? { left: 'calc(100% + 16px)', animation: 'moscaro-in-right 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' } : { right: 'calc(100% + 16px)', animation: 'moscaro-in-left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' })
+              }
+          ),
+          justifyContent: 'center',
+          zIndex: 6100,
+          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.4)'
+        }}>
+          <ToolbarButton toolId="text" icon={Icons.Type} label="Texto" isActive={activeTool === 'text'} onClick={() => { setActiveTool('text'); setShowAddInMenu(false); }} />
+          <ToolbarButton toolId="math" icon={Icons.Math} label="Fórmula" isActive={activeTool === 'math'} onClick={() => { setActiveTool('math'); setShowAddInMenu(false); }} />
+          <ToolbarButton toolId="ggb" icon={Icons.Code} label="GGB" isActive={activeTool === 'ggb'} onClick={() => { setActiveTool('ggb'); setShowAddInMenu(false); }} />
+          <ToolbarButton toolId="mermaid" icon={Icons.Mermaid} label="Diagram" isActive={activeTool === 'mermaid'} onClick={() => { setActiveTool('mermaid'); setShowAddInMenu(false); }} />
+          <ToolbarButton toolId="mindmap" icon={Icons.Mindmap} label="Mindmap" isActive={activeTool === 'mindmap'} onClick={() => { setActiveTool('mindmap'); setShowAddInMenu(false); }} />
+          <ToolbarButton toolId="pdf" icon={Icons.PDF} label="Inserir PDF" isActive={false} onClick={() => { handlePdfClick(); setShowAddInMenu(false); }} />
+        </div>
+      )}
 
       {/* Menu de Formas */}
       {!isDragging && showShapeMenu && (
         <div className="glass-extreme" style={{
-          padding: '10px', borderRadius: '16px',
+          padding: '10px', borderRadius: '18px',
           display: 'flex',
           flexDirection: orientation === 'horizontal' ? 'row' : 'column',
           gap: '8px', alignItems: 'center',
           pointerEvents: 'auto',
           position: 'absolute',
+          opacity: isDragging ? 0.4 : 1,
           ...(orientation === 'horizontal'
             ? {
               left: '50%', transform: 'translateX(-50%)',
-              ...(isTopSide ? { top: 'calc(100% + 12px)' } : { bottom: 'calc(100% + 12px)' })
+              ...(isTopSide ? { top: 'calc(100% + 16px)', animation: 'moscaro-in-up 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' } : { bottom: 'calc(100% + 16px)', animation: 'moscaro-in-down 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' })
             }
             : {
               top: '50%', transform: 'translateY(-50%)',
-              ...(isLeftSide ? { left: 'calc(100% + 12px)' } : { right: 'calc(100% + 12px)' })
+              ...(isLeftSide ? { left: 'calc(100% + 16px)', animation: 'moscaro-in-right 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' } : { right: 'calc(100% + 16px)', animation: 'moscaro-in-left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' })
             }
           ),
-          justifyContent: 'center'
+          justifyContent: 'center',
+          zIndex: 6100,
+          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.4)'
         }}>
           {[
             { id: 'circle', icon: Icons.Circle, label: 'Círculo' },
@@ -473,23 +547,26 @@ const FloatingToolbar = ({
       {/* Menu de Papel */}
       {!isDragging && showPaperMenu && (
         <div className="glass-extreme" style={{
-          padding: '10px', borderRadius: '16px',
+          padding: '12px', borderRadius: '20px',
           display: 'flex',
           flexDirection: orientation === 'horizontal' ? 'row' : 'column',
-          gap: '8px',
+          gap: '12px',
           pointerEvents: 'auto',
           position: 'absolute',
+          opacity: isDragging ? 0.4 : 1,
           ...(orientation === 'horizontal'
             ? {
               left: '50%', transform: 'translateX(-50%)',
-              ...(isTopSide ? { top: 'calc(100% + 12px)' } : { bottom: 'calc(100% + 12px)' })
+              ...(isTopSide ? { top: 'calc(100% + 16px)', animation: 'moscaro-in-up 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' } : { bottom: 'calc(100% + 16px)', animation: 'moscaro-in-down 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' })
             }
             : {
               top: '50%', transform: 'translateY(-50%)',
-              ...(isLeftSide ? { left: 'calc(100% + 12px)' } : { right: 'calc(100% + 12px)' })
+              ...(isLeftSide ? { left: 'calc(100% + 16px)', animation: 'moscaro-in-right 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' } : { right: 'calc(100% + 16px)', animation: 'moscaro-in-left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' })
             }
           ),
-          justifyContent: 'center'
+          justifyContent: 'center',
+          zIndex: 6100,
+          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.4)'
         }}>
           <div style={{ display: 'flex', flexDirection: orientation === 'horizontal' ? 'row' : 'column', gap: '8px' }}>
             {[
@@ -553,26 +630,28 @@ const FloatingToolbar = ({
       )}
 
       {/* Menu de Caneta (Exclusivo) */}
-      {!isDragging && activeTool === 'pen' && !showPaperMenu && !showShapeMenu && !showAddInMenu && (
+      {!isDragging && (activeTool === 'pen' || activeTool === 'highlighter') && !showPaperMenu && !showShapeMenu && !showAddInMenu && (
         <div className="glass-extreme" style={{
-          padding: '6px 12px', borderRadius: '16px',
+          padding: '8px 14px', borderRadius: '18px',
           display: 'flex',
+          flexDirection: orientation === 'horizontal' ? 'row' : 'column',
           alignItems: 'center', gap: '12px',
           whiteSpace: 'nowrap',
           pointerEvents: 'auto',
           position: 'absolute',
+          opacity: isDragging ? 0.4 : 1,
           ...(orientation === 'horizontal'
             ? {
               left: '50%', transform: 'translateX(-50%)',
-              ...(isTopSide ? { top: 'calc(100% + 12px)' } : { bottom: 'calc(100% + 12px)' })
+              ...(isTopSide ? { top: 'calc(100% + 16px)', animation: 'moscaro-in-up 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' } : { bottom: 'calc(100% + 16px)', animation: 'moscaro-in-down 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' })
             }
             : {
               top: '50%', transform: 'translateY(-50%)',
-              ...(isLeftSide ? { left: 'calc(100% + 12px)' } : { right: 'calc(100% + 12px)' })
+              ...(isLeftSide ? { left: 'calc(100% + 16px)', animation: 'moscaro-in-right 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' } : { right: 'calc(100% + 16px)', animation: 'moscaro-in-left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' })
             }
           ),
-          flexDirection: orientation === 'horizontal' ? 'row' : 'column',
-          justifyContent: 'center'
+          zIndex: 6100,
+          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.4)'
         }}>
           {/* Fila de Presets */}
           <div style={{
@@ -586,43 +665,75 @@ const FloatingToolbar = ({
             flexDirection: orientation === 'horizontal' ? 'row' : 'column',
             alignItems: 'center'
           }}>
+            {/* Caneta Dinâmica Moscaro (Fixa) */}
+            <button
+              onClick={() => {
+                // Sincronização Imediata: A cor é definida baseada no tema ATUAL
+                // Isso garante que a caneta já saia com a cor correta, evitando o flicker
+                const currentAutoColor = isDarkMode ? '#f8fafc' : '#0f172a';
+                setPenConfig({ color: currentAutoColor, width: penConfig.width, isDynamic: true });
+                setActiveTool('pen');
+              }}
+              title="Caneta Dinâmica Moscaro (Contraste Adaptativo)"
+              className="liquid-item"
+              style={{
+                width: '26px', height: '26px', borderRadius: '50%',
+                background: penConfig.isDynamic ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.19, 1, 0.22, 1)',
+                margin: '2px',
+                color: penConfig.isDynamic ? 'white' : 'var(--text-primary)',
+                boxShadow: penConfig.isDynamic ? '0 4px 12px var(--accent-color-glow)' : 'none',
+                transform: penConfig.isDynamic ? 'scale(1.1)' : 'scale(1)'
+              }}
+            >
+              <Icons.DynamicPen />
+            </button>
+
+            <div style={{ width: orientation === 'horizontal' ? '1px' : '16px', height: orientation === 'horizontal' ? '16px' : '1px', background: 'rgba(255,255,255,0.1)', margin: '0 2px' }} />
+
             {toolPresets.filter(p => p.type === 'pen').map(p => (
               <ColorDot
                 key={p.id}
                 color={p.color}
                 width={p.width}
-                selected={penConfig.color === p.color && penConfig.width === p.width}
+                selected={!penConfig.isDynamic && penConfig.color === p.color && penConfig.width === p.width}
                 onClick={() => onSelectPreset(p)}
                 onRemove={() => onRemovePreset(p.id)}
                 onEdit={(newColor) => onUpdatePreset(p.id, { color: newColor })}
               />
             ))}
-            <button
-              onClick={() => onAddPreset('pen')}
-              style={{
-                width: '18px', height: '18px', borderRadius: '50%',
-                background: 'rgba(255,255,255,0.05)', border: '1px dashed rgba(255,255,255,0.3)',
-                color: 'white', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '2px'
-              }}
-              title="Salvar Preset"
-            >
-              <Icons.Plus size={10} style={{ width: 10, height: 10 }} />
-            </button>
+            {!penConfig.isDynamic && (
+              <button
+                onClick={() => onAddPreset('pen')}
+                style={{
+                  width: '18px', height: '18px', borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.05)', border: '1px dashed rgba(255,255,255,0.3)',
+                  color: 'white', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '2px'
+                }}
+                title="Salvar Preset"
+              >
+                <Icons.Plus size={10} style={{ width: 10, height: 10 }} />
+              </button>
+            )}
           </div>
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <button
-              onClick={() => setShowDiscovery(showDiscovery === 'pen' ? null : 'pen')}
-              style={{
-                width: '26px', height: '26px', borderRadius: '50%',
-                backgroundColor: penConfig.color, border: '2px solid rgba(255,255,255,0.4)',
-                cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                transition: 'transform 0.2s', flexShrink: 0
-              }}
-              onMouseEnter={(e) => e.target.style.transform = 'scale(1.1)'}
-              onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
-            />
-          </div>
+          {!penConfig.isDynamic && (
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <button
+                onClick={() => setShowDiscovery(showDiscovery === 'pen' ? null : 'pen')}
+                style={{
+                  width: '26px', height: '26px', borderRadius: '50%',
+                  backgroundColor: penConfig.color, border: '2px solid rgba(255,255,255,0.4)',
+                  cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                  transition: 'transform 0.2s', flexShrink: 0
+                }}
+                onMouseEnter={(e) => e.target.style.transform = 'scale(1.1)'}
+                onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+              />
+            </div>
+          )}
 
           <input
             type="range" min="1" max="10" step="1"
@@ -783,28 +894,36 @@ const FloatingToolbar = ({
         </div>
       )}
 
-      <div className="glass-extreme" style={{
-        display: 'flex',
-        flexDirection: orientation === 'horizontal' ? 'row' : 'column',
-        padding: '6px',
-        borderRadius: '9999px',
-        width: isDragging ? '48px' : 'auto',
-        height: isDragging ? '48px' : 'auto',
-        justifyContent: 'center',
-        alignItems: 'center',
-        pointerEvents: 'auto',
-        gap: isDragging ? '0' : '4px',
-        transition: 'all 0.4s cubic-bezier(0.19, 1, 0.22, 1)',
-        overflow: isDragging ? 'hidden' : 'visible'
-      }}>
+      <div
+        ref={mainBarRef}
+        className="glass-extreme" style={{
+          position: 'relative',
+          display: 'flex',
+          flexDirection: orientation === 'horizontal' ? 'row' : 'column',
+          padding: '6px',
+          borderRadius: '9999px',
+          width: isDragging ? '48px' : 'auto',
+          height: isDragging ? '48px' : 'auto',
+          justifyContent: 'center',
+          alignItems: 'center',
+          pointerEvents: 'auto',
+          gap: isDragging ? '0' : '4px',
+          transition: 'all 0.4s cubic-bezier(0.19, 1, 0.22, 1)',
+          overflow: 'hidden'
+        }}>
         {/* Handle - Always visible, position managed by flexDirection */}
         <div className="drag-handle liquid-item" style={{
           padding: '8px', cursor: 'grab',
-          color: isDragging ? 'var(--accent-color)' : 'rgba(255,255,255,0.7)',
+          color: isDragging ? 'var(--accent-color)' : 'var(--text-primary)',
+          opacity: isDragging ? 1 : 0.6,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
-          borderRadius: '50%'
-        }}>
+          borderRadius: '50%',
+          transition: 'all 0.3s ease'
+        }}
+          onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+          onMouseLeave={(e) => !isDragging && (e.currentTarget.style.opacity = '0.6')}
+        >
           <Icons.Menu />
         </div>
 
@@ -823,42 +942,26 @@ const FloatingToolbar = ({
             <ToolbarButton toolId="cursor" icon={Icons.Cursor} label="Cursor" isActive={activeTool === 'cursor'} onClick={() => { setActiveTool('cursor'); closeAllSubMenus(); }} />
             <ToolbarButton toolId="ai-lasso" icon={Icons.AI} label="AI" isActive={activeTool === 'ai-lasso'} onClick={() => { setActiveTool('ai-lasso'); closeAllSubMenus(); }} />
 
-            <div style={{ width: orientation === 'horizontal' ? '1px' : '12px', height: orientation === 'horizontal' ? '12px' : '1px', background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
+            <div style={{ width: orientation === 'horizontal' ? '1px' : '12px', height: orientation === 'horizontal' ? '12px' : '1px', background: 'var(--border-color)', margin: '0 4px', opacity: 0.5 }} />
 
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <button
+                ref={plusBtnRef}
                 onClick={() => toggleSubMenu('plus')}
                 className={`liquid-button glass-extreme ${showAddInMenu ? 'active' : ''}`}
                 style={{
                   width: '32px', height: '32px', borderRadius: '50%',
-                  background: showAddInMenu ? 'var(--accent-gradient)' : 'rgba(255,255,255,0.05)',
-                  border: 'none', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: showAddInMenu ? 'var(--accent-gradient)' : 'var(--glass-surface)',
+                  border: 'none', color: showAddInMenu ? 'white' : 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer', transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                  transform: showAddInMenu ? 'rotate(135deg)' : 'rotate(0deg)'
+                  transform: showAddInMenu ? 'rotate(135deg)' : 'rotate(0deg)',
+                  opacity: showAddInMenu ? 1 : 0.7
                 }}
+                onMouseEnter={(e) => { if (!showAddInMenu) { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.opacity = '1'; } }}
+                onMouseLeave={(e) => { if (!showAddInMenu) { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.opacity = '0.7'; } }}
               >
                 <Icons.Plus />
               </button>
-              <div style={{
-                position: 'absolute',
-                bottom: orientation === 'horizontal' ? (isTopSide ? 'auto' : 'calc(100% + 12px)') : 'auto',
-                top: orientation === 'horizontal' ? (isTopSide ? 'calc(100% + 12px)' : 'auto') : '50%',
-                left: orientation === 'vertical' ? (isLeftSide ? 'calc(100% + 12px)' : 'auto') : '50%',
-                right: orientation === 'vertical' ? (isLeftSide ? 'auto' : 'calc(100% + 12px)') : 'auto',
-                transform: orientation === 'horizontal'
-                  ? `translateX(-50%) translateY(${showAddInMenu ? '0' : (isTopSide ? '-12px' : '12px')}) scale(${showAddInMenu ? '1' : '0.8'})`
-                  : `translateY(-50%) translateX(${showAddInMenu ? '0' : (isLeftSide ? '-12px' : '12px')}) scale(${showAddInMenu ? '1' : '0.8'})`,
-                opacity: showAddInMenu ? 1 : 0, pointerEvents: showAddInMenu ? 'auto' : 'none',
-                display: 'flex', flexDirection: orientation === 'horizontal' ? 'row' : 'column',
-                gap: '8px', padding: '8px', borderRadius: '16px',
-                transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)', zIndex: 10
-              }} className="glass-extreme">
-                <ToolbarButton toolId="text" icon={Icons.Type} label="Texto" isActive={activeTool === 'text'} onClick={() => { setActiveTool('text'); setShowAddInMenu(false); }} />
-                <ToolbarButton toolId="math" icon={Icons.Math} label="Fórmula" isActive={activeTool === 'math'} onClick={() => { setActiveTool('math'); setShowAddInMenu(false); }} />
-                <ToolbarButton toolId="ggb" icon={Icons.Code} label="GGB" isActive={activeTool === 'ggb'} onClick={() => { setActiveTool('ggb'); setShowAddInMenu(false); }} />
-                <ToolbarButton toolId="mermaid" icon={Icons.Mermaid} label="Diagram" isActive={activeTool === 'mermaid'} onClick={() => { setActiveTool('mermaid'); setShowAddInMenu(false); }} />
-                <ToolbarButton toolId="mindmap" icon={Icons.Mindmap} label="Mindmap" isActive={activeTool === 'mindmap'} onClick={() => { setActiveTool('mindmap'); setShowAddInMenu(false); }} />
-              </div>
             </div>
 
             <div style={{ width: orientation === 'horizontal' ? '1px' : '12px', height: orientation === 'horizontal' ? '12px' : '1px', background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />

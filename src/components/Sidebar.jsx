@@ -109,9 +109,12 @@ const TreeNode = ({ nodeId, level = 0 }) => {
       <div
         ref={setNodeRef}
         className={`tree-item liquid-item flex items-center relative my-1 mx-2 rounded-xl transition-all duration-400 ease-[cubic-bezier(0.34,1.56,0.64,1)] text-[0.875rem] py-2.5 pr-3 border ${isSelected ? 'active font-semibold text-[var(--accent-color)] border-[rgba(99,102,241,0.2)] bg-[var(--accent-color-transparent)]' : 'font-medium text-[var(--text-primary)] border-transparent'} ${isHovered && !isSelected ? 'bg-white/5' : ''} ${isDragging ? 'cursor-grabbing opacity-30 z-[1000]' : (isEditing ? 'cursor-text z-10 opacity-100' : 'cursor-pointer z-10 opacity-100')} ${isOver && !isDragging ? 'drop-target' : ''}`}
+        {...attributes}
+        {...listeners}
         style={{
           ...style,
-          paddingLeft: `${level * 16 + 14}px`
+          paddingLeft: `${level * 16 + 14}px`,
+          transition: isDragging ? 'none' : transition,
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -133,16 +136,11 @@ const TreeNode = ({ nodeId, level = 0 }) => {
         <div className="flex items-center flex-1 min-w-0 h-full relative z-20">
           {/* Expander / Drag Handle */}
           <span
-            onPointerDown={(e) => {
-              // Deixar o dnd-kit lidar com isso se for click no grabber
-            }}
             onClick={(e) => {
               e.stopPropagation();
               toggleCollapse(nodeId);
             }}
-            {...attributes}
-            {...listeners}
-            className="mr-1.5 w-4 text-center opacity-60 cursor-grab flex items-center justify-center"
+            className="mr-1.5 w-4 text-center opacity-60 cursor-grab flex items-center justify-center pointer-events-auto"
           >
             {hasChildren ? (
               note.collapsed ? <SidebarIcons.ChevronRight /> : <SidebarIcons.ChevronDown />
@@ -185,7 +183,7 @@ const TreeNode = ({ nodeId, level = 0 }) => {
           <div className="flex gap-1 ml-2 relative z-30" onPointerDown={(e) => e.stopPropagation()}>
             <button
               title="Novo item"
-              className={`liquid-button p-0.5 bg-transparent border-none cursor-pointer ${showAddMenu ? 'text-[var(--accent-color)]' : 'text-[var(--text-secondary)]'}`}
+              className={`liquid-button p-0.5 bg-transparent border-none cursor-pointer ${showAddMenu ? 'text-[var(--accent-color)]' : 'text-[var(--text-primary)] opacity-40 hover:opacity-100'}`}
               onClick={(e) => { e.stopPropagation(); setShowAddMenu(!showAddMenu); }}
             >
               <SidebarIcons.Plus />
@@ -218,7 +216,7 @@ const TreeNode = ({ nodeId, level = 0 }) => {
             {nodeId !== 'root' && (
               <button
                 title="Excluir"
-                className="liquid-button p-0.5 bg-transparent border-none cursor-pointer text-[var(--text-secondary)] hover:text-red-400"
+                className="liquid-button p-0.5 bg-transparent border-none cursor-pointer text-[var(--text-primary)] opacity-40 hover:text-red-500 hover:opacity-100"
                 onClick={(e) => { e.stopPropagation(); if (confirm('Excluir?')) deleteNote(nodeId); }}
               >
                 <SidebarIcons.Trash />
@@ -268,7 +266,7 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 10, // Increased distance slightly to allow for slight hand tremor during clicks
+        distance: 5, 
       },
     })
   );
@@ -288,17 +286,21 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
       }
 
       if (active.id !== over.id) {
-        // Obter posição relativa para decidir entre aninhar ou reordenar
-        const overData = over.data?.current;
         const overRect = event.over?.rect;
+        const activeRect = event.active.rect.current.translated;
+        const deltaX = event.delta?.x || 0;
 
-        // Se temos rect, podemos ser precisos
-        if (overRect) {
-          const clientY = event.activatorEvent.clientY + (event.delta?.y || 0);
-          const relativeY = clientY - overRect.top;
-          const threshold = overRect.height * 0.25;
+        if (overRect && activeRect) {
+          const relativeY = (activeRect.top + activeRect.height / 2) - overRect.top;
+          
+          // Se o usuário moveu significativamente para a direita (>20px), ele quer aninhar
+          const wantsToNest = deltaX > 20;
+          
+          const threshold = overRect.height * 0.35; // 35% da altura como margem para reordenar
 
-          if (relativeY < threshold) {
+          if (wantsToNest) {
+            moveNote(active.id, over.id, 'inside');
+          } else if (relativeY < threshold) {
             moveNote(active.id, over.id, 'before');
           } else if (relativeY > overRect.height - threshold) {
             moveNote(active.id, over.id, 'after');
@@ -306,7 +308,6 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
             moveNote(active.id, over.id, 'inside');
           }
         } else {
-          // Fallback
           moveNote(active.id, over.id, 'inside');
         }
       }
@@ -338,7 +339,7 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
                   setAddMenuPos({ top: rect.bottom + 8, left: rect.left });
                   setShowAddMenu(!showAddMenu);
                 }}
-                className="liquid-button bg-[var(--accent-gradient)] text-white border-none rounded-xl px-4 py-2 cursor-pointer text-[0.85rem] flex items-center gap-2 font-semibold shadow-[0_8px_20px_-4px_var(--accent-glow)]"
+                className="liquid-button bg-[var(--accent-gradient)] border-none rounded-xl px-4 py-2 cursor-pointer text-[0.85rem] flex items-center gap-2 font-bold shadow-[0_8px_20px_-4px var(--accent-glow)] transition-all hover:scale-105 hover:brightness-110 active:scale-95 text-white"
               >
                 <SidebarIcons.Plus /> Nova
               </button>
@@ -350,13 +351,13 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
                     style={{ position: 'fixed', inset: 0, zIndex: 999998 }} 
                   />
                   <div 
-                    className="glass-panel w-[200px] p-2 z-[999999] rounded-xl border border-white/25 shadow-[0_15px_40px_rgba(0,0,0,0.6)] flex flex-col gap-1.5"
+                    className="glass-extreme w-[200px] p-2 z-[999999] rounded-xl border border-[var(--glass-border)] shadow-glass flex flex-col gap-1.5"
                     style={{
                       position: 'fixed',
                       top: addMenuPos.top,
                       left: addMenuPos.left,
-                      background: 'rgba(30, 30, 35, 0.95)',
-                      backdropFilter: 'blur(24px) saturate(160%) brightness(1.1)',
+                      background: 'var(--glass-bg-floating)',
+                      backdropFilter: 'blur(32px) saturate(180%) brightness(1.1)',
                       animation: 'fadeIn 0.2s ease-out'
                     }}
                   >
@@ -389,7 +390,7 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
             readOnly
             onClick={onOpenSearch}
             onFocus={(e) => { e.target.blur(); onOpenSearch(); }}
-            className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-white/5 text-[var(--text-primary)] outline-none text-[0.85rem] backdrop-blur-[10px]"
+            className="w-full px-3.5 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--glass-surface)] text-[var(--text-primary)] placeholder:text-[var(--text-primary)] placeholder:opacity-40 outline-none text-[0.85rem] backdrop-blur-[10px] hover:border-[var(--accent-color)] transition-colors"
           />
         </div>
 
@@ -430,7 +431,7 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
             {allTags.map(tag => (
               <button
                 key={tag}
-                className={`liquid-button px-3 py-1 rounded-xl text-[0.7rem] font-semibold cursor-pointer border ${filterTag === tag ? 'bg-[var(--accent-color)] text-white border-[var(--accent-color)] shadow-[0_4px_12px_var(--accent-glow)]' : 'bg-white/5 text-[var(--text-secondary)] border-white/10 shadow-none'}`}
+                className={`liquid-button px-3 py-1 rounded-full text-[0.7rem] font-bold cursor-pointer border transition-all ${filterTag === tag ? 'bg-[var(--accent-color)] text-white border-[var(--accent-color)] shadow-[0_4px_12px_var(--accent-glow)]' : 'bg-[var(--glass-surface)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent-color)] hover:bg-[var(--glass-surface-focus)] opacity-80'}`}
                 onClick={() => setFilterTag(filterTag === tag ? null : tag)}
               >
                 #{tag}
@@ -440,10 +441,10 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
         </div>
 
         {/* Footer Actions */}
-        <div className="py-2 px-3 border-t border-[var(--glass-border)] flex gap-2 justify-center bg-white/2">
+        <div className="py-2.5 px-3 border-t border-[var(--glass-border)] flex gap-2 justify-center bg-[var(--glass-surface)]">
           <button
             title="Exportar Nota (PNG)"
-            className="liquid-button flex-1 p-2 rounded-[10px] bg-transparent border border-white/10 text-[var(--text-secondary)] flex items-center justify-center cursor-pointer hover:bg-white/5 transition-colors"
+            className="liquid-button flex-1 p-2 rounded-[10px] bg-transparent border border-[var(--border-color)] text-[var(--text-primary)] opacity-60 hover:opacity-100 flex items-center justify-center cursor-pointer hover:bg-[var(--glass-surface-focus)] transition-all"
             onClick={() => {
               if (activeNoteId && activeNote) {
                 window.dispatchEvent(new CustomEvent('triggerExport', {
@@ -454,18 +455,16 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
           >
             <SidebarIcons.Download />
           </button>
-
           <button
             title="Alternar Tema"
-            className="liquid-button flex-1 p-2 rounded-[10px] bg-transparent border border-white/10 text-[var(--text-secondary)] flex items-center justify-center cursor-pointer hover:bg-white/5 transition-colors"
+            className="liquid-button flex-1 p-2 rounded-[10px] bg-transparent border border-[var(--border-color)] text-[var(--text-primary)] opacity-60 hover:opacity-100 flex items-center justify-center cursor-pointer hover:bg-[var(--glass-surface-focus)] transition-all"
             onClick={onToggleTheme}
           >
             {isDarkMode ? <SidebarIcons.Sun /> : <SidebarIcons.Moon />}
           </button>
-
           <button
             title="Configurações"
-            className="liquid-button flex-1 p-2 rounded-[10px] bg-transparent border border-white/10 text-[var(--text-secondary)] flex items-center justify-center cursor-pointer hover:bg-white/5 transition-colors"
+            className="liquid-button flex-1 p-2 rounded-[10px] bg-transparent border border-[var(--border-color)] text-[var(--text-primary)] opacity-60 hover:opacity-100 flex items-center justify-center cursor-pointer hover:bg-[var(--glass-surface-focus)] transition-all"
             onClick={onOpenSettings}
           >
             <SidebarIcons.Settings />

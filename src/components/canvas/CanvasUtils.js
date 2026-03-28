@@ -1,20 +1,34 @@
 import { getStroke } from 'perfect-freehand';
 
-export const resolveColor = (color) => {
-    if (!color) return '#000000';
+export const resolveColor = (color, isDarkMode = false) => {
+    if (!color) return isDarkMode ? '#f8fafc' : '#0e1117';
+
+    // Lógica Moscaro: Apenas var(--text-primary) é dinâmica
+    if (color === 'var(--text-primary)' || color === 'var(--color-text-primary)') {
+        // Retornamos cores PRETO (#000000) e BRANCO (#FFFFFF) puras 
+        // porque o Canvas API não suporta variáveis CSS.
+        return isDarkMode ? '#FFFFFF' : '#000000';
+    }
+
+    let baseColor = color;
     if (color.startsWith('var')) {
         try {
             const temp = document.createElement('div');
             temp.style.color = color;
             temp.style.display = 'none';
             document.body.appendChild(temp);
-            const resolved = window.getComputedStyle(temp).color;
+            baseColor = window.getComputedStyle(temp).color;
             document.body.removeChild(temp);
-            return resolved;
-        } catch (e) { return '#000000'; }
+        } catch (e) {
+            return isDarkMode ? '#f8fafc' : '#0e1117';
+        }
     }
-    return color;
+
+    // Para todas as outras cores hex/rgb (incluindo branco e preto manuais), 
+    // retornamos a cor original/computada sem alterações, respeitando a escolha fixa do usuário.
+    return baseColor;
 };
+
 
 // Helper: Convert perfect-freehand points to SVG path
 const getSvgPathFromStrokePoints = (points) => {
@@ -271,9 +285,56 @@ export const convertStrokesToImage = (strokes) => {
 };
 
 export const pointToSegmentDistance = (x, y, x1, y1, x2, y2) => { const A = x - x1; const B = y - y1; const C = x2 - x1; const D = y2 - y1; const dot = A * C + B * D; const lenSq = C * C + D * D; let param = -1; if (lenSq !== 0) param = dot / lenSq; let xx, yy; if (param < 0) { xx = x1; yy = y1; } else if (param > 1) { xx = x2; yy = y2; } else { xx = x1 + param * C; yy = y1 + param * D; } const dx = x - xx; const dy = y - yy; return Math.sqrt(dx * dx + dy * dy); };
-export const isStrokeClicked = (stroke, point, threshold = 10) => { for (let i = 0; i < stroke.points.length - 1; i++) { const p1 = stroke.points[i]; const p2 = stroke.points[i + 1]; if (pointToSegmentDistance(point.x, point.y, p1.x, p1.y, p2.x, p2.y) < threshold) return true; } if (stroke.points.length === 1) { const p = stroke.points[0]; if (Math.hypot(p.x - point.x, p.y - point.y) < threshold) return true; } return false; };
+
+export const isPointInPoly = (poly, pt) => {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i].x, yi = poly[i].y;
+        const xj = poly[j].x, yj = poly[j].y;
+        const intersect = ((yi > pt.y) !== (yj > pt.y)) && (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+};
+
+export const isStrokeClicked = (stroke, point, threshold = 10) => {
+    // Para formas perfeitas (NeatShapes como Retângulos, Círculos, etc.)
+    if (stroke.isNeatShape) {
+        // Se for uma seta ou linha aberta, verificamos apenas a distância do segmento
+        if (stroke.isOpen || stroke.shapeType === 'arrow' || stroke.shapeType === 'line') {
+            for (let i = 0; i < stroke.points.length - 1; i++) {
+                const p1 = stroke.points[i];
+                const p2 = stroke.points[i + 1];
+                if (pointToSegmentDistance(point.x, point.y, p1.x, p1.y, p2.x, p2.y) < threshold) return true;
+            }
+            return false;
+        }
+        // Para formas fechadas (Círculo, Retângulo), verificamos se está dentro OU na borda
+        const inside = isPointInPoly(stroke.points, point);
+        if (inside) return true;
+
+        for (let i = 0; i < stroke.points.length - 1; i++) {
+            const p1 = stroke.points[i];
+            const p2 = stroke.points[i + 1];
+            if (pointToSegmentDistance(point.x, point.y, p1.x, p1.y, p2.x, p2.y) < threshold) return true;
+        }
+        return false;
+    }
+
+    // Para desenhos à mão livre
+    for (let i = 0; i < stroke.points.length - 1; i++) {
+        const p1 = stroke.points[i];
+        const p2 = stroke.points[i + 1];
+        if (pointToSegmentDistance(point.x, point.y, p1.x, p1.y, p2.x, p2.y) < threshold) return true;
+    }
+    if (stroke.points.length === 1) {
+        const p = stroke.points[0];
+        if (Math.hypot(p.x - point.x, p.y - point.y) < threshold) return true;
+    }
+    return false;
+};
 export const isConnectionInRect = (connection, start, end, rect) => {
-    // 1. Calculate Control Points (same logic as ConnectionLayer)
+    // 1. Calculate Control Points
     const dist = Math.hypot(end.x - start.x, end.y - start.y);
     const controlDist = Math.max(dist * 0.5, 50);
 
@@ -281,29 +342,44 @@ export const isConnectionInRect = (connection, start, end, rect) => {
     let cp2 = { x: end.x, y: end.y };
 
     if (connection.fromSide === 'top') cp1.y -= controlDist;
-    if (connection.fromSide === 'bottom') cp1.y += controlDist;
-    if (connection.fromSide === 'left') cp1.x -= controlDist;
-    if (connection.fromSide === 'right') cp1.x += controlDist;
+    else if (connection.fromSide === 'bottom') cp1.y += controlDist;
+    else if (connection.fromSide === 'left') cp1.x -= controlDist;
+    else if (connection.fromSide === 'right') cp1.x += controlDist;
 
     if (connection.toSide === 'top') cp2.y -= controlDist;
-    if (connection.toSide === 'bottom') cp2.y += controlDist;
-    if (connection.toSide === 'left') cp2.x -= controlDist;
-    if (connection.toSide === 'right') cp2.x += controlDist;
-
-    // 2. Check Bounding Box of Hull (Start, End, CP1, CP2)
-    const points = [start, end, cp1, cp2];
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    points.forEach(p => {
-        if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y;
-        if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y;
-    });
+    else if (connection.toSide === 'bottom') cp2.y += controlDist;
+    else if (connection.toSide === 'left') cp2.x -= controlDist;
+    else if (connection.toSide === 'right') cp2.x += controlDist;
 
     const rx = Math.min(rect.startX, rect.currentX);
     const ry = Math.min(rect.startY, rect.currentY);
     const rw = Math.abs(rect.currentX - rect.startX) || 1;
     const rh = Math.abs(rect.currentY - rect.startY) || 1;
 
-    // Bounding Box Intersection
+    // Se a seleção for um clique (área muito pequena)
+    const isClick = rw < 5 && rh < 5;
+    if (isClick) {
+        const px = rx; const py = ry;
+        const threshold = 15;
+        // Amostragem da curva Bezier Cúbica
+        let prevX = start.x, prevY = start.y;
+        for (let t = 0.05; t <= 1; t += 0.05) {
+            const t2 = t * t, t3 = t2 * t, mt = 1 - t, mt2 = mt * mt, mt3 = mt2 * mt;
+            const x = mt3 * start.x + 3 * mt2 * t * cp1.x + 3 * mt * t2 * cp2.x + t3 * end.x;
+            const y = mt3 * start.y + 3 * mt2 * t * cp1.y + 3 * mt * t2 * cp2.y + t3 * end.y;
+            if (pointToSegmentDistance(px, py, prevX, prevY, x, y) < threshold) return true;
+            prevX = x; prevY = y;
+        }
+        return false;
+    }
+
+    // Se for seleção por área (Lasso), usamos o Bounding Box para performance
+    const points = [start, end, cp1, cp2];
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    points.forEach(p => {
+        minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+    });
     return (minX < rx + rw && maxX > rx && minY < ry + rh && maxY > ry);
 };
 

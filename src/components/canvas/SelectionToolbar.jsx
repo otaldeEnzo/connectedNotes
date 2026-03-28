@@ -1,6 +1,14 @@
 import React from 'react';
 
-const SelectionToolbar = ({ bounds, scale = 1, position = { x: 0, y: 0 }, viewportWidth = 1000, onGroup, onUngroup, onLock, onUnlock, onBringToFront, onSendToBack, isGrouped, isLocked, onColorChange, onStyleChange, onConvertToMath, isConverting }) => {
+const SelectionToolbar = ({ bounds, scale = 1, position = { x: 0, y: 0 }, viewportWidth = 1000, onGroup, onUngroup, onLock, onUnlock, onBringToFront, onSendToBack, isGrouped, isLocked, onColorChange, onStyleChange, onConvertToMath, isConverting, selectionTypes = [] }) => {
+    const hasOnlyPDF = selectionTypes.length > 0 && selectionTypes.every(t => t === 'pdf');
+    const hasPDF = selectionTypes.includes('pdf');
+    const hasStroke = selectionTypes.includes('stroke');
+    const hasConnection = selectionTypes.includes('connection');
+    const hasDrawing = hasStroke || hasConnection;
+    const hasImage = selectionTypes.includes('image');
+    const hasOnlyImage = selectionTypes.length > 0 && selectionTypes.every(t => t === 'image');
+    const hasBlock = selectionTypes.some(t => ['text', 'code', 'math', 'ggb', 'mermaid', 'mindmap', 'image'].includes(t));
     if (!bounds || (bounds.width === 0 && bounds.height === 0)) return null;
 
     // Convert World Bounds to Screen Bounds
@@ -71,7 +79,7 @@ const SelectionToolbar = ({ bounds, scale = 1, position = { x: 0, y: 0 }, viewpo
             )}
 
             {/* Color Picker Section */}
-            {onColorChange && (
+            {onColorChange && !hasOnlyPDF && !hasOnlyImage && (
                 <>
                     <div style={{ width: '1px', background: 'var(--border-color)', margin: '0 2px', opacity: 0.5 }} />
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -94,7 +102,7 @@ const SelectionToolbar = ({ bounds, scale = 1, position = { x: 0, y: 0 }, viewpo
             )}
 
             {/* Style & Marker Section */}
-            {onStyleChange && (
+            {onStyleChange && hasDrawing && (
                 <>
                     <div style={{ width: '1px', background: 'var(--border-color)', margin: '0 2px', opacity: 0.5 }} />
 
@@ -121,7 +129,7 @@ const SelectionToolbar = ({ bounds, scale = 1, position = { x: 0, y: 0 }, viewpo
                 </>
             )}
 
-            {onConvertToMath && (
+            {onConvertToMath && hasStroke && !hasPDF && (
                 <>
                     <div style={{ width: '1px', background: 'var(--border-color)', margin: '0 2px', opacity: 0.5 }} />
                     <button

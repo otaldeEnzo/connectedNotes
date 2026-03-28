@@ -79,8 +79,8 @@ const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool,
             const parameters = {
                 "id": appletId.current,
                 "appName": "graphing",
-                "width": "100%",
-                "height": "100%",
+                "width": blockWidth,
+                "height": graphHeight,
                 "showToolBar": false,
                 "showAlgebraInput": false,
                 "showMenuBar": false,
@@ -94,8 +94,6 @@ const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool,
                 "showAlgebraView": false,
                 "algebraInputPosition": "algebra",
                 "perspective": "G",
-                "scaleContainerClass": "ggb-container",
-                "scale": 1,
                 "autoHeight": false,
                 "language": "pt",
                 "borderColor": "transparent",
@@ -119,6 +117,10 @@ const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool,
                     }
 
                     setTimeout(() => {
+                        if (mounted && ggbApiRef.current) {
+                            try { ggbApiRef.current.setSize(Math.round(blockWidth), Math.round(graphHeight)); } catch(e) {}
+                        }
+                        
                         if (block.commands) {
                             block.commands.forEach(cmd => {
                                 try { api.evalCommand(cmd); } catch (e) { }
@@ -261,8 +263,8 @@ const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool,
                 className="ggb-container block-interactivity-isolation"
                 onContextMenuCapture={e => e.stopPropagation()}
                 style={{
-                    flex: 1,
-                    width: '100%',
+                    width: `${blockWidth}px`,
+                    height: `${graphHeight}px`,
                     pointerEvents: 'auto',
                     overflow: 'hidden',
                     position: 'relative',

@@ -264,15 +264,15 @@ const ColorPicker = ({ color, onChange, onComplete, recentColors, colorIdeas }) 
                     position: 'relative',
                     overflow: 'hidden'
                   }}
-                  onMouseEnter={(e) => { 
-                    e.currentTarget.style.transform = 'translateY(-4px) scale(1.15)'; 
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-4px) scale(1.15)';
                     e.currentTarget.style.boxShadow = `0 8px 20px ${c}60`;
-                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.8)'; 
+                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.8)';
                   }}
-                  onMouseLeave={(e) => { 
-                    e.currentTarget.style.transform = 'translateY(0) scale(1)'; 
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0) scale(1)';
                     e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
-                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'; 
+                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
                   }}
                 >
                   <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(255,255,255,0.25) 0%, transparent 50%)', pointerEvents: 'none' }} />
@@ -310,15 +310,15 @@ const ColorPicker = ({ color, onChange, onComplete, recentColors, colorIdeas }) 
                       position: 'relative',
                       overflow: 'hidden'
                     }}
-                    onMouseEnter={(e) => { 
-                      e.currentTarget.style.transform = 'translateY(-3px) scale(1.15)'; 
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-3px) scale(1.15)';
                       e.currentTarget.style.boxShadow = `0 6px 15px ${c}60`;
-                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.8)'; 
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.8)';
                     }}
-                    onMouseLeave={(e) => { 
-                      e.currentTarget.style.transform = 'translateY(0) scale(1)'; 
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0) scale(1)';
                       e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
-                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'; 
+                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
                     }}
                   >
                     <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 50%)', pointerEvents: 'none' }} />

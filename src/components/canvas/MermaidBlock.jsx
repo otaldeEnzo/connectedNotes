@@ -91,10 +91,10 @@ const MermaidBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
         <div className="flex items-center gap-1.5 mr-1">
             <button
                 onClick={(e) => { e.stopPropagation(); if (setEditing) setEditing(!isEditing); if (isEditing) handleSave(); }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 duration-300
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 duration-300 liquid-button
                     ${isEditing
-                        ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-                        : 'bg-white/5 text-white/60 hover:text-white hover:bg-white/10 dark:bg-white/5'
+                        ? 'bg-emerald-500/20 text-emerald-500 hover:bg-emerald-500/30'
+                        : 'bg-[var(--glass-surface)] text-[var(--text-primary)] opacity-70 hover:opacity-100 hover:text-white dark:bg-white/5'
                     }`}
             >
                 {isEditing ? <Save size={12} className="shrink-0" /> : <Settings size={12} className="shrink-0" />}
@@ -103,7 +103,7 @@ const MermaidBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
             {!isEditing && (
                 <button
                     onClick={(e) => { e.stopPropagation(); setTransform({ x: 0, y: 0, scale: 1 }); }}
-                    className="p-1.5 rounded-lg bg-white/5 text-white/40 hover:text-white hover:bg-white/10 transition-all duration-300 active:scale-90"
+                    className="p-1.5 rounded-lg bg-[var(--glass-surface)] text-[var(--text-primary)] opacity-40 hover:opacity-100 hover:text-white transition-all duration-300 active:scale-90 liquid-button"
                     title="Resetar Visualização"
                 >
                     <Maximize2 size={12} />
