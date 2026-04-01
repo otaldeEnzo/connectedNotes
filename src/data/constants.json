@@ -1,0 +1,34 @@
+[
+  { "s": "c", "l": "c", "n": "Velocidade da Luz", "v": "299792458", "u": "m/s", "c": "Física", "sc": "Mecânica" },
+  { "s": "G", "l": "G", "n": "Constante Gravitacional", "v": "6.67430e-11", "u": "m³/ (kg·s²)", "c": "Física", "sc": "Gravitação" },
+  { "s": "g", "l": "g", "n": "Aceleração da Gravidade (Terra)", "v": "9.80665", "u": "m/s²", "c": "Física", "sc": "Gravitação" },
+  { "s": "h", "l": "h", "n": "Constante de Planck", "v": "6.62607015e-34", "u": "J·s", "c": "Física", "sc": "Quântica" },
+  { "s": "\\hbar", "l": "ħ", "n": "Constante de Planck Reduzida", "v": "1.054571817e-34", "u": "J·s", "c": "Física", "sc": "Quântica" },
+  { "s": "k_B", "l": "k_B", "n": "Constante de Boltzmann", "v": "1.380649e-23", "u": "J/K", "c": "Física", "sc": "Termodinâmica" },
+  { "s": "e", "l": "e", "n": "Carga Elementar", "v": "1.602176634e-19", "u": "C", "c": "Física", "sc": "Eletromagnetismo" },
+  { "s": "m_e", "l": "mₑ", "n": "Massa do Elétron", "v": "9.1093837015e-31", "u": "kg", "c": "Física", "sc": "Atômica" },
+  { "s": "m_p", "l": "mₚ", "n": "Massa do Próton", "v": "1.67262192369e-27", "u": "kg", "c": "Física", "sc": "Atômica" },
+  { "s": "\\varepsilon_0", "l": "ε₀", "n": "Permissividade do Vácuo", "v": "8.8541878128e-12", "u": "F/m", "c": "Física", "sc": "Eletromagnetismo" },
+  { "s": "\\mu_0", "l": "μ₀", "n": "Permeabilidade do Vácuo", "v": "1.25663706212e-6", "u": "N/A²", "c": "Física", "sc": "Eletromagnetismo" },
+  { "s": "\\sigma", "l": "σ", "n": "Constante de Stefan-Boltzmann", "v": "5.670374419e-8", "u": "W/(m²·K⁴)", "c": "Física", "sc": "Termodinâmica" },
+  { "s": "R_\\infty", "l": "R∞", "n": "Constante de Rydberg", "v": "10973731.568", "u": "m⁻¹", "c": "Física", "sc": "Atômica" },
+  
+  { "s": "N_A", "l": "Nₐ", "n": "Número de Avogadro", "v": "6.02214076e23", "u": "mol⁻¹", "c": "Química", "sc": "Geral" },
+  { "s": "R", "l": "R", "n": "Constante dos Gases Ideais", "v": "8.314462618", "u": "J/(mol·K)", "c": "Química", "sc": "Gases" },
+  { "s": "F", "l": "F", "n": "Constante de Faraday", "v": "96485.3321", "u": "C/mol", "c": "Química", "sc": "Eletroquímica" },
+  { "s": "V_m", "l": "Vₘ", "n": "Volume Molar (CNTP)", "v": "0.0224139695", "u": "m³/mol", "c": "Química", "sc": "Gases" },
+  
+  { "s": "e", "l": "e", "n": "Número de Euler", "v": "2.718281828459", "u": "", "c": "Matemática", "sc": "Cálculo" },
+  { "s": "\\pi", "l": "π", "n": "Pi", "v": "3.141592653589", "u": "", "c": "Matemática", "sc": "Geometria" },
+  { "s": "\\phi", "l": "φ", "n": "Proporção Áurea", "v": "1.618033988749", "u": "", "c": "Matemática", "sc": "Geometria" },
+  { "s": "\\gamma", "l": "γ", "n": "Constante de Euler-Mascheroni", "v": "0.5772156649", "u": "", "c": "Matemática", "sc": "Teoria dos Números" },
+  { "s": "\\delta", "l": "δ", "n": "Constante de Feigenbaum", "v": "4.6692016091", "u": "", "c": "Matemática", "sc": "Dinâmica Caótica" },
+  
+  { "s": "M_\\oplus", "l": "M⊕", "n": "Massa da Terra", "v": "5.9722e24", "u": "kg", "c": "Astronomia", "sc": "Planetária" },
+  { "s": "R_\\oplus", "l": "R⊕", "n": "Raio da Terra", "v": "6371000", "u": "m", "c": "Astronomia", "sc": "Planetária" },
+  { "s": "M_\\odot", "l": "M⊙", "n": "Massa Solar", "v": "1.9885e30", "u": "kg", "c": "Astronomia", "sc": "Estelar" },
+  { "s": "R_\\odot", "l": "R⊙", "n": "Raio Solar", "v": "6.957e8", "u": "m", "c": "Astronomia", "sc": "Estelar" },
+  { "s": "L_\\odot", "l": "L⊙", "n": "Luminosidade Solar", "v": "3.828e26", "u": "W", "c": "Astronomia", "sc": "Estelar" },
+  { "s": "pc", "l": "pc", "n": "Parsec", "v": "3.08567758e16", "u": "m", "c": "Astronomia", "sc": "Unidades" },
+  { "s": "au", "l": "ua", "n": "Unidade Astronômica", "v": "149597870700", "u": "m", "c": "Astronomia", "sc": "Unidades" }
+]

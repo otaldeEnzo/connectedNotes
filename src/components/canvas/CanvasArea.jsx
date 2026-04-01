@@ -4,6 +4,7 @@ import { queryGemini } from '../../services/AIService';
 import { MathService } from '../../services/MathService';
 import { useNotes } from '../../contexts/NotesContext';
 import { ExportService } from '../../services/ExportService';
+import { Sigma, Zap } from 'lucide-react';
 import AIPanel from '../AIPanel';
 
 import TextBlock from './TextBlock';
@@ -21,6 +22,8 @@ import SelectionToolbar from './SelectionToolbar';
 import ConnectionLayer from './ConnectionLayer';
 import BlockHandles from './BlockHandles';
 import MiniMap from './MiniMap';
+import ScientificOmnibar from './ScientificOmnibar';
+import { STEMService } from '../../services/STEMService';
 import {
   resolveColor,
   getSvgPathFromStroke,
@@ -155,6 +158,7 @@ const CanvasArea = forwardRef(({
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [stageSize, setStageSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
 
   const [patternImage, setPatternImage] = useState(null);
   const paperPattern = activeNote?.content?.background || 'dots';
@@ -193,11 +197,63 @@ const CanvasArea = forwardRef(({
 
     setPatternImage(canvas);
   }, [paperPattern, backgroundSize, isDarkMode]);
+  // Register Shortcuts
   useEffect(() => {
-    const handleResize = () => setStageSize({ width: window.innerWidth, height: window.innerHeight });
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    const handleGlobalShortcuts = (e) => {
+      // ALT + C for Constants
+      if (e.altKey && e.code === 'KeyC') {
+        e.preventDefault();
+        setIsOmnibarOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalShortcuts);
   }, []);
+
+  const handleInsertConstant = useCallback((value) => {
+    const activeNoteLocal = activeNote || globalActiveNote;
+    if (!activeNoteLocal) return;
+
+    // Check if a MathBlock is selected
+    const selectedBlockId = activeNoteLocal.content.selectedIds?.[0];
+    const selectedBlock = activeNoteLocal.content.blocks.find(b => b.id === selectedBlockId);
+
+    if (selectedBlock && selectedBlock.type === 'math') {
+      // Append to existing math block
+      const currentContent = selectedBlock.content || '';
+      const newContent = currentContent + (currentContent ? ' ' : '') + value;
+      updateNoteContent(activeNoteId, {
+        blocks: activeNoteLocal.content.blocks.map(b => 
+          b.id === selectedBlock.id ? { ...b, content: newContent } : b
+        )
+      });
+    } else {
+      // Create new math block at center of screen
+      const center = {
+        x: (-position.x + stageSize.width / 2) / scale,
+        y: (-position.y + stageSize.height / 2) / scale
+      };
+      
+      const newBlock = {
+        id: generateId(),
+        type: 'math',
+        content: value,
+        x: center.x - 100,
+        y: center.y - 50,
+        width: 200,
+        height: 100,
+        color: 'amber',
+        zIndex: (activeNoteLocal.content.blocks.length || 0) + 1
+      };
+
+      updateNoteContent(activeNoteId, {
+        blocks: [...(activeNoteLocal.content.blocks || []), newBlock],
+        selectedIds: [newBlock.id]
+      });
+    }
+    
+    saveNoteHistory();
+  }, [activeNote, globalActiveNote, activeNoteId, position, stageSize, scale, updateNoteContent, saveNoteHistory]);
 
   // Estados Unificados
   const [strokes, setStrokes] = useState([]);
@@ -1957,9 +2013,24 @@ const CanvasArea = forwardRef(({
           activeNoteType={activeNote.type}
         />
       )}
+      <ScientificOmnibar 
+        isOpen={isOmnibarOpen} 
+        onClose={() => setIsOmnibarOpen(false)} 
+        onInsert={handleInsertConstant}
+      />
+
+      {/* Scientific Mode Floating Trigger */}
+      <button
+        onClick={() => setIsOmnibarOpen(prev => !prev)}
+        className="fixed left-4 top-[170px] w-12 h-12 rounded-2xl glass-extreme flex items-center justify-center text-white/50 hover:text-white hover:bg-indigo-500/20 hover:border-indigo-500/40 transition-all z-[20000] shadow-glass group overflow-hidden"
+        title="Scientific Pro (Alt+C)"
+      >
+        <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <Sigma size={24} strokeWidth={2.5} className="relative z-10 group-hover:scale-110 transition-transform" />
+        <div className="absolute top-0 right-0 w-2 h-2 bg-indigo-500 rounded-full blur-[2px] opacity-20" />
+      </button>
     </div>
   );
-}
-);
+});
 
 export default CanvasArea;

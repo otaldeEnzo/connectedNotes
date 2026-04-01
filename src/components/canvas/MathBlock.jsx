@@ -2,12 +2,15 @@ import React, { useRef, useEffect, useState } from 'react';
 import { MathService } from '../../services/MathService';
 import { quickMathAction } from '../../services/AIService';
 import BlockWrapper from './BlockWrapper';
-import { Zap, ListChecks, BarChart3, Loader2 } from 'lucide-react';
+import { Zap, ListChecks, BarChart3, Loader2, Sigma } from 'lucide-react';
+import SymbolPalette from './SymbolPalette';
 
 const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, onInteract, saveHistory, isEditing, setEditing, onPlot, onSolve, onSteps, apiKey, isDragging, canvasScale, canvasPan }) => {
     const containerRef = useRef(null);
     const cardRef = useRef(null);
+    const textareaRef = useRef(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [isPaletteOpen, setIsPaletteOpen] = useState(false);
 
     useEffect(() => {
         const renderMath = () => {
@@ -70,10 +73,28 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
         onPlot(mathExpr);
     };
 
+    const handleInsertSymbol = (cmd) => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const currentContent = block.content || '';
+        
+        const newContent = currentContent.substring(0, start) + cmd + currentContent.substring(end);
+        updateBlock(block.id, { content: newContent });
+        
+        // Focus back and set cursor after the inserted command
+        setTimeout(() => {
+            textarea.focus();
+            const newCursorPos = start + cmd.length;
+            textarea.setSelectionRange(newCursorPos, newCursorPos);
+        }, 50);
+    };
+
     const handleContentClick = (e) => {
         if (!e.target.closest('.block-header')) {
             e.stopPropagation();
-            // Pequeno delay para garantir que o onPointerDown global do canvas já executou
             setTimeout(() => setEditing(true), 10);
         }
     };
@@ -85,7 +106,7 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
         <div className="flex items-center gap-1">
             <button
                 disabled={isProcessing}
-                onClick={handleSolve}
+                onPointerDown={(e) => { e.stopPropagation(); handleSolve(); }}
                 className="p-1.5 rounded-lg bg-[var(--glass-surface)] text-[var(--text-primary)] opacity-50 hover:opacity-100 hover:text-white active:scale-95 transition-all duration-300 disabled:opacity-50 liquid-button"
                 title="Resolver com AI"
             >
@@ -93,18 +114,30 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
             </button>
             <button
                 disabled={isProcessing}
-                onClick={handleSteps}
+                onPointerDown={(e) => { e.stopPropagation(); handleSteps(); }}
                 className="p-1.5 rounded-lg bg-[var(--glass-surface)] text-[var(--text-primary)] opacity-50 hover:opacity-100 hover:text-white active:scale-95 transition-all duration-300 disabled:opacity-50 liquid-button"
                 title="Ver Passos"
             >
                 {isProcessing ? <Loader2 size={12} className="animate-spin" /> : <ListChecks size={12} />}
             </button>
             <button
-                onClick={handlePlotRequest}
+                onPointerDown={(e) => { e.stopPropagation(); handlePlotRequest(); }}
                 className="p-1.5 rounded-lg bg-[var(--glass-surface)] text-[var(--text-primary)] opacity-50 hover:opacity-100 hover:text-white active:scale-95 transition-all duration-300 liquid-button"
                 title="Plotar Gráfico"
             >
                 <BarChart3 size={12} />
+            </button>
+            <div className="w-[1px] h-3 bg-white/10 mx-0.5" />
+            <button
+                onPointerDown={(e) => { 
+                    e.stopPropagation(); 
+                    setEditing(true);
+                    setIsPaletteOpen(!isPaletteOpen); 
+                }}
+                className={`p-1.5 rounded-lg transition-all duration-300 liquid-button ${isPaletteOpen ? 'bg-accent-color text-white opacity-100' : 'bg-[var(--glass-surface)] text-[var(--text-primary)] opacity-50 hover:opacity-100 hover:text-white'}`}
+                title="Paleta de Símbolos STEM"
+            >
+                <Sigma size={12} />
             </button>
         </div>
     );
@@ -136,11 +169,12 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
             <div className="flex items-center justify-center p-8 min-h-[100px] overflow-hidden">
                 {isEditing ?
                     <textarea
+                        ref={textareaRef}
                         autoFocus
                         className="no-interact bg-transparent border-none text-[var(--text-primary)] text-xl font-mono text-center outline-none resize-none w-full animate-in zoom-in-95 duration-300 pointer-events-auto"
                         value={block.content}
                         onChange={(e) => updateBlock(block.id, { content: e.target.value })}
-                        onBlur={() => { setEditing(false); if (saveHistory) saveHistory(); }}
+                        onBlur={() => { if (!isPaletteOpen) setEditing(false); if (saveHistory) saveHistory(); }}
                         onPointerDown={e => e.stopPropagation()}
                         onMouseDown={e => e.stopPropagation()}
                         onClick={e => e.stopPropagation()}
@@ -154,6 +188,11 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
                         className="text-[var(--text-primary)] text-3xl font-light text-center w-full animate-in fade-in zoom-in-95 duration-300 cursor-text hover:scale-[1.02] transition-transform"
                     />
                 }
+                <SymbolPalette 
+                    isOpen={isPaletteOpen && isEditing} 
+                    onClose={() => setIsPaletteOpen(false)} 
+                    onInsert={handleInsertSymbol} 
+                />
             </div>
 
             {/* KaTeX Support - Keep font sizes consistent */}
