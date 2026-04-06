@@ -1,1112 +1,814 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import {
-  Search, X, Calculator, Beaker, FunctionSquare, Tags, Zap, ChevronRight,
-  Info, ArrowRight, MousePointer2, Thermometer, Weight, Hash, Eraser, MoveUp,
-  History, Bookmark, Radiation, BookOpen, Layers, Plus, Download, Copy, Check
-} from 'lucide-react';
-import { create, all } from 'mathjs';
-import { STEMService, PERIODIC_TABLE, STEM_SYMBOLS, FORMULA_TEMPLATES } from '../../services/STEMService';
+import { stemEngine } from '../../services/CalculatorEngine';
+import buttonMap from '../../data/button_map.json';
+import { ModeRail, DisplayLCD, ScientificButton, GGBPreview, DPad } from './CalculatorUI';
+import { X, Maximize2, Layers, Bookmark, Pencil } from 'lucide-react';
 
-const math = create(all);
+// ========== HELPER UTILITIES ==========
+const isFunctionPart = (text, idx) => {
+  if (idx < 0 || idx >= text.length) return false;
+  const c = text[idx];
+  // Letters, digits, √, /, or _ belonging to a prefix followed by ( or ^
+  if (/[a-zA-Z0-9√/_]/.test(c)) {
+    let r = idx; while (r < text.length && /[a-zA-Z0-9√/_]/.test(text[r])) r++;
+    return text[r] === '(' || text[r] === '^';
+  }
+  // Specific numeric function prefixes (like 10 in 10^)
+  if (c === '0' && idx > 0 && text[idx - 1] === '1' && text[idx + 1] === '^') return true;
+  if (c === '1' && text[idx + 1] === '0' && text[idx + 2] === '^') return true;
+  return false;
+};
 
-const LatexRenderer = ({ formula, className = "" }) => {
-  const containerRef = useRef(null);
-  useEffect(() => {
-    if (containerRef.current && window.katex) {
-      try {
-        window.katex.render(formula, containerRef.current, {
-          throwOnError: false,
-          displayMode: true
-        });
-      } catch (err) {
-        containerRef.current.textContent = formula;
-      }
-    }
-  }, [formula]);
-  return <div ref={containerRef} className={`math-render-container ${className}`} />;
+const MemorySidebar = ({ variables, formulas, onToggle, isOpen, onEdit }) => {
+  const activeVars = Object.entries(variables).filter(([key, val]) => {
+     return val !== 0 || formulas[key];
+  });
+  
+  if (!isOpen) return null;
+
+  return (
+    <div className="w-[300px] border-l border-white/5 bg-white/[0.02] backdrop-blur-3xl p-8 flex flex-col gap-6 animate-in slide-in-from-right duration-500 relative">
+      <div className="flex justify-between items-center mb-2">
+        <div className="flex items-center gap-3">
+          <div className="w-4 h-4 rounded bg-indigo-500/20 flex items-center justify-center">
+             <Bookmark size={10} className="text-indigo-400" />
+          </div>
+          <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40">Workstation Memory</h3>
+        </div>
+        <button onClick={onToggle} className="p-2 hover:bg-white/5 rounded-lg text-white/20 transition-all">
+          <X size={14} />
+        </button>
+      </div>
+      
+      <div className="flex flex-col gap-3 overflow-y-auto pr-2 custom-scrollbar max-h-[calc(100vh-400px)]">
+        {activeVars.map(([key, val]) => {
+          const formula = formulas[key];
+          return (
+            <div key={key} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 flex flex-col gap-2 group hover:border-indigo-500/30 hover:bg-white/[0.05] transition-all duration-300 relative">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{key}</span>
+                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500/40 group-hover:bg-indigo-400 animate-pulse" />
+                </div>
+                {formula && (
+                  <button 
+                    onClick={() => onEdit(formula)}
+                    className="p-1.5 rounded-lg hover:bg-indigo-500/20 text-indigo-400 group-hover:text-indigo-300 transition-all shadow-glow-indigo-soft active:scale-90"
+                    title="Editar Função"
+                  >
+                    <Pencil size={11} className="drop-shadow-glow-blue" />
+                  </button>
+                )}
+              </div>
+              
+              <div className="flex flex-col gap-0.5">
+                {formula ? (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] font-bold text-white/20 uppercase tracking-tighter">Fórmula:</span>
+                    <code className="text-xs font-medium text-[#00d2ff] bg-white/[0.01] p-2 rounded-lg border border-white/5 font-mono truncate cursor-pointer hover:bg-white/[0.03]" onClick={() => onEdit(formula)}>
+                       {formula.replace(':=' , '=')}
+                    </code>
+                  </div>
+                ) : (
+                  <span className="text-base font-semibold text-white/90 tracking-tight">
+                    {typeof val === 'number' ? val.toLocaleString('en-US', { maximumFractionDigits: 8 }) : val.toString()}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {activeVars.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 opacity-20 gap-4">
+             <Layers size={32} strokeWidth={1} />
+             <p className="text-[10px] font-black uppercase tracking-widest text-center">Memória Vazia</p>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-auto pt-6 border-t border-white/5">
+         <div className="p-5 rounded-2xl bg-indigo-500/5 border border-indigo-500/10 text-[9px] text-indigo-300/50 leading-relaxed font-bold italic">
+            DICA: Toque na fórmula ou no ícone para carregar a função no editor principal.
+         </div>
+      </div>
+    </div>
+  );
 };
 
 const ScientificOmnibar = ({ isOpen, onClose, onInsert }) => {
-  const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState('search');
-  const [selectedElement, setSelectedElement] = useState(null);
-  const [insertMode, setInsertMode] = useState('symbol');
   const [calcInput, setCalcInput] = useState('');
-  const [calcResult, setCalcResult] = useState('');
-  const [calcHistory, setCalcHistory] = useState([]);
-  const [isHistoryVisible, setIsHistoryVisible] = useState(false);
-  const [calcMode, setCalcMode] = useState('basic'); // basic, graph, matrix, conic, calculus, stats
-
-  // Matrix State
-  const [matrixDims, setMatrixDims] = useState({ r: 3, c: 3 });
-  const [matrixCells, setMatrixCells] = useState(Array(3).fill(null).map(() => Array(3).fill('')));
-  const [matrixRaw, setMatrixRaw] = useState('');
-  const [matrixInputMode, setMatrixInputMode] = useState('grid'); // grid, raw
-
-  // Graph State
-  const [graphExpr, setGraphExpr] = useState('sin(x)');
-  const [graph3D, setGraph3D] = useState(false);
-  const [graphZoom, setGraphZoom] = useState(1);
-
-  // Geometry State
-  const [geoPoints, setGeoPoints] = useState({ ax: '0', ay: '0', bx: '3', by: '4' });
-  const [conicType, setConicType] = useState('ellipse'); // ellipse, parabola, hyperbola
-  const [conicParams, setConicParams] = useState({ a: '5', b: '3', h: '0', k: '0' });
-
-  // Calculus & Stats State
-  const [calcFn, setCalcFn] = useState('x^2');
-  const [calcX0, setCalcX0] = useState('2');
-  const [calcRange, setCalcRange] = useState({ a: '0', b: '1' });
-  const [statsData, setStatsData] = useState('10, 20, 15, 30, 25');
+  const [calcResult, setCalcResult] = useState('0');
+  const [activeMode, setActiveMode] = useState('calculate');
+  const [isCtrlActive, setIsCtrlActive] = useState(false);
+  const [isAlphaActive, setIsAlphaActive] = useState(false);
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const [isSymbolic, setIsSymbolic] = useState(true);
+  const [unitMode, setUnitMode] = useState('deg'); // 'deg' or 'rad'
+  const [justOpened, setJustOpened] = useState(false);
+  const [isPhysicalCtrl, setIsPhysicalCtrl] = useState(false);
+  const [isPhysicalAlt, setIsPhysicalAlt] = useState(false);
+  const [isAllSelected, setIsAllSelected] = useState(false);
+  const [isResultStale, setIsResultStale] = useState(false);
   
-  // STEM PRO (Casio Style) State
-  const [mathVars, setMathVars] = useState(() => {
-    const saved = localStorage.getItem('scientific-vars');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [userMacros, setUserMacros] = useState(() => {
-    const saved = localStorage.getItem('scientific-macros');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [symbolicMode, setSymbolicMode] = useState(false);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [showMemory, setShowMemory] = useState(false);
-
-  useEffect(() => {
-    localStorage.setItem('scientific-vars', JSON.stringify(mathVars));
-  }, [mathVars]);
-
-  useEffect(() => {
-    localStorage.setItem('scientific-macros', JSON.stringify(userMacros));
-  }, [userMacros]);
-
-  const CASIO_MODES = [
-    { id: 'basic', label: 'Cálculo', icon: Calculator, color: 'indigo-500' },
-    { id: 'complex', label: 'Complexos', icon: Zap, color: 'purple-500' },
-    { id: 'base-n', label: 'Base-N', icon: Hash, color: 'emerald-500' },
-    { id: 'matrix', label: 'Matrizes', icon: Layers, color: 'amber-500' },
-    { id: 'vector', label: 'Vetores', icon: MoveUp, color: 'blue-500' },
-    { id: 'stats', label: 'Estatística', icon: BookOpen, color: 'pink-500' },
-    { id: 'dist', label: 'Distribuição', icon: Radiation, color: 'rose-500' },
-    { id: 'table', label: 'Tabela', icon: FunctionSquare, color: 'cyan-500' },
-    { id: 'equation', label: 'Equação', icon: ChevronRight, color: 'orange-500' },
-    { id: 'inequality', label: 'Inequação', icon: Search, color: 'yellow-500' },
-    { id: 'ratio', label: 'Razão', icon: Info, color: 'slate-400' },
-    { id: 'geometry', label: 'Geometria', icon: MousePointer2, color: 'violet-500' },
-  ];
-
-  const [constantCategory, setConstantCategory] = useState('All');
-  const [showAddConstant, setShowAddConstant] = useState(false);
-  const [copyFeedback, setCopyFeedback] = useState(false);
-
-  const [newConst, setNewConst] = useState({ s: '', l: '', n: '', v: '', u: '', c: 'Física', sc: '' });
-  const inputRef = useRef(null);
-
-  // Dragging State
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStart = useRef({ x: 0, y: 0 });
-
-  const handlePointerDown = (e) => {
-    if (e.target.closest('button') || e.target.closest('input')) return;
-    setIsDragging(true);
-    dragStart.current = { x: e.clientX - position.x, y: e.clientY - position.y };
-    e.target.setPointerCapture(e.pointerId);
-  };
-
-  const handlePointerMove = (e) => {
-    if (!isDragging) return;
-    setPosition({ x: e.clientX - dragStart.current.x, y: e.clientY - dragStart.current.y });
-  };
-
-  const handlePointerUp = (e) => {
-    setIsDragging(false);
-  };
-
-  const families = [
-    { id: 'alkali-metal', label: 'Metais Alcalinos', color: '#f87171' },
-    { id: 'alkaline-earth', label: 'Metais Alcalino-Terrosos', color: '#fb923c' },
-    { id: 'transition-metal', label: 'Metais de Transição', color: '#60a5fa' },
-    { id: 'post-transition', label: 'Metais Pós-Transição', color: '#2dd4bf' },
-    { id: 'metalloid', label: 'Semimetais', color: '#facc15' },
-    { id: 'non-metal', label: 'Ametais', color: '#4ade80' },
-    { id: 'noble-gas', label: 'Gases Nobres', color: '#c084fc' },
-    { id: 'lanthanide', label: 'Lantanídeos', color: '#fdba74' },
-    { id: 'actinide', label: 'Actinídeos', color: '#f9a8d4' },
-  ];
-
-  const getFamilyStyle = (groupId) => {
-    const family = families.find(f => f.id === groupId);
-    if (!family) return { bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)', text: 'white' };
-    const color = family.color;
-    return { bg: `${color}26`, border: `${color}4D`, text: color };
-  };
+  // HISTORY STACKS (Refs to prevent stale closures in event listeners)
+  const historyRef = useRef([]);
+  const redoStackRef = useRef([]);
 
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 50);
-      setSearch('');
-      setActiveTab('search');
-      setShowAddConstant(false);
+      setIsCtrlActive(false);
+      setIsAlphaActive(false);
+      setJustOpened(true);
+      const timer = setTimeout(() => setJustOpened(false), 300);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
-  const searchResults = useMemo(() => {
-    if (!search && activeTab === 'search') return { calc: null, constants: [], elements: [], formulas: [], symbols: [] };
-    let calc = null;
-    try {
-      if (search && /[\d+\-*/^().]/.test(search)) {
-        const evaluated = math.evaluate(search);
-        calc = typeof evaluated === 'number' ? math.format(evaluated, { precision: 10 }) : evaluated.toString();
-      }
-    } catch (e) { }
-    return {
-      calc,
-      constants: STEMService.searchConstants(search).slice(0, 5),
-      elements: STEMService.searchPeriodicTable(search).slice(0, 5),
-      formulas: STEMService.searchFormulas(search).slice(0, 5),
-      symbols: STEMService.searchSymbols(search)
+  const keyPressedRef = useRef(false);
+
+  // ZONAL KEY DEFINITIONS
+  const SCI_KEYS = [
+    'key_frac', 'key_sqrt', 'key_pow', 'key_log', 'key_ln', 'key_neg',
+    'key_integral', 'key_sum', 'key_sin', 'key_cos', 'key_tan',
+    'key_paren_left', 'key_paren_right', 'key_comma'
+  ];
+
+  const NUM_KEYS = [
+    'key_7', 'key_8', 'key_9', 'key_del', 'key_ac',
+    'key_4', 'key_5', 'key_6', 'key_mul', 'key_div',
+    'key_1', 'key_2', 'key_3', 'key_plus', 'key_minus',
+    'key_dot', 'key_0', 'key_exp', 'key_ans', 'key_equal'
+  ];
+
+  // Refs for stable access in event listeners without re-binding
+  const inputRef = useRef(calcInput);
+  const cursorRef = useRef(cursorPosition);
+  const ctrlRef = useRef(isCtrlActive);
+  const alphaRef = useRef(isAlphaActive);
+  const symbolicRef = useRef(isSymbolic);
+  const unitRef = useRef(unitMode);
+  const activeModeRef = useRef(activeMode);
+  const allSelectedRef = useRef(isAllSelected);
+  const staleRef = useRef(isResultStale);
+  const [isMemorySidebarOpen, setIsMemorySidebarOpen] = useState(true);
+
+  useEffect(() => { inputRef.current = calcInput; }, [calcInput]);
+  useEffect(() => { cursorRef.current = cursorPosition; }, [cursorPosition]);
+  useEffect(() => { ctrlRef.current = isCtrlActive; }, [isCtrlActive]);
+  useEffect(() => { alphaRef.current = isAlphaActive; }, [isAlphaActive]);
+  useEffect(() => { symbolicRef.current = isSymbolic; }, [isSymbolic]);
+  useEffect(() => { unitRef.current = unitMode; }, [unitMode]);
+  useEffect(() => { activeModeRef.current = activeMode; }, [activeMode]);
+  useEffect(() => { allSelectedRef.current = isAllSelected; }, [isAllSelected]);
+  useEffect(() => { staleRef.current = isResultStale; }, [isResultStale]);
+
+  const handleEvaluate = useCallback(() => {
+    const evaluation = stemEngine.evaluate(inputRef.current, activeModeRef.current, symbolicRef.current, unitRef.current);
+    setCalcResult(evaluation.text);
+    setIsResultStale(true); staleRef.current = true;
+  }, []);
+
+  const moveCursor = useCallback((direction) => {
+    const text = inputRef.current;
+    const pos = cursorRef.current;
+    let next = pos;
+
+    const isSkippable = (idx) => {
+      if (idx <= 0 || idx >= text.length) return false;
+      const prev = text[idx - 1];
+      const curr = text[idx];
+      const isProductive = (c) => /[a-zA-Z0-9√/_]/.test(c);
+      const isBracket = (c) => ['(', ')'].includes(c);
+      
+      // Stop next to a real digit, variable, or a bracket boundary
+      if (isProductive(prev) || isProductive(curr) || isBracket(prev) || isBracket(curr)) return false;
+      
+      // Also don't skip placeholders (spaces between structural boundaries)
+      const isStruct = (c) => ['^', '/', ','].includes(c);
+      if (curr === ' ' && isStruct(prev) && isStruct(text[idx + 1] || '')) return false;
+
+      // Otherwise, it's a gutter (structural boundary or padding) — we can skip it
+      return true;
     };
-  }, [search, activeTab]);
 
-  const filteredConstants = useMemo(() => {
-    if (constantCategory === 'All') return STEMService.getMergedConstants();
-    return STEMService.getMergedConstants().filter(c => c.c === constantCategory);
-  }, [constantCategory]);
+    if (direction === 'left') {
+      next = Math.max(0, pos - 1);
+      while (next > 0 && isSkippable(next)) next--;
+      if (next > 0 && (text[next-1] === '(' || text[next-1] === '^' || isFunctionPart(text, next-1))) {
+        while (next > 0 && (text[next-1] === '(' || text[next-1] === '^' || /[a-zA-Z0-9√/_]/.test(text[next - 1]))) next--;
+      }
+    } else if (direction === 'right') {
+      next = Math.min(text.length, pos + 1);
+      while (next < text.length && isSkippable(next)) next++;
+      if (next < text.length && (text[next] === '^' || isFunctionPart(text, next))) {
+        while (next < text.length && (text[next] === '^' || /[a-zA-Z0-9√/_]/.test(text[next]))) next++;
+        if (next < text.length && text[next] === '(') next++;
+      }
+      if (next < text.length && (text[next] === ')' || text[next] === '(')) {
+        next++;
+      }
+    } else if (direction === 'down' || direction === 'up') {
+      const isDown = direction === 'down';
+      const separators = ['/', '^', ','];
+      let target = -1;
+      
+      if (isDown) {
+        const options = separators.map(s => text.indexOf(s, pos)).filter(i => i !== -1);
+        if (options.length > 0) {
+          const first = Math.min(...options);
+          const nextOpen = text.indexOf('(', first);
+          target = nextOpen !== -1 ? nextOpen + 1 : first + 1;
+        }
+      } else {
+        const options = separators.map(s => text.lastIndexOf(s, pos - 1)).filter(i => i !== -1);
+        if (options.length > 0) {
+          const last = Math.max(...options);
+          const prevOpen = text.lastIndexOf('(', last);
+          target = prevOpen !== -1 ? prevOpen + 1 : last;
+        }
+      }
+      
+      if (target !== -1) next = Math.max(0, Math.min(text.length, target));
+    }
 
-  const getNextVarName = () => {
-    let i = 1;
-    while (mathVars.find(v => v.name === `$Var${i}`)) i++;
-    return `$Var${i}`;
-  };
+    setCursorPosition(next); cursorRef.current = next;
+  }, []);
 
-  const handleSelect = (item) => {
-    if (!item) return;
-    let val = '';
-    if (item.type === 'calc') val = item.value;
-    else if (item.type === 'constant') val = insertMode === 'symbol' ? item.s : item.v;
-    else if (item.type === 'element') val = insertMode === 'symbol' ? item.symbol : item.atomicMass.toString();
-    else if (item.type === 'formula') val = item.formula;
-    else if (item.type === 'symbol') val = item.cmd;
-    else if (item.type === 'math-block') {
-      onInsert({ type: 'math', value: item.value });
-      onClose();
+  const pushToHistory = useCallback(() => {
+    const nextItem = { text: inputRef.current, pos: cursorRef.current };
+    historyRef.current.push(nextItem);
+    if (historyRef.current.length > 100) historyRef.current.shift();
+    redoStackRef.current = []; // Clear redo stack on new action
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    if (historyRef.current.length === 0) return;
+    const last = historyRef.current.pop();
+    
+    redoStackRef.current.push({ text: inputRef.current, pos: cursorRef.current });
+    
+    setCalcInput(last.text); inputRef.current = last.text;
+    setCursorPosition(last.pos); cursorRef.current = last.pos;
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return;
+    const next = redoStackRef.current.pop();
+    
+    historyRef.current.push({ text: inputRef.current, pos: cursorRef.current });
+    
+    setCalcInput(next.text); inputRef.current = next.text;
+    setCursorPosition(next.pos); cursorRef.current = next.pos;
+  }, []);
+
+  const handleInput = useCallback((id, forceMode = null, ignoreCurrentModifiers = false) => {
+    if (id === 'key_left') { moveCursor('left'); return; }
+    if (id === 'key_right') { moveCursor('right'); return; }
+    if (id === 'key_up') { moveCursor('up'); return; }
+    if (id === 'key_down') { moveCursor('down'); return; }
+
+    const key = buttonMap.keys[id];
+    if (!key) return;
+
+    if (allSelectedRef.current && id !== 'key_left' && id !== 'key_right') {
+      setCalcInput(''); inputRef.current = '';
+      setCursorPosition(0); cursorRef.current = 0;
+      setIsAllSelected(false);
+      if (id === 'key_del' || id === 'key_ac') return;
+    } else if (allSelectedRef.current) {
+      setIsAllSelected(false);
+    }
+
+    let command = key.normal;
+    const effectiveCtrl = !ignoreCurrentModifiers && (forceMode === 'ctrl' || ctrlRef.current);
+    const effectiveAlpha = !ignoreCurrentModifiers && (forceMode === 'alpha' || alphaRef.current);
+
+    if (effectiveCtrl) command = key.shift || key.normal;
+    else if (effectiveAlpha) command = key.alpha || key.normal;
+
+    setIsCtrlActive(false);
+    setIsAlphaActive(false);
+
+    if (command === 'CTRL') { setIsCtrlActive(true); return; }
+    if (command === 'ALT') { setIsAlphaActive(true); return; }
+
+    // --- AUTO-RESET LOGIC ---
+    if (staleRef.current && id !== 'key_shift' && id !== 'key_alpha') {
+      setIsResultStale(false); staleRef.current = false;
+      setCalcResult(null); 
+      
+      const isOperator = ['+', '-', '*', '/', '^', '=', ','].some(op => command === op) || id.includes('plus') || id.includes('minus') || id.includes('mul') || id.includes('div') || id === 'key_sd';
+      
+      if (!isOperator && id !== 'key_del' && id !== 'key_ac' && !id.includes('arrow') && id !== 'key_stod') {
+        setCalcInput('');
+        inputRef.current = '';
+        setCursorPosition(0);
+        cursorRef.current = 0;
+      }
+    }
+
+    if (command === 'AC') {
+      if (effectiveCtrl) { handleRedo(); return; } // SHIFT + AC = REDO
+      pushToHistory(); 
+      setCalcInput(''); inputRef.current = '';
+      setCalcResult('0');
+      setCursorPosition(0); cursorRef.current = 0;
+      setIsResultStale(false); staleRef.current = false;
       return;
     }
-    else if (item.type === 'graph-block') {
-      onInsert({ type: 'geogebra', value: item.value });
-      onClose();
+    if (command === 'DEL') {
+      if (effectiveCtrl) { handleUndo(); return; } // SHIFT + DEL = UNDO
+      pushToHistory();
+      const pos = cursorRef.current;
+      const text = inputRef.current;
+      if (pos <= 0) return;
+
+      const isStructuralLocal = (t, p) => {
+        if (p < 0 || p >= t.length) return false;
+        return ['^', '/', ',', '(', ')'].includes(t[p]);
+      };
+
+      // 1. Sweep left: skip ALL structural chars AND spaces to find real content
+      let contentIdx = pos - 1;
+      while (contentIdx >= 0 && (isStructuralLocal(text, contentIdx) || text[contentIdx] === ' ')) {
+        contentIdx--;
+      }
+
+      if (contentIdx >= 0 && !isFunctionPart(text, contentIdx)) {
+        const nextText = text.slice(0, contentIdx) + text.slice(contentIdx + 1);
+        setCalcInput(nextText); inputRef.current = nextText;
+        setCursorPosition(contentIdx); cursorRef.current = contentIdx;
+        return;
+      }
+
+      // 2. STRUCTURAL SHIELD & SURGICAL WIPE
+      if (pos > 0 && text[pos - 1] === '(') {
+        // Check if current brackets are empty
+        const closeIdx = ((t, start) => {
+          let d = 0;
+          for (let i = start; i < t.length; i++) {
+            if (t[i] === '(') d++; else if (t[i] === ')') { d--; if (d === 0) return i; }
+          }
+          return -1;
+        })(text, pos - 1);
+        
+        if (closeIdx !== -1) {
+          const innerContent = text.substring(pos, closeIdx).trim();
+          if (innerContent === '' || innerContent === ',') {
+            
+            // --- NEW: Binary Structure Detection (Fraction/Power) ---
+            let isBinaryLeft = false, binaryRightEnd = -1;
+            let scanRight = closeIdx + 1;
+            while(scanRight < text.length && text[scanRight] === ' ') scanRight++;
+            if (scanRight < text.length && (text[scanRight] === '/' || text[scanRight] === '^')) {
+                scanRight++;
+                while(scanRight < text.length && text[scanRight] === ' ') scanRight++;
+                if (scanRight < text.length && text[scanRight] === '(') {
+                    const rightClose = ((t, start) => { let d=0; for (let i=start;i<t.length;i++) { if(t[i]==='(') d++; else if(t[i]===')') {d--; if(d===0) return i;} } return -1; })(text, scanRight);
+                    if (rightClose !== -1) {
+                        const rightContent = text.substring(scanRight + 1, rightClose).trim();
+                        if (rightContent === '') { isBinaryLeft = true; binaryRightEnd = rightClose; }
+                    }
+                }
+            }
+
+            let isBinaryRight = false, binaryLeftStart = -1;
+            let scanLeft = pos - 2;
+            while(scanLeft >= 0 && text[scanLeft] === ' ') scanLeft--;
+            if (scanLeft >= 0 && (text[scanLeft] === '/' || text[scanLeft] === '^')) {
+                scanLeft--;
+                while(scanLeft >= 0 && text[scanLeft] === ' ') scanLeft--;
+                if (scanLeft >= 0 && text[scanLeft] === ')') {
+                    const findOpenBackward = (t, end) => { let d=0; for(let i=end; i>=0; i--){ if(t[i]===')') d++; else if(t[i]==='('){d--; if(d===0) return i;} } return -1; };
+                    const leftStart = findOpenBackward(text, scanLeft);
+                    if (leftStart !== -1) {
+                        const leftContent = text.substring(leftStart + 1, scanLeft).trim();
+                        if (leftContent === '') { isBinaryRight = true; binaryLeftStart = leftStart; }
+                    }
+                }
+            }
+            
+            let wipeStart = pos - 1;
+            let wipeEnd = closeIdx;
+
+            if (isBinaryLeft) {
+                wipeEnd = binaryRightEnd;
+            } else if (isBinaryRight) {
+                wipeStart = binaryLeftStart;
+            } else {
+                // Regular function wipe (e.g., sqrt, log)
+                while (wipeStart > 0 && isFunctionPart(text, wipeStart - 1)) wipeStart--;
+            }
+            
+            const nextText = text.slice(0, wipeStart) + text.slice(wipeEnd + 1);
+            setCalcInput(nextText); inputRef.current = nextText;
+            setCursorPosition(wipeStart); cursorRef.current = wipeStart;
+            return;
+          }
+        }
+      }
+
+      if (pos > 0 && isStructuralLocal(text, pos - 1)) {
+        const char = text[pos - 1];
+        if (char === '/' || char === '^') {
+          // If user hits backspace exactly on an orphaned slash or caret
+          const nextText = text.slice(0, pos - 1) + text.slice(pos);
+          setCalcInput(nextText); inputRef.current = nextText;
+          setCursorPosition(pos - 1); cursorRef.current = pos - 1;
+          return;
+        }
+        
+        // General shield for parentheses if not part of wipe sequence
+        setCursorPosition(pos - 1); cursorRef.current = pos - 1;
+        return;
+      }
+
+      // 2. Atomic Shell Deletion & Surgical Teleportation
+      let parenPos = -1;
+      if (text[pos-1] === '(' || text[pos-1] === ')') parenPos = pos - 1;
+      else if (text[pos] === '(' || text[pos] === ')') parenPos = pos;
+      else {
+        let left = pos - 1;
+        while (left >= 0 && text[left] !== '(' && text[left] !== ')') left--;
+        parenPos = left;
+      }
+
+      let isClosed = false;
+      if (parenPos >= 0) {
+        const c = text[parenPos];
+        let matchPos = -1;
+        if (c === '(') {
+          let d = 1;
+          for (let i = parenPos + 1; i < text.length; i++) {
+            if (text[i] === '(') d++; else if (text[i] === ')') d--;
+            if (d === 0) { matchPos = i; break; }
+          }
+        } else {
+          let d = 1;
+          for (let i = parenPos - 1; i >= 0; i--) {
+            if (text[i] === ')') d++; else if (text[i] === '(') d--;
+            if (d === 0) { matchPos = i; break; }
+          }
+        }
+
+        if (matchPos !== -1) {
+          isClosed = true;
+          const start = Math.min(parenPos, matchPos);
+          const end = Math.max(parenPos, matchPos);
+          const contentStr = text.slice(start + 1, end).replace(/[, ]/g, '').trim();
+
+          let prefixStart = start;
+          while (prefixStart > 0 && /[a-zA-Z0-9√/_]/.test(text[prefixStart - 1])) prefixStart--;
+
+          if (contentStr === '') {
+            // DELETE ENTIRE EMPTY SHELL
+            let totalStart = prefixStart;
+            let totalEnd = end;
+            if (prefixStart > 0 && (text[prefixStart-1] === '^' || text[prefixStart-1] === '/')) {
+              totalStart = prefixStart - 1;
+              while (totalStart > 0 && /[a-zA-Z0-9√/_]/.test(text[totalStart-1])) totalStart--;
+            }
+            const nt = text.slice(0, totalStart) + text.slice(totalEnd + 1);
+            setCalcInput(nt); inputRef.current = nt;
+            setCursorPosition(totalStart); cursorRef.current = totalStart;
+            return;
+          } else if (pos <= start + 1 && pos >= prefixStart) {
+            // SURGICAL TELEPORT: Only jump if trying to break the hardware (prefix or '(')
+            const targetEnd = Math.max(parenPos, matchPos);
+            setCursorPosition(targetEnd); cursorRef.current = targetEnd;
+            return;
+          }
+        }
+      }
+
+      // 3. Fallback: Only jump if it's a CLOSED hardware part, otherwise let the user DELETE IT
+      if ((isStructuralLocal(text, pos - 1) || isFunctionPart(text, pos - 1)) && isClosed) {
+        setCursorPosition(pos - 1); cursorRef.current = pos - 1;
+        return;
+      }
+
+      const nt = text.slice(0, pos - 1) + text.slice(pos);
+      setCalcInput(nt); inputRef.current = nt;
+      setCursorPosition(pos - 1); cursorRef.current = pos - 1;
       return;
     }
-    if (val) onInsert(val);
-    setTimeout(onClose, 10);
-  };
-
-  const onNumpadClick = (val) => {
-    if (val === '=') {
-      try {
-        const res = math.evaluate(calcInput);
-        const formattedRes = math.format(res, { precision: 10 });
-        setCalcResult(formattedRes);
-        setCalcHistory(prev => [{ expression: calcInput, result: formattedRes }, ...prev].slice(0, 20));
-      } catch (e) { setCalcResult('Erro'); }
-    } else if (val === 'C') {
-      setCalcInput(''); setCalcResult('');
-    } else if (val === 'back') {
-      setCalcInput(prev => prev.slice(0, -1));
-    } else { setCalcInput(prev => prev + val); }
-  };
-
-  const handleMatrixOperation = (op) => {
-    try {
-      let matrix;
-      if (matrixInputMode === 'grid') {
-        matrix = matrixCells.map(row => row.map(cell => math.evaluate(cell || '0')));
-      } else {
-        matrix = math.evaluate(matrixRaw);
-      }
-
-      let result;
-      switch (op) {
-        case 'det': result = math.det(matrix); break;
-        case 'inv': result = math.inv(matrix); break;
-        case 'trans': result = math.transpose(matrix); break;
-        case 'rank':
-          // Simple rank implementation via row echelon or just use mathjs if available
-          // mathjs doesn't have a direct rank() in all versions, we'll use size for now 
-          // or a more complex approach. For now, let's use det visibility logic.
-          result = "Funcionalidade em breve";
-          break;
-        default: return;
-      }
-
-      const formatted = typeof result === 'number' ? math.format(result, { precision: 6 }) : result.toString();
-      setCalcResult(formatted);
-      if (matrixInputMode === 'grid') setCalcInput(`Operação ${op} em matriz ${matrixDims.r}x${matrixDims.c}`);
-    } catch (e) {
-      setCalcResult('Erro na Operação');
+    if (command === '=') { handleEvaluate(); return; }
+    if (command === 'stod') {
+      const nextSym = !symbolicRef.current;
+      setIsSymbolic(nextSym); symbolicRef.current = nextSym;
+      const evaluation = stemEngine.evaluate(inputRef.current, activeModeRef.current, nextSym, unitRef.current);
+      setCalcResult(evaluation.text);
+      return;
     }
-  };
 
-  const syncMatrixModes = (toMode) => {
-    try {
-      if (toMode === 'raw') {
-        const raw = '[' + matrixCells.map(row => row.join(' ')).join('; ') + ']';
-        setMatrixRaw(raw);
-      } else {
-        // Simple parser for [1 2; 3 4]
-        const clean = matrixRaw.replace(/[\[\]]/g, '');
-        const rows = clean.split(';').map(r => r.trim().split(/\s+/));
-        const newR = rows.length;
-        const newC = rows[0].length;
-        setMatrixDims({ r: newR, c: newC });
-        setMatrixCells(rows);
+    const resolveTemplate = (cmd, text, cursorIdx) => {
+      const isStart = cursorIdx === 0 || ['+', '-', '*', '/', '(', ','].includes(text[cursorIdx - 1]) || text[cursorIdx - 1] === ' ';
+
+      // Infix Operators (Fractions, Powers)
+      if (cmd === '( )^( )') return isStart ? { insert: '( )^( )', offset: 1 } : { insert: '^( )', offset: 2 };
+      if (cmd === '( )/( )') return isStart ? { insert: '( )/( )', offset: 2 } : { insert: '/( )', offset: 2 };
+      
+      // Hardware placeholders based on parameter markers
+      if (cmd === ' * 10^( )') return { insert: cmd, offset: 7 };
+
+      // Normal Function Blocks with internal placeholders
+      const firstParen = cmd.indexOf('( ');
+      if (firstParen !== -1) return { insert: cmd, offset: firstParen + 1 };
+      
+      // Open Function Blocks
+      if (cmd.endsWith('(')) return { insert: cmd + ' )', offset: cmd.length };
+
+      return { insert: cmd, offset: cmd.length };
+    };
+
+    const pos = cursorRef.current;
+    const { insert: textToInsert, offset } = resolveTemplate(command, inputRef.current, pos);
+
+    const nextText = inputRef.current.slice(0, pos) + textToInsert + inputRef.current.slice(pos);
+    const nextPos = pos + offset;
+    pushToHistory();
+    setCalcInput(nextText); inputRef.current = nextText;
+    setCursorPosition(nextPos); cursorRef.current = nextPos;
+  }, [handleEvaluate, isSymbolic, unitMode, pushToHistory]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleGlobalKeyDown = (e) => {
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'ArrowLeft') moveCursor('left');
+        else if (e.key === 'ArrowRight') moveCursor('right');
+        else if (e.key === 'ArrowUp') moveCursor('up');
+        else if (e.key === 'ArrowDown') moveCursor('down');
+        return;
       }
-      setMatrixInputMode(toMode);
-    } catch (e) {
-      console.warn("Sync failed", e);
-      setMatrixInputMode(toMode);
-    }
-  };
 
-  const geoResults = useMemo(() => {
-    try {
-      const ax = parseFloat(geoPoints.ax); const ay = parseFloat(geoPoints.ay);
-      const bx = parseFloat(geoPoints.bx); const by = parseFloat(geoPoints.by);
-      const dist = Math.sqrt(Math.pow(bx - ax, 2) + Math.pow(by - ay, 2));
-      const midX = (ax + bx) / 2; const midY = (ay + by) / 2;
-      const slope = (bx - ax) !== 0 ? (by - ay) / (bx - ax) : Infinity;
-      return { dist: dist.toFixed(4), mid: `(${midX}, ${midY})`, slope: slope.toFixed(4) };
-    } catch (e) { return { dist: '--', mid: '--', slope: '--' }; }
-  }, [geoPoints]);
+      if (['Backspace', 'Enter'].includes(e.key)) e.preventDefault();
 
-  const conicResults = useMemo(() => {
-    try {
-      const a = parseFloat(conicParams.a); const b = parseFloat(conicParams.b);
-      const h = parseFloat(conicParams.h); const k = parseFloat(conicParams.k);
-      if (conicType === 'ellipse') {
-        const c = Math.sqrt(Math.abs(a * a - b * b));
-        const ecc = c / Math.max(a, b);
-        return { c: c.toFixed(3), ecc: ecc.toFixed(3), area: (Math.PI * a * b).toFixed(2) };
-      } else if (conicType === 'hyperbola') {
-        const c = Math.sqrt(a * a + b * b);
-        const ecc = c / a;
-        return { c: c.toFixed(3), ecc: ecc.toFixed(3), area: 'N/A' };
-      } else if (conicType === 'parabola') {
-        const p = a / 2;
-        return { c: p.toFixed(3), ecc: '1.000', area: 'N/A' };
+      if (e.key === 'Control' || e.key === 'Alt') {
+        keyPressedRef.current = false;
+        return;
       }
-      return { c: '--', ecc: '--', area: '--' };
-    } catch (e) { return { c: '--', ecc: '--', area: '--' }; }
-  }, [conicParams, conicType]);
 
-  const calculusResults = useMemo(() => {
-    try {
-      const f = math.parse(calcFn).compile();
-      const x0 = parseFloat(calcX0);
-      const h = 0.0001;
-      const deriv = (f.evaluate({ x: x0 + h }) - f.evaluate({ x: x0 - h })) / (2 * h);
+      keyPressedRef.current = true;
 
-      // Simpson's Rule
-      const a = parseFloat(calcRange.a); const b = parseFloat(calcRange.b);
-      const n = 100; const step = (b - a) / n;
-      let sum = f.evaluate({ x: a }) + f.evaluate({ x: b });
-      for (let i = 1; i < n; i++) {
-        const x = a + i * step;
-        sum += (i % 2 === 0 ? 2 : 4) * f.evaluate({ x: x });
+      const physicalCtrl = e.ctrlKey;
+      const physicalAlt = e.altKey;
+      const physicalShift = e.shiftKey;
+
+      // 1. UNDO (Ctrl+Z)
+      if (physicalCtrl && e.key.toLowerCase() === 'z' && !physicalShift) {
+         e.preventDefault();
+         handleUndo();
+         return;
       }
-      const integral = (step / 3) * sum;
-      return { deriv: deriv.toFixed(4), integral: integral.toFixed(4) };
-    } catch (e) { return { deriv: '--', integral: '--' }; }
-  }, [calcFn, calcX0, calcRange]);
 
-  const statsResults = useMemo(() => {
-    try {
-      const arr = statsData.split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
-      if (arr.length === 0) return { mean: '--', sd: '--', reg: '--' };
-      const mean = math.mean(arr); const sd = math.std(arr);
-      return { mean: mean.toFixed(2), sd: sd.toFixed(2), count: arr.length };
-    } catch (e) { return { mean: '--', sd: '--', reg: '--' }; }
-  }, [statsData]);
+      // 2. REDO (Ctrl+Y or Ctrl+Shift+Z)
+      if (physicalCtrl && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && physicalShift))) {
+         e.preventDefault();
+         handleRedo();
+         return;
+      }
 
-  const handleAddConstant = () => {
-    if (!newConst.n) return;
-    STEMService.addConstant({ ...newConst });
-    setNewConst({ s: '', l: '', n: '', v: '', u: '', c: 'Física', sc: '' });
-    setShowAddConstant(false);
-  };
+      // 3. SELECT ALL (Ctrl+A)
+      if (physicalCtrl && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setIsAllSelected(true);
+        return;
+      }
 
-  const handleExport = () => {
-    STEMService.exportJSON();
-    setCopyFeedback(true);
-    setTimeout(() => setCopyFeedback(false), 2000);
-  };
+      const foundKeyId = Object.keys(buttonMap.keys).find(id => buttonMap.keys[id].keyCode === e.code);
+      const isMetaKey = foundKeyId && ['key_del', 'key_ac', 'key_equal', 'key_left', 'key_right', 'key_up', 'key_down'].includes(foundKeyId);
+      const isNumeric = foundKeyId && ['key_0', 'key_1', 'key_2', 'key_3', 'key_4', 'key_5', 'key_6', 'key_7', 'key_8', 'key_9'].includes(foundKeyId);
+      const isLetterKey = foundKeyId && foundKeyId.startsWith('key_') && !isNumeric && !isMetaKey;
+
+      if (foundKeyId) {
+        // Physical Highlight Tracking
+        if (e.key === 'Control') setIsPhysicalCtrl(true);
+        if (e.key === 'Alt') setIsPhysicalAlt(true);
+
+        const isCharacterKey = e.key.length === 1;
+        const requiresSpecialLogic = physicalCtrl || physicalAlt || ctrlRef.current || alphaRef.current || (physicalShift && isLetterKey);
+
+        // RULE: Standard typing for any character-producing key without active calculator modifiers
+        if (isCharacterKey && !requiresSpecialLogic && !isMetaKey) {
+          // Skip to literal fallback
+        } else {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+
+          if (isLetterKey) {
+            const isFunctionLetter = ['key_sin', 'key_cos', 'key_tan', 'key_log', 'key_ln', 'key_sqrt', 'key_integral', 'key_sum'].includes(foundKeyId);
+            if (!isFunctionLetter && (physicalCtrl || ctrlRef.current || physicalAlt || alphaRef.current)) {
+              return;
+            }
+            if (physicalShift && !physicalCtrl && !physicalAlt) {
+              handleInput(foundKeyId, null);
+              return;
+            }
+            if (physicalCtrl || ctrlRef.current) {
+              handleInput(foundKeyId, 'ctrl');
+              return;
+            }
+            if (physicalAlt || alphaRef.current) {
+              handleInput(foundKeyId, 'alpha');
+              return;
+            }
+          }
+          const force = (physicalCtrl || ctrlRef.current) ? 'ctrl' : (physicalAlt || alphaRef.current ? 'alpha' : null);
+          handleInput(foundKeyId, force);
+          return;
+        }
+      }
+
+      // Block Canvas Shortcuts (Critical for Ctrl+T, Ctrl+C)
+      if (physicalCtrl || physicalAlt) {
+        if (!['z', 'y', 'a'].includes(e.key.toLowerCase())) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        }
+      }
+
+      // 3. Fallback for raw character typing (everything else)
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        if (isAllSelected) {
+          setCalcInput(e.key); inputRef.current = e.key;
+          setCursorPosition(1); cursorRef.current = 1;
+          setIsAllSelected(false);
+          return;
+        }
+
+        const pos = cursorRef.current;
+        const nextText = inputRef.current.slice(0, pos) + e.key + inputRef.current.slice(pos);
+        const nextPos = pos + 1;
+        setCalcInput(nextText); inputRef.current = nextText;
+        setCursorPosition(nextPos); cursorRef.current = nextPos;
+      }
+    };
+
+    const handleGlobalKeyUp = (e) => {
+      if (justOpened) return;
+      if (e.key === 'Control') setIsPhysicalCtrl(false);
+      if (e.key === 'Alt') setIsPhysicalAlt(false);
+
+      if (!keyPressedRef.current) {
+        if (e.key === 'Control') setIsCtrlActive(prev => !prev);
+        if (e.key === 'Alt') setIsAlphaActive(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, { capture: true });
+    window.addEventListener('keyup', handleGlobalKeyUp, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
+      window.removeEventListener('keyup', handleGlobalKeyUp, { capture: true });
+    };
+  }, [isOpen, handleInput, justOpened]);
 
   if (!isOpen) return null;
 
-  const sidebarItems = [
-    { id: 'search', icon: Search, label: 'Busca' },
-    { id: 'calc', icon: Calculator, label: 'Cálculo' },
-    { id: 'elements', icon: Beaker, label: 'Tabela' },
-    { id: 'constants', icon: BookOpen, label: 'Constantes' },
-    { id: 'formulas', icon: FunctionSquare, label: 'Fórmulas' },
-    { id: 'symbols', icon: Tags, label: 'Símbolos' },
-  ];
-
   return ReactDOM.createPortal(
-    <div
-      className="omnibar-overlay fixed inset-0 flex items-center justify-center pointer-events-auto z-[35000] bg-black/40 backdrop-blur-sm animate-in fade-in duration-300"
-      onPointerDown={onClose}
-    >
+    <div className="fixed inset-0 z-[99999] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div
-        className={`omnibar-window glass-extreme w-full max-w-[1340px] h-fit min-h-[420px] max-h-[95vh] overflow-hidden animate-in zoom-in-95 duration-500 flex shadow-[0_80px_200px_-40px_rgba(0,0,0,1)] text-[#e2e8f0] transition-all duration-500 ease-out`}
-        onPointerDown={e => { e.stopPropagation(); handlePointerDown(e); }}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        style={{ 
-          borderRadius: '40px', 
-          background: 'rgba(12, 12, 18, 0.98)', 
-          border: '1px solid rgba(255,255,255,0.08)',
-          transform: `translate(${position.x}px, ${position.y}px)`,
-          cursor: isDragging ? 'grabbing' : 'default',
-          backdropFilter: 'blur(40px) saturate(180%)'
-        }}
+        className="w-full max-w-[1100px] min-h-[850px] bg-[#0d0d0f]/90 backdrop-blur-3xl rounded-[60px] border border-white/5 flex shadow-[0_100px_200px_rgba(0,0,0,1)] overflow-hidden animate-in zoom-in-95 duration-500 pointer-events-auto"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onMouseUp={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
-        {/* SIDEBAR */}
-        <div className="w-[88px] border-r border-white/5 bg-black/40 flex flex-col items-center py-10 gap-8 cursor-grab active:cursor-grabbing">
-          <div className="w-14 h-14 rounded-[22px] bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-indigo-500/30 mb-8">
-            <Zap size={24} className="text-white fill-white" />
-          </div>
-          {sidebarItems.map(item => (
-            <button
-              key={item.id}
-              onClick={() => { setActiveTab(item.id); setShowAddConstant(false); }}
-              className={`group relative p-4 rounded-2xl transition-all duration-300 ${activeTab === item.id ? 'bg-white/10 text-white shadow-glow-white' : 'text-white/20 hover:text-white/60 hover:bg-white/5'}`}
-            >
-              <item.icon size={24} strokeWidth={activeTab === item.id ? 2.5 : 2} />
-              {activeTab === item.id && (
-                <div className="absolute -left-[2px] top-1/2 -translate-y-1/2 w-[4px] h-10 bg-indigo-500 rounded-r-full" />
-              )}
-            </button>
-          ))}
-        </div>
+        <ModeRail activeMode={activeMode} setMode={setActiveMode} />
 
-        {/* MAIN BODY */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* HEADER */}
-          <div className="flex items-center gap-6 px-8 py-6 border-b border-white/5">
-            <div className="flex-1 flex items-center gap-5 bg-white/5 px-8 py-5 rounded-[28px] border border-white/5 focus-within:border-indigo-500/40 focus-within:bg-white/10 transition-all">
-              <Search size={24} className="opacity-20" />
-              <input
-                ref={inputRef}
-                type="text"
-                placeholder="O que você está procurando hoje?"
-                value={activeTab === 'calc' ? calcInput : search}
-                onChange={(e) => activeTab === 'calc' ? setCalcInput(e.target.value) : setSearch(e.target.value)}
-                className="flex-1 bg-transparent border-none outline-none text-2xl font-light text-white placeholder:text-white/10"
+        <div className="flex-1 flex flex-col p-12">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-4">
+              <div className="w-3 h-3 rounded-full bg-indigo-500 animate-pulse shadow-glow-indigo" />
+              <h2 className="text-[10px] font-black uppercase tracking-[0.6em] text-white/30">STEM Pro Workstation</h2>
+            </div>
+            <button onClick={(e) => { onClose(); e.currentTarget.blur(); }} className="p-4 hover:bg-white/5 rounded-full text-white/40"><X size={20} /></button>
+          </div>
+
+          <div className="flex gap-10 h-full">
+            <div className={`flex-1 flex flex-col gap-8 transition-all duration-700 ${activeMode === 'graph' ? 'max-w-[500px]' : ''}`}>
+              <DisplayLCD expression={calcInput} result={calcResult} isCtrl={isCtrlActive || isPhysicalCtrl} isAlpha={isAlphaActive || isPhysicalAlt} activeMode={activeMode} cursorPosition={cursorPosition} unitMode={unitMode} isSymbolic={isSymbolic} isAllSelected={isAllSelected} />
+
+              {/* KEYPAD ZONAL SYSTEM */}
+              <div className="flex flex-col gap-8">
+                {/* NAV & META ZONE */}
+                <div className="flex justify-between items-center px-4">
+                  <div className="flex gap-3">
+                    <ScientificButton key="key_shift" id="key_shift" keyData={buttonMap.keys.key_shift} onClick={handleInput} isCtrl={isCtrlActive || isPhysicalCtrl} isAlpha={isAlphaActive || isPhysicalAlt} variant="meta" className="w-24 h-12" />
+                    <ScientificButton key="key_alpha" id="key_alpha" keyData={buttonMap.keys.key_alpha} onClick={handleInput} isCtrl={isCtrlActive || isPhysicalCtrl} isAlpha={isAlphaActive || isPhysicalAlt} variant="meta" className="w-24 h-12" />
+                    <button
+                      onClick={(e) => {
+                        const nextUnit = unitMode === 'deg' ? 'rad' : 'deg';
+                        setUnitMode(nextUnit);
+                        const evaluation = stemEngine.evaluate(calcInput, activeMode, isSymbolic, nextUnit);
+                        setCalcResult(evaluation.text);
+                        e.currentTarget.blur();
+                      }}
+                      className="w-24 h-12 rounded-3xl border border-white/5 bg-white/5 text-[10px] font-black transition-all hover:bg-white/10 text-white/40 flex items-center justify-center gap-2"
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full ${unitMode === 'deg' ? 'bg-[#00d2ff]' : 'bg-[#bd00ff]'}`} />
+                      {unitMode.toUpperCase()}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        const nextSym = !isSymbolic;
+                        setIsSymbolic(nextSym);
+                        const evaluation = stemEngine.evaluate(calcInput, activeMode, nextSym, unitMode);
+                        setCalcResult(evaluation.text);
+                        e.currentTarget.blur();
+                      }}
+                      className="w-24 h-12 rounded-3xl border border-white/5 bg-white/5 text-[10px] font-black transition-all hover:bg-white/10 text-white/40 flex items-center justify-center gap-2"
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full ${isSymbolic ? 'bg-[#10b981]' : 'bg-[#f43f5e]'}`} />
+                      {isSymbolic ? "FRACT" : "DEC"}
+                    </button>
+                  </div>
+                  <div className="flex gap-3">
+                    <ScientificButton key="key_sd" id="key_sd" keyData={buttonMap.keys.key_sd} onClick={handleInput} isCtrl={isCtrlActive} isAlpha={isAlphaActive} variant="sci" className="w-24 h-12" />
+                  </div>
+                </div>
+
+                {/* SCIENTIFIC ZONE */}
+                <div className="grid grid-cols-6 gap-2">
+                  {SCI_KEYS.map(id => buttonMap.keys[id] && (
+                    <ScientificButton key={id} id={id} keyData={buttonMap.keys[id]} onClick={handleInput} isCtrl={isCtrlActive} isAlpha={isAlphaActive} variant="sci" />
+                  ))}
+                </div>
+
+                {/* NUMERIC ZONE */}
+                <div className="grid grid-cols-5 gap-3">
+                  {NUM_KEYS.map(id => buttonMap.keys[id] && (
+                    <ScientificButton key={id} id={id} keyData={buttonMap.keys[id]} onClick={handleInput} isCtrl={isCtrlActive} isAlpha={isAlphaActive} variant="num" className={id === 'key_equal' ? 'bg-indigo-600 border-indigo-400' : (id === 'key_ac' || id === 'key_del' ? 'bg-[#991b1b]/10 border-red-500/20 text-red-500' : '')} />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {activeMode === 'graph' ? (
+              <div className="w-[450px] flex flex-col gap-6 animate-in slide-in-from-right-10 duration-700">
+                <GGBPreview expression={calcInput} isVisible={true} />
+                <button 
+                   onClick={() => onInsert?.({ type: 'ggb', expression: calcInput })} 
+                   className="w-full py-8 rounded-[40px] bg-indigo-500 text-white hover:bg-indigo-400 transition-all flex items-center justify-center gap-4 group"
+                >
+                  <Maximize2 size={24} className="group-hover:scale-110 transition-all" />
+                  <p className="text-[10px] font-black uppercase tracking-widest">Inserir no Canvas</p>
+                </button>
+              </div>
+            ) : (
+              <MemorySidebar 
+                variables={stemEngine.variables} 
+                formulas={stemEngine.formulas}
+                isOpen={isMemorySidebarOpen}
+                onToggle={() => setIsMemorySidebarOpen(false)}
+                onEdit={(formula) => {
+                  const raw = formula.replace(':=' , '=');
+                  setCalcInput(raw);
+                  inputRef.current = raw;
+                  setCursorPosition(raw.length);
+                  cursorRef.current = raw.length;
+                }}
               />
-            </div>
-
-            <div className="flex items-center gap-6">
-              <button onClick={onClose} className="w-12 h-12 flex items-center justify-center rounded-full hover:bg-red-500/20 hover:text-red-500 border border-white/5 text-white/20 group transition-all"><X size={24} /></button>
-            </div>
-          </div>
-
-          <div className="flex-1 flex overflow-hidden">
-            <div className="w-full p-10 flex flex-col relative bg-black/20">
-
-              {/* SEARCH VIEW */}
-              {activeTab === 'search' && (
-                <div className="space-y-12 animate-in fade-in duration-500">
-                  {searchResults.calc && (
-                    <div onClick={() => handleSelect({ type: 'calc', value: searchResults.calc })} className="math-card group">
-                      <div className="flex items-center gap-10">
-                        <div className="w-24 h-24 rounded-[32px] bg-indigo-500 flex items-center justify-center text-white shadow-[0_20px_60px_rgba(99,102,241,0.5)] group-hover:scale-110 transition-all">
-                          <Calculator size={44} />
-                        </div>
-                        <div>
-                          <p className="text-xs uppercase font-black text-indigo-400 tracking-[0.3em] mb-2">Resolução Instantânea</p>
-                          <p className="text-6xl font-light text-white tracking-widest leading-none">{searchResults.calc}</p>
-                        </div>
-                      </div>
-                      <ArrowRight size={32} className="opacity-10 group-hover:opacity-100 group-hover:translate-x-4 transition-all" />
-                    </div>
-                  )}
-                  {searchResults.constants.length > 0 && (
-                    <section>
-                      <h3 className="section-title">Constantes</h3>
-                      <div className="grid grid-cols-4 gap-4">
-                        {searchResults.constants.map((c, idx) => (
-                          <div key={`${c.n}-${idx}`} onClick={() => handleSelect({ type: 'constant', ...c })} className="item-card flex flex-col justify-between group p-4 h-32">
-                            <div className="flex justify-between items-start">
-                              <span className="text-[9px] font-black opacity-30 uppercase tracking-widest">{c.l}</span>
-                              <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-400 font-bold flex items-center justify-center text-xs group-hover:bg-indigo-500 group-hover:text-white transition-all">{c.l}</div>
-                            </div>
-                            <div>
-                              <p className="text-sm font-bold truncate">{c.n}</p>
-                              <p className="text-[9px] opacity-30 mt-1 font-mono truncate">{c.v}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  )}
-                  {searchResults.elements.length > 0 && (
-                    <section>
-                      <h3 className="section-title">Química</h3>
-                      <div className="grid grid-cols-2 gap-6">
-                        {searchResults.elements.map(el => (
-                          <div key={el.symbol} onClick={() => { setActiveTab('elements'); setSelectedElement(el); }} className="item-card flex items-center gap-8">
-                            <div className="w-20 h-20 rounded-[28px] bg-black/50 border-2 flex items-center justify-center text-3xl font-black" style={{ borderColor: getFamilyStyle(el.group).border, color: getFamilyStyle(el.group).text }}>{el.symbol}</div>
-                            <div className="flex-1">
-                              <p className="text-2xl font-bold">{el.name}</p>
-                              <p className="text-sm opacity-30 mt-1">Z={el.atomicNumber} • {el.atomicMass} u {el.isRadioactive && '☢️'}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  )}
-                  {searchResults.symbols.length > 0 && (
-                    <section>
-                      <h3 className="section-title">Símbolos e Operadores</h3>
-                      <div className="grid grid-cols-8 gap-4">
-                        {searchResults.symbols.map(s => (
-                          <div key={s.cmd} onClick={() => handleSelect({ type: 'symbol', ...s })} className="symbol-tile text-4xl h-24 rounded-[32px]">{s.label}</div>
-                        ))}
-                      </div>
-                    </section>
-                  )}
-                </div>
-              )}
-
-              {/* CALCULATOR VIEW (STEM PRO CASIO) */}
-              {activeTab === 'calc' && (
-                <div className="flex-1 flex flex-col max-w-[1100px] mx-auto w-full animate-in slide-in-from-bottom-8 duration-500 overflow-hidden">
-                  
-                  {/* CASIO MODE SELECTOR BAR */}
-                  <div className="flex bg-white/5 p-2 rounded-[32px] border border-white/5 mb-8 w-fit mx-auto gap-2">
-                    <button 
-                      onClick={() => setIsMenuOpen(true)}
-                      className="px-6 py-2.5 rounded-2xl bg-indigo-500 text-white text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-3 shadow-glow-indigo active:scale-95"
-                    >
-                      <Zap size={14} />
-                      MENU CASIO
-                    </button>
-                    <button 
-                      onClick={() => setShowMemory(!showMemory)}
-                      className={`px-6 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-3 ${showMemory ? 'bg-white/20 text-white' : 'text-white/30 hover:text-white/50'}`}
-                    >
-                      <Layers size={14} />
-                      MEMÓRIA PRO
-                    </button>
-                  </div>
-
-                  <div className="flex-1 flex flex-row gap-8 overflow-hidden relative">
-                    <div className="flex-1 flex flex-col min-w-0">
-                      
-                      {/* CASIO MODAL MENU */}
-                      {isMenuOpen && (
-                        <div className="absolute inset-0 z-[100] bg-black/95 backdrop-blur-3xl p-12 rounded-[48px] animate-in fade-in zoom-in-95 duration-300">
-                          <div className="flex justify-between items-center mb-12">
-                            <h3 className="text-xs font-black uppercase tracking-[0.5em] text-white/20">Modos de Operação STEM</h3>
-                            <button onClick={() => setIsMenuOpen(false)} className="p-4 hover:bg-white/10 rounded-full transition-all"><X size={24} /></button>
-                          </div>
-                          <div className="grid grid-cols-4 gap-8">
-                            {CASIO_MODES.map(m => (
-                              <button
-                                key={m.id}
-                                onClick={() => { setCalcMode(m.id); setIsMenuOpen(false); }}
-                                className="group flex flex-col items-center gap-4 p-8 rounded-[40px] bg-white/5 border border-white/5 hover:border-white/20 hover:bg-white/10 transition-all active:scale-95"
-                              >
-                                <div className={`w-20 h-20 rounded-[32px] bg-${m.color}/20 text-${m.color} flex items-center justify-center group-hover:scale-110 transition-all shadow-2xl`}>
-                                  <m.icon size={36} />
-                                </div>
-                                <span className="text-[10px] font-black uppercase tracking-widest opacity-40 group-hover:opacity-100">{m.label}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* MODE CONTENT */}
-                      {calcMode === 'basic' && (
-                        <div className="flex-1 flex flex-col animate-in fade-in zoom-in-95 duration-300">
-                          {/* DISPLAY V.P.A.M. */}
-                          <div className="bg-black/60 rounded-[32px] border border-white/5 p-8 mb-6 flex flex-col items-end shadow-[inset_0_4px_30px_rgba(0,0,0,0.8)] relative overflow-hidden group">
-                            <div className="absolute top-6 left-8 flex gap-4">
-                              <div className={`px-3 py-1 rounded-full text-[8px] font-black tracking-widest border transition-all ${symbolicMode ? 'bg-indigo-500 border-indigo-400 text-white' : 'border-white/10 text-white/20'}`}>SYM</div>
-                              <div className="px-3 py-1 rounded-full text-[8px] font-black tracking-widest border border-white/10 text-white/20 uppercase">{calcMode}</div>
-                            </div>
-                            <div className="text-[9px] opacity-20 uppercase tracking-[0.5em] font-black mb-2">Display Natural • V.P.A.M.</div>
-                            <div className="w-full flex flex-col items-end gap-1 mb-2">
-                              <div className="text-xs opacity-30 font-mono italic mb-1 truncate w-full text-right">{calcInput || "0"}</div>
-                              <LatexRenderer formula={calcInput.replace(/sqrt\((.*?)\)/g, '\\sqrt{$1}').replace(/\//g, '\\div ').replace(/\*/g, '\\times ') || "0"} className="text-4xl font-light tracking-tight text-white !justify-end opacity-90" />
-                            </div>
-                            <div className="flex items-center gap-6">
-                              <div className="text-3xl font-bold text-indigo-400">{calcResult ? `= ${calcResult}` : ""}</div>
-                              {calcResult && (
-                                <button 
-                                  onClick={() => {
-                                    const name = getNextVarName();
-                                    try {
-                                      setMathVars(prev => [...prev, { id: Date.now(), name, val: math.evaluate(calcInput), type: 'number' }]);
-                                    } catch(e) {}
-                                  }}
-                                  className="w-8 h-8 rounded-full bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 hover:bg-indigo-500 hover:text-white transition-all shadow-glow-indigo"
-                                >
-                                  <Bookmark size={14} />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* CASIO KEYPAD */}
-                          <div className="grid grid-cols-7 gap-3 min-h-[380px]">
-                            <div className="col-span-1 flex flex-col gap-2">
-                              <button onClick={() => setSymbolicMode(!symbolicMode)} className={`calc-btn-sc h-full text-[10px] ${symbolicMode ? 'bg-indigo-500 text-white shadow-glow-indigo' : 'text-indigo-400'}`}>SYM</button>
-                              <button className="calc-btn-sc h-full bg-white/5 text-white/30 uppercase font-black text-[8px] tracking-widest">OPTN</button>
-                              <button onClick={() => onNumpadClick('(')} className="calc-btn-sc h-full bg-white/5 text-indigo-300 text-sm">(</button>
-                              <button onClick={() => onNumpadClick(')')} className="calc-btn-sc h-full bg-white/5 text-indigo-300 text-sm">)</button>
-                            </div>
-                            <div className="col-span-2 grid grid-cols-2 gap-2">
-                              {['sin', 'cos', 'tan', 'sqrt', 'log', 'ln', 'asin', 'acos', 'atan', 'pow'].map(fn => (
-                                <button key={fn} onClick={() => onNumpadClick(fn + '(')} className="calc-btn-sc text-[9px] font-black uppercase text-indigo-300 hover:bg-indigo-500/20 h-full">
-                                  {fn}
-                                </button>
-                              ))}
-                            </div>
-                            <div className="col-span-3 grid grid-cols-3 gap-2">
-                              {[7, 8, 9, 4, 5, 6, 1, 2, 3, 0, '.', 'ans'].map(n => (
-                                <button key={n} onClick={() => onNumpadClick(n.toString())} className="calc-btn-num text-xl h-full">{n}</button>
-                              ))}
-                              <button onClick={() => onNumpadClick('AC')} className="calc-btn-num bg-red-500/10 text-red-600 font-black text-sm h-full">AC</button>
-                              <button onClick={() => onNumpadClick('back')} className="calc-btn-num flex items-center justify-center h-full"><Eraser size={20} /></button>
-                              <button onClick={() => onNumpadClick('=')} className="calc-btn-num bg-white text-indigo-950 font-black text-2xl shadow-glow-white h-full">=</button>
-                            </div>
-                            <div className="col-span-1 flex flex-col gap-3">
-                              {['+', '-', '*', '/'].map(op => (
-                                <button key={op} onClick={() => onNumpadClick(op)} className="calc-btn-sc h-12 bg-white/5 text-indigo-400 font-bold text-xl">{op.replace('*', '×').replace('/', '÷')}</button>
-                              ))}
-                              <button 
-                                onClick={() => handleSelect({ type: 'math-block', value: calcResult || calcInput })} 
-                                className="flex-1 bg-indigo-500/10 hover:bg-indigo-500 rounded-[32px] border border-indigo-500/30 flex items-center justify-center text-indigo-400 hover:text-white transition-all group"
-                              >
-                                <MoveUp size={32} className="group-hover:-translate-y-2 transition-transform" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {calcMode === 'matrix' && (
-                        <div className="flex-1 flex flex-col animate-in fade-in zoom-in-95 duration-300">
-                          <div className="grid grid-cols-12 gap-6 h-full">
-                            <div className="col-span-4 space-y-4">
-                              <div className="bg-white/5 p-6 rounded-[32px] border border-white/5">
-                                <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-4">Dimensões</h4>
-                                <div className="flex items-center gap-3">
-                                  <div className="flex-1">
-                                    <label className="text-[8px] opacity-30 block mb-1 font-black uppercase">M</label>
-                                    <input type="number" value={matrixDims.r} onChange={(e) => setMatrixDims({...matrixDims, r: parseInt(e.target.value) || 1})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xl font-bold" />
-                                  </div>
-                                  <X size={16} className="opacity-20 mt-4" />
-                                  <div className="flex-1">
-                                    <label className="text-[8px] opacity-30 block mb-1 font-black uppercase">N</label>
-                                    <input type="number" value={matrixDims.c} onChange={(e) => setMatrixDims({...matrixDims, c: parseInt(e.target.value) || 1})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xl font-bold" />
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2">
-                                <button onClick={() => handleMatrixOperation('det')} className="calc-btn-sc text-[10px] text-indigo-300">Det(A)</button>
-                                <button onClick={() => handleMatrixOperation('inv')} className="calc-btn-sc text-[10px] text-indigo-300">Inv(A)</button>
-                                <button onClick={() => handleMatrixOperation('trans')} className="calc-btn-sc text-[10px] text-indigo-300">Transp.</button>
-                                <button onClick={() => setMatrixCells(Array(matrixDims.r).fill(null).map(() => Array(matrixDims.c).fill('')))} className="calc-btn-sc text-[10px] text-red-400">Limpar</button>
-                              </div>
-                            </div>
-                            <div className="col-span-8 bg-black/40 rounded-[32px] border border-white/5 p-6 flex flex-col h-full max-h-[400px]">
-                              <h4 className="text-[10px] font-black uppercase tracking-widest text-white/20 mb-6">Editor de Matriz {matrixDims.r}x{matrixDims.c}</h4>
-                              <div className="flex-1 grid gap-2 p-2 bg-white/5 rounded-[24px] overflow-hidden" style={{ gridTemplateColumns: `repeat(${matrixDims.c}, minmax(60px, 1fr))` }}>
-                                {matrixCells.map((row, i) => row.map((cell, j) => (
-                                  <input 
-                                    key={`${i}-${j}`} value={cell} 
-                                    onChange={(e) => {
-                                      const newCells = [...matrixCells];
-                                      newCells[i][j] = e.target.value;
-                                      setMatrixCells(newCells);
-                                    }}
-                                    className="w-full h-12 bg-white/5 border border-white/10 rounded-lg text-center text-lg font-bold focus:border-indigo-500 outline-none transition-all"
-                                  />
-                                )))}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* OTHER MODES (STATISTICS, CALCULUS, COMPLEX, BASE-N, VECTOR, DIST, EQUATION, INEQUALITY, RATIO) */}
-                      {!['basic', 'matrix'].includes(calcMode) && (
-                        <div className="flex-1 grid grid-cols-12 gap-6 animate-in fade-in duration-500 h-full min-h-[380px] overflow-hidden">
-                            <div className="col-span-12 lg:col-span-5 flex flex-col gap-4">
-                               <div className="flex-1 bg-white/5 p-6 rounded-[32px] border border-white/5 flex flex-col">
-                                  <div className="flex items-center justify-between mb-4">
-                                     <h4 className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-400">Parâmetros de Entrada</h4>
-                                     <div className="px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[8px] font-black uppercase">Modo {calcMode}</div>
-                                  </div>
-                                  
-                                  <div className="flex-1 flex flex-col justify-center gap-4">
-                                    {calcMode === 'calculus' && (
-                                      <div className="space-y-3">
-                                         <div className="space-y-1">
-                                            <label className="text-[8px] font-black uppercase opacity-30 ml-2">Função f(x)</label>
-                                            <input value={calcFn} onChange={e => setCalcFn(e.target.value)} placeholder="ex: x^2 + sin(x)" className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-lg font-bold focus:border-indigo-500 transition-all outline-none" />
-                                         </div>
-                                         <div className="grid grid-cols-3 gap-2">
-                                            <div className="space-y-1">
-                                               <label className="text-[8px] font-black uppercase opacity-30 ml-2">Ponto x₀</label>
-                                               <input value={calcX0} onChange={e => setCalcX0(e.target.value)} placeholder="0" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-lg font-bold" />
-                                            </div>
-                                            <div className="space-y-1">
-                                               <label className="text-[8px] font-black uppercase opacity-30 ml-2">Início (a)</label>
-                                               <input value={calcRange.a} onChange={e => setCalcRange({...calcRange, a: e.target.value})} placeholder="0" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-lg font-bold" />
-                                            </div>
-                                            <div className="space-y-1">
-                                               <label className="text-[8px] font-black uppercase opacity-30 ml-2">Fim (b)</label>
-                                               <input value={calcRange.b} onChange={e => setCalcRange({...calcRange, b: e.target.value})} placeholder="1" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-lg font-bold" />
-                                            </div>
-                                         </div>
-                                      </div>
-                                    )}
-
-                                    {calcMode === 'complex' && (
-                                      <div className="space-y-4">
-                                        <div className="grid grid-cols-2 gap-4">
-                                          <div className="space-y-1">
-                                            <label className="text-[8px] font-black uppercase opacity-30 ml-2">Real (a)</label>
-                                            <input placeholder="0" className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-xl font-bold" />
-                                          </div>
-                                          <div className="space-y-1">
-                                            <label className="text-[8px] font-black uppercase opacity-30 ml-2">Imaginário (b)</label>
-                                            <input placeholder="0" className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-xl font-bold" />
-                                          </div>
-                                        </div>
-                                        <p className="text-[10px] opacity-40 text-center italic">Representação: a + bi</p>
-                                      </div>
-                                    )}
-
-                                    {calcMode === 'base-n' && (
-                                      <div className="space-y-4">
-                                        <input placeholder="Valor de entrada" className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-xl font-bold" />
-                                        <div className="grid grid-cols-4 gap-2">
-                                          {['DEC', 'HEX', 'BIN', 'OCT'].map(b => (
-                                            <button key={b} className="py-2 rounded-xl bg-white/5 border border-white/5 text-[9px] font-black hover:bg-indigo-500 transition-all">{b}</button>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {calcMode === 'stats' && (
-                                      <div className="space-y-2 h-full flex flex-col">
-                                        <label className="text-[8px] font-black uppercase opacity-30 ml-2">Conjunto de Dados (List 1)</label>
-                                        <textarea value={statsData} onChange={e => setStatsData(e.target.value)} placeholder="Insira valores separados por vírgula" className="flex-1 w-full min-h-[140px] bg-black/40 border border-white/10 rounded-[28px] p-5 text-sm font-mono focus:border-indigo-500 transition-all outline-none resize-none" />
-                                      </div>
-                                    )}
-
-                                    {['vector', 'dist', 'equation', 'inequality', 'ratio', 'geometry', 'graph', 'table'].includes(calcMode) && (
-                                       <div className="text-center p-10 bg-black/20 rounded-[32px] border border-white/5 border-dashed">
-                                          <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4">
-                                            <Zap size={24} className="opacity-20" />
-                                          </div>
-                                          <p className="text-[11px] font-bold text-white/40 mb-2 uppercase tracking-widest leading-loose">Dashboard Ativo: {calcMode.toUpperCase()}</p>
-                                          <p className="text-[10px] opacity-20 italic">Use o Omnibar para inserção rápida de {calcMode} no canvas.</p>
-                                       </div>
-                                    )}
-                                  </div>
-                               </div>
-                               <button className="btn-primary-sc !py-6 text-[11px] hover:shadow-glow-indigo transition-all active:scale-95">Executar Análise PRO</button>
-                            </div>
-
-                            <div className="col-span-12 lg:col-span-7 bg-black/60 rounded-[40px] border border-white/5 p-8 flex flex-col shadow-[inset_0_4px_40px_rgba(0,0,0,0.5)]">
-                               <div className="flex items-center gap-3 mb-8">
-                                  <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-                                  <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/30">Console de Saída em Tempo Real</h4>
-                               </div>
-
-                               <div className="flex-1 flex flex-col justify-center items-center">
-                                 {calcMode === 'calculus' ? (
-                                    <div className="w-full grid grid-cols-2 gap-4">
-                                       <div className="p-8 rounded-[40px] bg-white/5 border border-white/5 hover:bg-white/10 transition-all group">
-                                          <div className="flex items-center gap-3 mb-4 opacity-40 group-hover:opacity-100 transition-opacity">
-                                            <ChevronRight size={14} className="text-indigo-400" />
-                                            <p className="text-[9px] font-black uppercase tracking-widest">Diferenciação f'(x₀)</p>
-                                          </div>
-                                          <p className="text-5xl font-black text-white tracking-tighter leading-none">{calculusResults.deriv || '0.0000'}</p>
-                                       </div>
-                                       <div className="p-8 rounded-[40px] bg-white/5 border border-white/5 hover:bg-white/10 transition-all group">
-                                          <div className="flex items-center gap-3 mb-4 opacity-40 group-hover:opacity-100 transition-opacity">
-                                            <Plus size={14} className="text-emerald-400" />
-                                            <p className="text-[9px] font-black uppercase tracking-widest">Integração Definida [a,b]</p>
-                                          </div>
-                                          <p className="text-5xl font-black text-white tracking-tighter leading-none">{calculusResults.integral || '0.0000'}</p>
-                                       </div>
-                                       <div className="col-span-2 p-8 rounded-[40px] bg-indigo-500/5 border border-indigo-500/20 text-center">
-                                          <p className="text-[9px] font-black uppercase tracking-[0.5em] text-indigo-400 mb-2">Resumo da Curva</p>
-                                          <div className="flex justify-center gap-10">
-                                            <div className="text-center"><p className="text-[8px] opacity-20 uppercase mb-1">Mínimo</p><p className="font-bold text-xs">--</p></div>
-                                            <div className="text-center"><p className="text-[8px] opacity-20 uppercase mb-1">Máximo</p><p className="font-bold text-xs">--</p></div>
-                                            <div className="text-center"><p className="text-[8px] opacity-20 uppercase mb-1">Raiz</p><p className="font-bold text-xs">--</p></div>
-                                          </div>
-                                       </div>
-                                    </div>
-                                 ) : calcMode === 'stats' ? (
-                                    <div className="grid grid-cols-3 gap-4 w-full">
-                                       <div className="p-6 rounded-[32px] bg-white/5 border border-white/5 text-center group hover:bg-indigo-500/10 transition-all">
-                                          <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-2">Média (μ)</p>
-                                          <p className="text-4xl font-black text-indigo-400 tracking-tighter">{statsResults.mean || '0.00'}</p>
-                                       </div>
-                                       <div className="p-6 rounded-[32px] bg-white/5 border border-white/5 text-center group hover:bg-indigo-500/10 transition-all">
-                                          <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-2">Desvio (σ)</p>
-                                          <p className="text-4xl font-black text-emerald-400 tracking-tighter">{statsResults.sd || '0.00'}</p>
-                                       </div>
-                                       <div className="p-6 rounded-[32px] bg-white/5 border border-white/5 text-center group hover:bg-indigo-500/10 transition-all">
-                                          <p className="text-[9px] font-black uppercase tracking-widest opacity-30 mb-2">Amostras (n)</p>
-                                          <p className="text-4xl font-black text-amber-400 tracking-tighter">{statsResults.count || '0'}</p>
-                                       </div>
-                                       <div className="col-span-3 p-8 rounded-[40px] bg-white/5 border border-white/5 flex flex-col gap-6">
-                                          <div className="flex justify-between items-center"><p className="text-[9px] font-black tracking-widest opacity-20 uppercase">Distribuição de Frequência</p><div className="flex gap-1">{[40, 70, 50, 90, 60, 80].map((h,i)=>(<div key={i} className="w-4 bg-indigo-500/40 rounded-t-sm" style={{height: h*0.4}}/>))}</div></div>
-                                          <div className="grid grid-cols-2 gap-10">
-                                            <div className="flex justify-between border-b border-white/5 pb-2"><span className="text-[10px] opacity-30 uppercase">Mediana</span><span className="font-mono text-xs">--</span></div>
-                                            <div className="flex justify-between border-b border-white/5 pb-2"><span className="text-[10px] opacity-30 uppercase">Variância</span><span className="font-mono text-xs">--</span></div>
-                                            <div className="flex justify-between border-b border-white/5 pb-2"><span className="text-[10px] opacity-30 uppercase">Mínimo</span><span className="font-mono text-xs">--</span></div>
-                                            <div className="flex justify-between border-b border-white/5 pb-2"><span className="text-[10px] opacity-30 uppercase">Máximo</span><span className="font-mono text-xs">--</span></div>
-                                          </div>
-                                       </div>
-                                    </div>
-                                 ) : (
-                                    <div className="text-center space-y-6 opacity-20">
-                                       <div className="w-24 h-24 rounded-[40px] bg-white/5 flex items-center justify-center mx-auto border-2 border-white/10">
-                                          <Beaker size={48} />
-                                       </div>
-                                       <div>
-                                          <p className="text-[11px] font-black uppercase tracking-[0.5em] mb-2">Algoritmo em Standby</p>
-                                          <p className="text-[10px] opacity-50 italic">Execute a operação no painel lateral para visualizar resultados.</p>
-                                       </div>
-                                    </div>
-                                  )}
-                               </div>
-                            </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* STEM PRO MEMORY SIDEBAR */}
-                    {showMemory && (
-                      <div className="w-[300px] border-l border-white/5 bg-white/5 backdrop-blur-2xl p-6 flex flex-col gap-6 animate-in slide-in-from-right-8 duration-500 relative z-10">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/30">Memória PRO</h4>
-                          <Bookmark size={14} className="text-indigo-400" />
-                        </div>
-                        <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-2">
-                          <div className="space-y-2">
-                            <p className="text-[9px] font-bold text-indigo-400/50 uppercase tracking-widest pl-2">Variáveis ({mathVars.length})</p>
-                            {mathVars.map(v => (
-                              <div key={v.id} onClick={() => setCalcInput(prev => prev + v.name)} className="bg-black/30 border border-white/5 rounded-2xl p-4 group hover:border-indigo-500/30 transition-all cursor-pointer">
-                                <div className="flex items-center justify-between mb-2">
-                                  <span className="text-indigo-400 font-bold text-xs">{v.name}</span>
-                                  <button onClick={(e) => { e.stopPropagation(); setMathVars(mathVars.filter(mv => mv.id !== v.id)); }} className="opacity-0 group-hover:opacity-30 hover:!opacity-100 transition-all"><X size={12} /></button>
-                                </div>
-                                <div className="text-[10px] font-mono text-white/40 truncate">{math.format(v.val)}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <button onClick={() => setMathVars([])} className="w-full py-4 rounded-2xl border border-red-500/20 text-red-500/40 hover:text-red-500 transition-all text-[9px] font-black uppercase">Limpar Memória</button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* PERIODIC TABLE VIEW */}
-              {activeTab === 'elements' && (
-                <div className="flex-1 flex flex-col animate-in fade-in duration-700 min-h-0">
-                  <div className="mb-4 flex justify-between items-end">
-                    <div>
-                      <h2 className="text-3xl font-light mb-1">Tabela Periódica IUPAC</h2>
-                      <p className="text-xs opacity-30 uppercase font-black tracking-widest">Dataset Completo • 118 Elementos</p>
-                    </div>
-                  </div>
-                  <div className="flex-1 bg-black/40 rounded-[48px] border border-white/5 p-6 flex flex-col overflow-hidden">
-                    <div className="flex-1 grid grid-cols-18 gap-1.5 min-h-0">
-                      {PERIODIC_TABLE.map(el => {
-                        const style = getFamilyStyle(el.group);
-                        const isSelected = selectedElement?.symbol === el.symbol;
-                        return (
-                          <div
-                            key={el.symbol}
-                            onClick={() => setSelectedElement(el)}
-                            className="relative aspect-square border-2 rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all hover:scale-150 hover:z-[100] group hover:shadow-[0_20px_40px_rgba(0,0,0,0.5)]"
-                            style={{
-                              gridColumn: el.column, gridRow: el.row,
-                              backgroundColor: isSelected ? 'rgba(255,255,255,0.2)' : style.bg,
-                              borderColor: isSelected ? 'rgba(255,255,255,0.8)' : style.border,
-                            }}
-                          >
-                            <div className="absolute top-[3px] left-[5px] text-[8px] font-black opacity-40">{el.atomicNumber}</div>
-                            <div className="text-xl font-black" style={{ color: style.text }}>{el.symbol}</div>
-                            <div className="hidden group-hover:block absolute -bottom-8 left-1/2 -translate-x-1/2 px-3 py-1 bg-zinc-900 border border-white/20 rounded-xl shadow-2xl text-[10px] font-bold text-white z-[200] whitespace-nowrap">{el.name}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* CONSTANTS VIEW */}
-              {activeTab === 'constants' && (
-                <div className="flex-1 flex flex-col animate-in fade-in duration-500">
-                  <div className="mb-10 flex items-center justify-between">
-                    <div>
-                      <h2 className="text-4xl font-light mb-2">Biblioteca Hub</h2>
-                      <div className="flex items-center gap-4">
-                        <p className="text-xs opacity-30 uppercase font-black tracking-widest">{filteredConstants.length} Itens Mapeados</p>
-                        <button onClick={handleExport} className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-500 hover:text-white transition-all">
-                          {copyFeedback ? <Check size={12} /> : <Copy size={12} />} JSON
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex bg-white/5 p-2 rounded-3xl border border-white/5">
-                      {['All', 'Física', 'Química', 'Matemática', 'Astronomia'].map(p => (
-                        <button key={p} onClick={() => setConstantCategory(p)} className={`px-6 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${constantCategory === p ? 'bg-indigo-500 text-white shadow-lg' : 'text-white/30 hover:text-white/60'}`}>{p}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 max-h-[520px]">
-                    <div className="grid grid-cols-1 grid-md-cols-2 lg:grid-cols-4 gap-4">
-                      {filteredConstants.map((c, idx) => (
-                        <div key={`${c.n}-${idx}`} onClick={() => handleSelect({ type: 'constant', ...c })} className="item-card group h-[130px] flex flex-col justify-between p-5">
-                          <div className="flex justify-between items-start">
-                            <span className="text-[8px] font-black text-indigo-400 uppercase tracking-widest px-2 py-0.5 bg-white/5 rounded-md">{c.sc || c.c}</span>
-                            <span className="w-10 h-10 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center text-xl font-black group-hover:bg-indigo-500 transition-all">{c.l}</span>
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-bold mb-1 truncate">{c.n}</h4>
-                            <p className="text-xs opacity-30 font-mono truncate">{c.v} <span className="text-[10px] text-indigo-300">{c.u}</span></p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* FORMULAS VIEW */}
-              {activeTab === 'formulas' && (
-                <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 max-h-[600px] w-full">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 animate-in slide-in-from-bottom-8 duration-500">
-                    {FORMULA_TEMPLATES.map(f => (
-                      <div key={f.name} onClick={() => handleSelect({ type: 'formula', ...f })} className="formula-premium-card group p-4 border border-white/5 hover:border-indigo-500/40 rounded-[32px] bg-white/5">
-                        <div className="flex flex-col gap-4">
-                          <div className="w-full bg-black/40 rounded-[24px] border border-white/5 p-4 flex items-center justify-center min-h-[120px] group-hover:bg-black/60 transition-all">
-                            <LatexRenderer formula={f.formula} className="scale-75" />
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-[8px] font-black text-indigo-400 uppercase tracking-[0.3em]">{f.category}</span>
-                            <h4 className="text-lg font-bold text-white tracking-tight">{f.name}</h4>
-                            <p className="text-[10px] opacity-40 italic line-clamp-1">"{f.usage}"</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'symbols' && (
-                <div className="space-y-10 animate-in fade-in duration-500 pb-10">
-                  {Object.entries(STEM_SYMBOLS).map(([cat, items]) => (
-                    <div key={cat}>
-                      <h3 className="section-title !mb-6 text-[10px]">{cat}</h3>
-                      <div className="grid grid-cols-12 gap-3">
-                        {items.map(sym => (
-                          <div key={sym.cmd} onClick={() => handleSelect({ type: 'symbol', ...sym })} className="symbol-tile text-2xl h-16 rounded-[20px] transition-all hover:bg-indigo-500 group relative">
-                            {sym.label}
-                            <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-black text-[8px] rounded opacity-0 group-hover:opacity-100 z-50 whitespace-nowrap pointer-events-none border border-white/10 uppercase font-black">{sym.name || sym.cmd}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-            </div>
-
-            {/* ELEMENT DETAIL SIDE PANEL */}
-            {activeTab === 'elements' && selectedElement && (
-              <div className="w-[480px] bg-black/50 border-l border-white/5 p-12 overflow-y-auto custom-scrollbar animate-in slide-in-from-right duration-500 flex flex-col">
-                <div className="flex justify-between items-start mb-16">
-                  <div className="w-[140px] h-[140px] rounded-[48px] border-4 flex flex-col items-center justify-center gap-1 shadow-2xl" style={{ borderColor: getFamilyStyle(selectedElement.group).border, background: getFamilyStyle(selectedElement.group).bg }}>
-                    <span className="text-lg font-black opacity-40 leading-none">{selectedElement.atomicNumber}</span>
-                    <span className="text-6xl font-black">{selectedElement.symbol}</span>
-                  </div>
-                  <button onClick={() => setSelectedElement(null)} className="p-4 hover:bg-white/10 rounded-full transition-all text-white/20 hover:text-white"><X size={32} /></button>
-                </div>
-                <h2 className="text-7xl font-black mb-4 tracking-tighter leading-[0.85]">{selectedElement.name}</h2>
-                <p className="text-indigo-400 font-bold text-sm uppercase tracking-[0.4em] mb-16 flex items-center gap-4">
-                  {selectedElement.group.replace('-', ' ')}
-                  {selectedElement.isRadioactive && <span className="px-3 py-1 rounded-lg bg-red-500/20 text-red-500 text-[10px] animate-pulse">RADIOATIVO ☢️</span>}
-                </p>
-                <div className="space-y-12">
-                  <div className="stat-row">
-                    <Layers size={24} className="text-orange-400" />
-                    <div className="flex-1">
-                      <p className="label">Distribuição Eletrônica</p>
-                      <p className="text-lg font-mono text-white/80 bg-white/5 p-6 rounded-[32px] border border-white/10 mt-4 leading-relaxed tracking-wider">
-                        {selectedElement.electronConfig || 'N/A'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-10">
-                    <div className="stat-row">
-                      <Thermometer size={24} className="text-indigo-400" />
-                      <div>
-                        <p className="label">Eletronegatividade</p>
-                        <p className="value text-4xl">{selectedElement.electronegativity || '--'}</p>
-                      </div>
-                    </div>
-                    <div className="stat-row">
-                      <Weight size={24} className="text-indigo-400" />
-                      <div>
-                        <p className="label">Massa Atômica</p>
-                        <p className="value text-4xl">{selectedElement.atomicMass}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <button onClick={() => handleSelect({ type: 'element', ...selectedElement })} className="btn-primary-sc mt-12">Inserir no Documento</button>
-                </div>
-              </div>
             )}
 
-            {/* CALCULATOR HISTORY PANEL */}
-            {activeTab === 'calc' && isHistoryVisible && (
-              <div className="w-[380px] bg-black/80 border-l border-white/5 p-12 animate-in slide-in-from-right duration-500 flex flex-col backdrop-blur-3xl">
-                <div className="flex justify-between items-center mb-12">
-                  <h3 className="text-xs font-black uppercase tracking-[0.3em] text-indigo-400">Histórico</h3>
-                  <button onClick={() => setCalcHistory([])} className="p-2 hover:bg-white/5 rounded-lg opacity-20 hover:opacity-100 transition-all"><Eraser size={18} /></button>
-                </div>
-                <div className="flex-1 space-y-6 overflow-y-auto custom-scrollbar">
-                  {calcHistory.map((entry, i) => (
-                    <div key={i} onClick={() => setCalcInput(entry.expression)} className="group cursor-pointer p-8 rounded-[32px] bg-white/5 border border-white/5 hover:border-indigo-500/40 transition-all hover:bg-white/10">
-                      <div className="text-[10px] opacity-30 font-mono mb-3 truncate italic">{entry.expression} =</div>
-                      <div className="text-2xl font-bold group-hover:text-indigo-400 transition-colors leading-none">{entry.result}</div>
-                    </div>
-                  ))}
-                  {calcHistory.length === 0 && <div className="h-full flex flex-col items-center justify-center opacity-10 gap-4"><History size={64} /><p className="font-black uppercase tracking-widest text-xs">Vazio</p></div>}
-                </div>
-              </div>
+            {!isMemorySidebarOpen && activeMode !== 'graph' && (
+              <button 
+                onClick={() => setIsMemorySidebarOpen(true)}
+                className="absolute right-0 top-1/2 -translate-y-1/2 w-12 h-60 bg-white/[0.02] hover:bg-white/5 border-l border-y border-white/5 hover:border-indigo-500/40 rounded-l-3xl flex flex-col items-center justify-center gap-4 transition-all group z-50"
+              >
+                <Bookmark size={14} className="text-indigo-400 group-hover:scale-125 transition-all" />
+                <span className="[writing-mode:vertical-rl] text-[9px] font-black uppercase tracking-[0.4em] text-white/20 group-hover:text-white/50">Memória</span>
+              </button>
             )}
-
           </div>
         </div>
       </div>
+
       <style>{`
-        .math-render-container { font-size: 2.8rem !important; color: white !important; width: 100% !important; display: flex !important; justify-content: center !important; }
-        .katex-display { margin: 0 !important; width: 100% !important; overflow-x: auto !important; }
-        .grid-cols-18 { grid-template-columns: repeat(18, 1fr); }
-        .section-title { font-size: 13px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.5em; color: rgba(255,255,255,0.15); margin-bottom: 40px; }
-        .math-card { padding: 48px; border-radius: 64px; background: rgba(99,102,241,0.05); border: 2px solid rgba(99,102,241,0.15); display: flex; items-center; justify-content: space-between; cursor: pointer; transition: all 0.4s; }
-        .item-card { border-radius: 48px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 32px; transition: all 0.4s; cursor: pointer; }
-        .item-card:hover { transform: translateY(-8px); background: rgba(255,255,255,0.06); border-color: rgba(99,102,241,0.4); box-shadow: 0 30px 60px rgba(0,0,0,0.5); }
-        .formula-premium-card { border-radius: 72px; background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.03); padding: 16px; transition: all 0.5s; cursor: pointer; }
-        .formula-premium-card:hover { background: rgba(255,255,255,0.03); border-color: rgba(99,102,241,0.4); }
-        .calc-btn-sc { height: 60px; border-radius: 20px; background: rgba(99,102,241,0.08); font-weight: 950; text-transform: uppercase; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
-        .calc-btn-num { height: 75px; border-radius: 24px; background: rgba(255,255,255,0.03); font-weight: 600; transition: all 0.2s; }
-        .calc-btn-num:hover { background: rgba(255,255,255,0.08); transform: scale(1.02); }
-        .symbol-tile { aspect-square; display: flex; items-center; justify-content: center; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: all 0.3s; font-family: 'STIX Two Math', serif; }
-        .symbol-tile:hover { background: rgba(99,102,241,0.15); border-color: rgba(99,102,241,0.5); transform: scale(1.15) rotate(5deg); z-index: 10; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
-        .label { font-size: 11px; font-weight: 950; text-transform: uppercase; opacity: 0.3; letter-spacing: 0.3em; margin-bottom: 6px; }
-        .value { font-size: 40px; font-weight: 800; letter-spacing: -2px; }
-        .btn-primary-sc { width: 100%; padding: 24px 0; border-radius: 28px; background: #6366f1; color: white; font-size: 14px; font-weight: 950; text-transform: uppercase; letter-spacing: 0.2em; transition: all 0.3s; box-shadow: 0 20px 50px rgba(99, 102, 241, 0.4); }
-        .btn-primary-sc:hover { transform: translateY(-4px); background: #818cf8; box-shadow: 0 30px 70px rgba(99, 102, 241, 0.6); }
-        .shadow-glow-indigo { box-shadow: 0 0 20px rgba(99, 102, 241, 0.4); }
+        .shadow-glow-indigo { box-shadow: 0 0 30px rgba(99, 102, 241, 0.4); }
+        .shadow-glow-indigo-soft { box-shadow: 0 0 10px rgba(99, 102, 241, 0.2); }
+        .drop-shadow-glow-blue { filter: drop-shadow(0 0 5px #3b82f6); }
+        .drop-shadow-glow-purple { filter: drop-shadow(0 0 5px #a855f7); }
+        .shadow-neumat { box-shadow: 0 4px 10px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.05); }
+        .shadow-neumat-inner { box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
+        .shadow-inner-soft { box-shadow: inset 0 2px 10px rgba(0,0,0,0.3); }
+        @keyframes pulse-fast { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        .animate-pulse-fast { animation: pulse-fast 0.8s infinite; }
       `}</style>
     </div>,
     document.body
   );
-};
-
-const GraphPreview = ({ expr, is3D, zoom, isDarkMode }) => {
-  const canvasRef = useRef(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
-
-    if (!is3D) {
-      // 2D PLOTTER
-      ctx.strokeStyle = '#6366f1';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-
-      const centerX = w / 2;
-      const centerY = h / 2;
-      const scale = 40 * zoom;
-
-      // Draw axis
-      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-      ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(w, centerY); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, h); ctx.stroke();
-
-      ctx.strokeStyle = '#6366f1';
-      ctx.beginPath();
-      let first = true;
-      for (let x = -w / 2; x < w / 2; x += 1) {
-        try {
-          const mathX = x / scale;
-          const mathY = math.evaluate(expr.replace(/x/g, `(${mathX})`));
-          const screenY = centerY - (mathY * scale);
-          if (first) { ctx.moveTo(centerX + x, screenY); first = false; }
-          else { ctx.lineTo(centerX + x, screenY); }
-        } catch (e) { }
-      }
-      ctx.stroke();
-    } else {
-      // 3D WIREFRAME (Simplified perspective)
-      ctx.strokeStyle = 'rgba(99, 102, 241, 0.4)';
-      ctx.lineWidth = 1;
-      const scale = 20 * zoom;
-      const points = 20;
-
-      for (let i = -points; i <= points; i++) {
-        ctx.beginPath();
-        for (let j = -points; j <= points; j++) {
-          try {
-            const x = i / 2;
-            const y = j / 2;
-            // Simple surface: we evaluate but replace x,y properly
-            const z = math.evaluate(expr.replace(/x/g, `(${x})`).replace(/y/g, `(${y})`));
-
-            // Isometric projection
-            const px = (i - j) * scale + w / 2;
-            const py = (i + j) * scale / 2 - (z * scale) + h / 2;
-
-            if (j === -points) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-          } catch (e) { }
-        }
-        ctx.stroke();
-      }
-    }
-  }, [expr, is3D, zoom]);
-
-  return <canvas ref={canvasRef} width={640} height={480} className="w-full h-full rounded-[40px]" />;
 };
 
 export default ScientificOmnibar;

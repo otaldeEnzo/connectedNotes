@@ -203,7 +203,7 @@ const CanvasArea = forwardRef(({
       // ALT + C for Constants
       if (e.altKey && e.code === 'KeyC') {
         e.preventDefault();
-        setIsOmnibarOpen(prev => !prev);
+        setIsOmnibarOpen(true);
       }
     };
     window.addEventListener('keydown', handleGlobalShortcuts);
@@ -2019,16 +2019,6 @@ const CanvasArea = forwardRef(({
         onInsert={handleInsertConstant}
       />
 
-      {/* Scientific Mode Floating Trigger */}
-      <button
-        onClick={() => setIsOmnibarOpen(prev => !prev)}
-        className="fixed left-4 top-[170px] w-12 h-12 rounded-2xl glass-extreme flex items-center justify-center text-white/50 hover:text-white hover:bg-indigo-500/20 hover:border-indigo-500/40 transition-all z-[20000] shadow-glass group overflow-hidden"
-        title="Scientific Pro (Alt+C)"
-      >
-        <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Sigma size={24} strokeWidth={2.5} className="relative z-10 group-hover:scale-110 transition-transform" />
-        <div className="absolute top-0 right-0 w-2 h-2 bg-indigo-500 rounded-full blur-[2px] opacity-20" />
-      </button>
     </div>
   );
 });

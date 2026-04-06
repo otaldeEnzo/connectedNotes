@@ -46,10 +46,12 @@
     "lucide-react": "^0.562.0",
     "mathjs": "^15.1.0",
     "mermaid": "^11.12.2",
+    "nerdamer": "^1.1.13",
     "perfect-freehand": "^1.2.2",
     "prismjs": "^1.30.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-katex": "^3.1.0",
     "react-konva": "^19.2.2",
     "react-simple-code-editor": "^0.14.1",
     "reactflow": "^11.11.4"
