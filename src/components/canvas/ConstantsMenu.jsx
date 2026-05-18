@@ -4,6 +4,7 @@ import { STEM_CONSTANTS } from '../../services/STEMService';
 import { Search, X, Calculator, Tags } from 'lucide-react';
 
 const ConstantsMenu = ({ isOpen, onClose, onInsert, theme = 'dark' }) => {
+  console.log("STEM-DEBUG: ConstantsMenu rendered. isOpen:", isOpen);
   const [search, setSearch] = useState('');
   const [insertMode, setInsertMode] = useState('symbol'); // 'symbol' or 'value'
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -11,8 +12,9 @@ const ConstantsMenu = ({ isOpen, onClose, onInsert, theme = 'dark' }) => {
   const listRef = useRef(null);
 
   const filtered = STEM_CONSTANTS.filter(c => 
-    c.n.toLowerCase().includes(search.toLowerCase()) || 
-    c.l.toLowerCase().includes(search.toLowerCase())
+    (c.n && c.n.toLowerCase().includes(search.toLowerCase())) || 
+    (c.l && c.l.toLowerCase().includes(search.toLowerCase())) ||
+    (c.v && c.v.toString().includes(search))
   );
 
   useEffect(() => {
@@ -35,7 +37,7 @@ const ConstantsMenu = ({ isOpen, onClose, onInsert, theme = 'dark' }) => {
     }
     if (e.key === 'Enter' && filtered.length > 0) {
       const item = filtered[selectedIndex];
-      onInsert(insertMode === 'symbol' ? item.symbol : item.value);
+      onInsert(insertMode === 'symbol' ? item.l : item.v);
       onClose();
     }
     if (e.key === 'Tab') {
@@ -64,7 +66,7 @@ const ConstantsMenu = ({ isOpen, onClose, onInsert, theme = 'dark' }) => {
 
   return ReactDOM.createPortal(
     <div 
-      className="constants-overlay fixed inset-0 flex items-center justify-center pointer-events-auto z-[30000] bg-black/20"
+      className="constants-overlay fixed inset-0 flex items-center justify-center pointer-events-auto z-[100000] bg-black/60 backdrop-blur-sm"
       onPointerDown={(e) => {
         console.log("STEM-DEBUG: Backdrop Clicked");
         onClose();
@@ -142,7 +144,7 @@ const ConstantsMenu = ({ isOpen, onClose, onInsert, theme = 'dark' }) => {
                 key={idx}
                 onPointerDown={(e) => {
                   e.stopPropagation();
-                  onInsert(insertMode === 'symbol' ? item.symbol : item.value);
+                  onInsert(insertMode === 'symbol' ? item.l : item.v);
                   onClose();
                 }}
                 className={`flex items-center justify-between p-6 rounded-3xl transition-all cursor-pointer group ${
@@ -151,20 +153,20 @@ const ConstantsMenu = ({ isOpen, onClose, onInsert, theme = 'dark' }) => {
               >
                 <div className="flex items-center gap-6">
                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-math transition-colors ${selectedIndex === idx ? 'bg-accent-color text-white' : 'bg-black/40 text-accent-color opacity-70'}`}>
-                    {item.label.includes('_') ? (
+                    {item.l?.includes('_') ? (
                       <span className="flex items-baseline">
-                        {item.label.split('_')[0]}<sub className="text-[0.6em] opacity-80 leading-none">{item.label.split('_')[1]}</sub>
+                        {item.l.split('_')[0]}<sub className="text-[0.6em] opacity-80 leading-none">{item.l.split('_')[1]}</sub>
                       </span>
-                    ) : item.label}
+                    ) : item.l}
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-[var(--text-primary)]">{item.name}</h3>
-                    <p className="text-sm opacity-50 uppercase tracking-tight font-medium">{item.category} • {item.unit || 'Adimensional'}</p>
+                    <h3 className="text-lg font-bold text-[var(--text-primary)]">{item.n}</h3>
+                    <p className="text-sm opacity-50 uppercase tracking-tight font-medium">{item.c} • {item.u || 'Adimensional'}</p>
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="text-xl font-mono text-[var(--text-primary)] group-hover:text-accent-color transition-colors">
-                    {insertMode === 'symbol' ? item.symbol : item.value}
+                    {insertMode === 'symbol' ? item.l : item.v}
                   </div>
                   <div className="text-[10px] opacity-30 mt-1">Clique para inserir</div>
                 </div>

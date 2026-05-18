@@ -7,6 +7,7 @@ import MermaidEditor from './editors/MermaidEditor';
 import MindmapEditor from './editors/MindmapEditor';
 import FolderView from './editors/FolderView';
 import AIPanel from './AIPanel';
+import ScientificOmnibar from './canvas/ScientificOmnibar';
 import { ExportService } from '../services/ExportService';
 
 const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMapEnabled, ...props }, ref) => {
@@ -20,6 +21,7 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
     const [aiPanel, setAiPanel] = useState({ visible: false, context: null });
     const [exportStatus, setExportStatus] = useState({ isExporting: false, progress: 0, message: '' });
     const [shadowNote, setShadowNote] = useState(null);
+    const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
     const hiddenEditorRef = useRef(null);
 
     const captureNote = useCallback(async (note, format) => {
@@ -112,6 +114,18 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
     }));
 
     const containerRef = useRef(null);
+
+    // Listen for global shortcuts (Calculadora em qualquer nota)
+    useEffect(() => {
+        const handleShortcuts = (e) => {
+            if (e.altKey && e.code === 'KeyC') {
+                e.preventDefault();
+                setIsOmnibarOpen(prev => !prev);
+            }
+        };
+        window.addEventListener('keydown', handleShortcuts);
+        return () => window.removeEventListener('keydown', handleShortcuts);
+    }, []);
 
     // Listen for global export triggers (from Sidebar/CommandBar)
     useEffect(() => {
@@ -502,6 +516,39 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
                     </div>
                 </div>
             )}
+
+            <ScientificOmnibar
+                isOpen={isOmnibarOpen}
+                onClose={() => setIsOmnibarOpen(false)}
+                onAddBlock={(type, content) => {
+                    if (activeNote.type === 'canvas' && canvasRef.current) {
+                        canvasRef.current.addBlock(type, content);
+                    } else if (activeNote.type === 'code') {
+                        const snippet = (typeof content === 'string') ? content : JSON.stringify(content, null, 2);
+                        const newCode = (activeNote.content.code || '') + '\n\n' + snippet;
+                        updateNoteContent(activeNote.id, { code: newCode });
+                    } else if (activeNote.type === 'text') {
+                        const snippet = (typeof content === 'string') ? content : JSON.stringify(content, null, 2);
+                        const currentVal = activeNote.content.markdown || activeNote.content.body || '';
+                        const newText = currentVal + '<br><br>' + snippet;
+                        updateNoteContent(activeNote.id, { markdown: newText });
+                    }
+                }}
+                onInsert={(val) => {
+                    const snippet = `$$${val}$$`;
+                    if (activeNote.type === 'canvas' && canvasRef.current) {
+                        canvasRef.current.addBlock('math', val);
+                    } else if (activeNote.type === 'code') {
+                        const newCode = (activeNote.content.code || '') + '\n' + snippet;
+                        updateNoteContent(activeNote.id, { code: newCode });
+                    } else if (activeNote.type === 'text') {
+                        const currentVal = activeNote.content.markdown || '';
+                        const newText = currentVal + '<br>' + snippet;
+                        updateNoteContent(activeNote.id, { markdown: newText });
+                    }
+                    setIsOmnibarOpen(false);
+                }}
+            />
         </div>
     );
 });

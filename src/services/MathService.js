@@ -32,16 +32,41 @@ export const MathService = {
      * Converts a MathJS expression or numeric result into a LaTeX string.
      */
     toLaTeX(expression) {
+        if (expression === null || expression === undefined) return '0';
+
         try {
-            if (typeof expression !== 'string') return String(expression);
+            // Se for matriz ou array, lidamos com formatação estrutural
+            if ((expression && expression.isMatrix) || Array.isArray(expression)) {
+                try {
+                    const formatted = math.format(expression);
+                    let tex = math.parse(formatted).toTex();
+                    return tex.replace(/bmatrix/g, 'pmatrix');
+                } catch (err) {
+                    // Fallback manual para reconstruir a matriz em LaTeX
+                    const rows = (expression.isMatrix) ? expression.toArray() : expression;
+                    if (Array.isArray(rows) && rows.length > 0 && Array.isArray(rows[0])) {
+                        const texRows = rows.map(r => r.join(' & ')).join(' \\\\ ');
+                        return `\\begin{pmatrix} ${texRows} \\end{pmatrix}`;
+                    }
+                }
+            }
+
+            let exprToParse = expression;
+            if (typeof expression !== 'string') {
+                exprToParse = String(expression);
+            }
+
             // Handle "x = value" string from solver
-            if (expression.startsWith('x = ')) {
-                const val = expression.replace('x = ', '');
+            if (typeof exprToParse === 'string' && exprToParse.startsWith('x = ')) {
+                const val = exprToParse.replace('x = ', '');
                 return `x = ${val}`;
             }
-            return math.parse(expression).toTex();
+
+            let tex = math.parse(exprToParse).toTex();
+            // mathjs generates \begin{bmatrix}, replace with pmatrix to match our input system
+            return tex.replace(/bmatrix/g, 'pmatrix');
         } catch (e) {
-            return expression;
+            return String(expression);
         }
     },
 
@@ -198,27 +223,152 @@ export const MathService = {
     },
 
     /**
-     * Converts a LaTeX string back to mathjs compatible string.
-     * Basic implementation for common symbols.
+     * Converts a LaTeX string from MathLive back to a mathjs compatible string.
      */
     latexToMathJS(latex) {
         if (!latex) return '';
+        
         let clean = latex
-            .replace(/\\frac{([^}]*)}{([^}]*)}/g, '($1)/($2)')
+            // Clean up LaTeX spacing commands first
+            .replace(/\\(,|:|;|!| )/g, '')
+            // Fractions: \frac{num}{den} -> (num)/(den) (suporta até 3 níveis de aninhamento)
+            .replace(/\\frac\s*({(?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*)*?}|.)\s*({(?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*)*?}|.)/g, (match, n, d) => {
+                const num = n.startsWith('{') ? n.slice(1, -1) : n;
+                const den = d.startsWith('{') ? d.slice(1, -1) : d;
+                return `(${num})/(${den})`;
+            })
+            
+            // 2. Roots: \sqrt{arg} -> sqrt(arg), \sqrt[n]{arg} -> nthRoot(arg, n)
+            .replace(/\\sqrt\[([^\]]*)\]{((?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*})*)}/g, 'nthRoot($2, $1)')
+            .replace(/\\sqrt{((?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*})*)}/g, 'sqrt($1)')
+
+            // 3. Matrices: \begin{pmatrix} a & b \\ c & d \end{pmatrix} -> [[a, b], [c, d]]
+            .replace(/\\begin{(?:p|b)?matrix}(.*?)\\end{(?:p|b)?matrix}/gs, (match, content) => {
+                const rows = content.split('\\\\');
+                const cleanRows = rows.map(row => {
+                    const cols = row.split('&').map(c => c.trim()).filter(c => c !== '');
+                    return '[' + cols.join(',') + ']';
+                }).filter(r => r !== '[]');
+                return '[' + cleanRows.join(',') + ']';
+            })
+
+            // 4. Transpose: (...)^T -> transpose(...)
+            .replace(/\\left\((.*?)\\right\)\^{T}/g, 'transpose($1)')
+            .replace(/((?:[^{}]|{[^{}]*})*)\^{T}/g, 'transpose($1)')
+            
+            // 5. Differential: \frac{d}{dx}(expr) -> diff(expr, x)
+            .replace(/\\frac\s*{d}\s*{d([a-z])}\s*(?:\\left\(|\\\(|\()?(.*?)(?:\\right\)|\\\)|)?/g, 'diff($2, $1)')
+            
+            // Integral: \int_{a}^{b} expr dx -> integral(expr, x, a, b)
+            .replace(/\\int(?:_{((?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*})*)}|_([a-zA-Z0-9]))?(?:\^{((?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*})*)}|\^([a-zA-Z0-9]))?\s*(.*?)\s*d([a-z])/g, (match, a1, a2, b1, b2, expr, v) => {
+                const a = a1 || a2 || '';
+                const b = b1 || b2 || '';
+                const cleanExpr = expr.replace(/\\(,|:|;|!| )/g, ''); 
+                if (!a && !b) return `integral(${cleanExpr}, ${v})`;
+                return `integral(${cleanExpr}, ${v}, ${a}, ${b})`;
+            })
+
+            // Limit: \lim_{x \to a} f(x) -> limit(f(x), x, a)
+            .replace(/\\lim_{((?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*})*)\s*\\(?:to|rightarrow)\s*((?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*})*)}/g, 'limit_header($1,$2)')
+            // Caso com \left( ... \right) ou ( ... ) - Suporta aninhamento de chaves na função
+            .replace(/limit_header\(([^,]*),([^)]*)\)\s*(?:\\left\(|\()((?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*})*?)(?:\\right\)|\)|$)/g, 'limit($3, $1, $2)')
+            // Caso sem parênteses (captura até o fim ou próximo delimitador lógico)
+            .replace(/limit_header\(([^,]*),([^)]*)\)\s*((?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*})+)/g, 'limit($3, $1, $2)')
+
+            // Summation: \sum_{i=1}^{10} {i^2} -> sum(i^2, i, 1, 10)
+            .replace(/\\sum(?:\s|\\limits)*_{([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([^}]+)}\^{([^}]+)}\s*({(?:[^{}]|{[^{}]*})*}|(?:\([^)]*\)|[a-zA-Z0-9_^]+)+|[^+\-*\/= ]+)/g, (match, v, start, end, expr) => {
+                let cleanExpr = expr.trim();
+                if (cleanExpr.startsWith('{') && cleanExpr.endsWith('}')) {
+                    cleanExpr = cleanExpr.slice(1, -1);
+                }
+                return `sum(${cleanExpr}, ${v}, ${start}, ${end})`;
+            })
+            // Product: \prod_{i=1}^{10} {i} -> product(i, i, 1, 10)
+            .replace(/\\prod(?:\s|\\limits)*_{([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*([^}]+)}\^{([^}]+)}\s*({(?:[^{}]|{[^{}]*})*}|(?:\([^)]*\)|[a-zA-Z0-9_^]+)+|[^+\-*\/= ]+)/g, (match, v, start, end, expr) => {
+                let cleanExpr = expr.trim();
+                if (cleanExpr.startsWith('{') && cleanExpr.endsWith('}')) {
+                    cleanExpr = cleanExpr.slice(1, -1);
+                }
+                return `product(${cleanExpr}, ${v}, ${start}, ${end})`;
+            })
+
+            // Operators and constants
             .replace(/\\cdot/g, '*')
             .replace(/\\times/g, '*')
-            .replace(/\\sqrt{([^}]*)}/g, 'sqrt($1)')
+            .replace(/\\div/g, '/')
+            .replace(/\\pi/g, 'pi')
+            .replace(/\\tau/g, 'tau')
+            .replace(/\\text{ans}/g, "ans")
+            .replace(/\\text{preAns}/g, "preAns")
+            .replace(/\\rightarrow/g, "=")
+            .replace(/\\exp/g, "exp")
+            
+            // Advanced STEM Functions
+            .replace(/\\infty/g, 'Infinity')
+            .replace(/\\text{conj}/g, 'conj')
+            .replace(/\\text{arg}/g, 'arg')
+            .replace(/\\text{Re}/g, 're')
+            .replace(/\\text{Im}/g, 'im')
+            // Infix Vector Operators (captured between parentheses/brackets or words)
+            .replace(/((?:[^+\-*/=,()]|\([^)]*\)|\[[^\]]*\])+)\\times_{vec}((?:[^+\-*/=,()]|\([^)]*\)|\[[^\]]*\])+)/g, 'cross($1,$2)')
+            .replace(/((?:[^+\-*/=,()]|\([^)]*\)|\[[^\]]*\])+)\\cdot_{vec}((?:[^+\-*/=,()]|\([^)]*\)|\[[^\]]*\])+)/g, 'dot($1,$2)')
+            .replace(/\\\|(.*?)\\\|/g, 'norm($1)')
+            .replace(/\\hat{(.*?)}/g, '($1)/norm($1)')
+            .replace(/\\text{media}/g, 'mean')
+            .replace(/\\sigma\^2/g, 'var')
+            .replace(/\\text{round}/g, 'round')
+            .replace(/\\text{lcm}/g, 'lcm')
+            .replace(/\\text{solve}/g, 'solve')
+            .replace(/\\text{taylor}/g, 'taylor')
+            .replace(/\\text{subst}/g, 'subst')
+            .replace(/\\%/g, '/100')
+            .replace(/\\gcd/g, 'gcd')
+
+            // Combinations & Permutations
+            .replace(/({[^{}]+}|[a-zA-Z0-9_]+)\\text{C}_({[^{}]+}|[a-zA-Z0-9_]+)/g, (match, n, k) => {
+                const cleanN = n.startsWith('{') ? n.slice(1, -1) : n;
+                const cleanK = k.startsWith('{') ? k.slice(1, -1) : k;
+                return `combinations(${cleanN}, ${cleanK})`;
+            })
+            .replace(/({[^{}]+}|[a-zA-Z0-9_]+)\\text{P}_({[^{}]+}|[a-zA-Z0-9_]+)/g, (match, n, k) => {
+                const cleanN = n.startsWith('{') ? n.slice(1, -1) : n;
+                const cleanK = k.startsWith('{') ? k.slice(1, -1) : k;
+                return `permutations(${cleanN}, ${cleanK})`;
+            })
+
+            // Brackets: \left( ... \right) -> ( ... )
+            .replace(/\\left\(/g, '(')
+            .replace(/\\right\)/g, ')')
+            .replace(/\\left\[/g, '[')
+            .replace(/\\right\]/g, ']')
+            .replace(/\\left\\{/g, '{')
+            .replace(/\\right\\}/g, '}')
+            
+            // Functions
             .replace(/\\sin/g, 'sin')
             .replace(/\\cos/g, 'cos')
             .replace(/\\tan/g, 'tan')
+            .replace(/\\sinh/g, 'sinh')
+            .replace(/\\cosh/g, 'cosh')
+            .replace(/\\tanh/g, 'tanh')
+            .replace(/sen\(/g, 'sin(') 
+            .replace(/tg\(/g, 'tan(')
+            .replace(/\\arcsin/g, 'asin')
+            .replace(/\\arccos/g, 'acos')
+            .replace(/\\arctan/g, 'atan')
+            .replace(/\\log_{([^}]*)}\(([^)]*)\)/g, 'log($2, $1)')
             .replace(/\\log/g, 'log')
             .replace(/\\ln/g, 'ln')
-            .replace(/\\pi/g, 'pi')
-            .replace(/\\left\(/g, '(')
-            .replace(/\\right\)/g, ')')
-            .replace(/\^/g, '^')
-            .replace(/{([^}]*)}/g, '$1')
-            .replace(/\\/g, ''); // Remove remaining backslashes
+            
+            // Cleanup: MathLive sometimes adds \placeholder{}
+            .replace(/\\placeholder{[^{}]*}/g, "")
+            .replace(/{/g, '(')
+            .replace(/}/g, ')')
+            .replace(/\\/g, '') // Remove remaining backslashes
+            .replace(/\s/g, ''); // Remove spaces
+
         return clean;
     }
 };
+
+export default MathService;

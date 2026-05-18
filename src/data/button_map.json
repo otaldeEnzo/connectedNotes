@@ -9,16 +9,18 @@
   "keys": {
     "key_7": {
       "normal": "7",
-      "shift": "deg",
-      "alpha": "rad",
+      "shift": "dot(",
+      "shiftLabel": "dot",
+      "alpha": "cross(",
+      "alphaLabel": "cross",
       "keyCode": "Digit7"
     },
     "key_8": {
       "normal": "8",
-      "shift": "floor(",
-      "shiftLabel": "⌊x⌋",
-      "alpha": "ceil(",
-      "alphaLabel": "⌈x⌉",
+      "shift": "gcd(",
+      "shiftLabel": "gcd",
+      "alpha": "lcm(",
+      "alphaLabel": "lcm",
       "keyCode": "Digit8"
     },
     "key_9": {
@@ -26,7 +28,7 @@
       "shift": "max(",
       "shiftLabel": "max",
       "alpha": "min(",
-      "alphaLabel": "|x|",
+      "alphaLabel": "min",
       "keyCode": "Digit9"
     },
     "key_del": {
@@ -39,47 +41,49 @@
     },
     "key_ac": {
       "normal": "AC",
-      "shift": "EXIT",
-      "shiftLabel": "EXIT",
-      "alpha": "RESET",
-      "alphaLabel": "RESET",
+      "shift": "clearVars",
+      "shiftLabel": "CLR_VAR",
+      "alpha": "reboot",
+      "alphaLabel": "REBOOT",
       "keyCode": "Escape"
     },
     "key_4": {
       "normal": "4",
-      "shift": "fact(",
-      "shiftLabel": "n!",
-      "alpha": "mod(",
-      "alphaLabel": "mod",
+      "shift": "conj(",
+      "shiftLabel": "conj",
+      "alpha": "arg(",
+      "alphaLabel": "arg",
       "keyCode": "Digit4"
     },
     "key_5": {
       "normal": "5",
-      "shift": "nCr(",
-      "shiftLabel": "nCr",
-      "alpha": "nPr(",
-      "alphaLabel": "nPr",
+      "shift": "real(",
+      "shiftLabel": "real",
+      "alpha": "imag(",
+      "alphaLabel": "imag",
       "keyCode": "Digit5"
     },
     "key_6": {
       "normal": "6",
-      "shift": "simplify(",
-      "shiftLabel": "simp",
-      "alpha": "factor(",
-      "alphaLabel": "fact",
+      "shift": "norm(",
+      "shiftLabel": "norm",
+      "alpha": "unit(",
+      "alphaLabel": "unit",
       "keyCode": "Digit6"
     },
     "key_mul": {
       "normal": "×",
-      "shift": "comb(",
-      "shiftLabel": "comb",
-      "alpha": "!"
+      "shift": "mean(",
+      "shiftLabel": "mean",
+      "alpha": "variance(",
+      "alphaLabel": "var"
     },
     "key_div": {
       "normal": "÷",
-      "shift": "perm(",
-      "shiftLabel": "perm",
-      "alpha": ";"
+      "shift": "mod(",
+      "shiftLabel": "mod",
+      "alpha": "abs(",
+      "alphaLabel": "abs"
     },
     "key_1": {
       "normal": "1",
@@ -91,38 +95,32 @@
     },
     "key_2": {
       "normal": "2",
-      "shift": "limit(",
-      "shiftLabel": "limit",
-      "alpha": "solve(",
-      "alphaLabel": "solve",
+      "shift": "combinations( , )",
+      "shiftLabel": "nCr",
+      "alpha": "permutations( , )",
+      "alphaLabel": "nPr",
       "keyCode": "Digit2"
     },
     "key_3": {
       "normal": "3",
-      "shift": "expand(",
-      "shiftLabel": "expand",
-      "alpha": "unit",
-      "alphaLabel": "unit",
+      "shift": "simplify(",
+      "shiftLabel": "simp",
+      "alpha": "expand(",
+      "alphaLabel": "expand",
       "keyCode": "Digit3"
     },
     "key_plus": {
       "normal": "+",
-      "shift": "pol(",
-      "shiftLabel": "pol",
-      "alpha": "rec(",
-      "alphaLabel": "rec"
+      "keyCode": "Equal"
     },
     "key_minus": {
       "normal": "-",
-      "shift": "rec(",
-      "shiftLabel": "rec",
-      "alpha": "pol(",
-      "alphaLabel": "pol"
+      "keyCode": "Minus"
     },
     "key_0": {
       "normal": "0",
-      "shift": "space",
-      "shiftLabel": "SPC",
+      "shift": "Infinity",
+      "shiftLabel": "∞",
       "alpha": ":",
       "keyCode": "Digit0"
     },
@@ -130,18 +128,36 @@
       "normal": ".",
       "shift": "rand",
       "shiftLabel": "rand",
-      "alpha": "i",
       "keyCode": "Period"
     },
     "key_exp": {
-      "normal": "×10ˣ",
-      "shift": "π",
-      "alpha": "e",
+      "label": "π",
+      "normal": "pi",
+      "shift": "e",
+      "shiftLabel": "e",
+      "alpha": "i",
+      "alphaLabel": "i",
       "keyCode": "KeyE"
     },
+    "key_var": {
+      "label": "x",
+      "normal": "x",
+      "shift": "y",
+      "shiftLabel": "y",
+      "alpha": "z",
+      "alphaLabel": "z",
+      "keyCode": "KeyX"
+    },
+    "key_extra": {
+      "label": "%",
+      "normal": "%",
+      "alpha": "fact(",
+      "alphaLabel": "!",
+      "keyCode": "KeyG"
+     },
     "key_ans": {
       "normal": "Ans",
-      "shift": "proAns",
+      "shift": "preAns",
       "shiftLabel": "pAns",
       "alpha": "DRG",
       "keyCode": "KeyA"
@@ -237,8 +253,6 @@
       "normal": "sum(",
       "shift": "∏(",
       "shiftLabel": "∏",
-      "alpha": "solve(",
-      "alphaLabel": "solve",
       "keyCode": "KeyU"
     },
     "key_sd": {
@@ -288,6 +302,15 @@
       "shiftLabel": "|x|",
       "alpha": "∠",
       "keyCode": "Backquote"
+    },
+    "key_matrix": {
+      "label": "Mat",
+      "normal": "matrix( )",
+      "shift": "det(",
+      "shiftLabel": "det",
+      "alpha": "transpose(",
+      "alphaLabel": "T",
+      "keyCode": "KeyM"
     },
     "key_shift": {
       "normal": "CTRL",

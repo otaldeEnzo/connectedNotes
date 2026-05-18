@@ -45,6 +45,7 @@
     "konva": "^10.2.0",
     "lucide-react": "^0.562.0",
     "mathjs": "^15.1.0",
+    "mathlive": "^0.109.1",
     "mermaid": "^11.12.2",
     "nerdamer": "^1.1.13",
     "perfect-freehand": "^1.2.2",

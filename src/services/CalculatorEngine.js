@@ -3,25 +3,36 @@ import nerdamer from 'nerdamer';
 import 'nerdamer/Algebra.js';
 import 'nerdamer/Calculus.js';
 import 'nerdamer/Solve.js';
+import NATIVE_CONSTANTS from '../data/constants.json';
+import { MathService } from './MathService.js';
 
 class CalculatorEngine {
   constructor() {
     this.formulas = this.loadFormulas();
     this.variables = this.loadVariables();
     this.ans = "0";
+    this.preAns = "0";
     this.history = [];
-    
+
+    // Pre-calculate constants scope to avoid repeated processing
+    this.constantsScope = {};
+    NATIVE_CONSTANTS.forEach(c => {
+      // Use symbol without backslash as key (since latexToMathJS removes them)
+      const cleanKey = c.s.replace(/\\/g, '');
+      this.constantsScope[cleanKey] = parseFloat(c.v);
+    });
+
     // STARTUP REPLAY: Re-teach both engines the saved formulas
     Object.values(this.formulas).forEach(fDef => {
-       try {
-         // 1. Numerics (mathjs expects =)
-         let mathClean = fDef.replace(/sen\(/g, 'sin(').replace(/tg\(/g, 'tan(').replace(/²/g, '^2').replace(/³/g, '^3');
-         math.evaluate(mathClean, this.variables);
-         
-         // 2. Symbolic (nerdamer expects :=)
-         let ndClean = mathClean.replace(/=/g, ':=');
-         nerdamer(ndClean);
-       } catch(e) { console.error("Startup Sync Error:", e); }
+      try {
+        // 1. Numerics (mathjs expects =)
+        let mathClean = fDef.replace(/sen\(/g, 'sin(').replace(/tg\(/g, 'tan(').replace(/²/g, '^2').replace(/³/g, '^3');
+        math.evaluate(mathClean, { ...this.constantsScope, ...this.variables });
+
+        // 2. Symbolic (nerdamer expects :=)
+        let ndClean = mathClean.replace(/=/g, ':=');
+        nerdamer(ndClean);
+      } catch (e) { console.error("Startup Sync Error:", e); }
     });
   }
 
@@ -42,8 +53,10 @@ class CalculatorEngine {
   }
 
   evaluate(expression, mode = 'calculate', isSymbolic = true, unitMode = 'deg') {
+    if (!expression || expression.trim() === '') return { text: "0", value: 0 };
+    let processed = expression;
     try {
-      let processed = expression
+      processed = processed
         .replace(/×/g, '*')
         .replace(/÷/g, '/')
         .replace(/π/g, 'pi')
@@ -54,40 +67,85 @@ class CalculatorEngine {
         .replace(/arctg\(/g, 'atan(')
         .replace(/²/g, '^2')
         .replace(/³/g, '^3')
-        .replace(/\bAns\b/g, this.ans);
+        .replace(/\bans\b/g, this.ans)
+        .replace(/\bpreans\b/g, this.preAns)
+        .replace(/\brand\b/g, 'random()');
 
-      // 0. Assignment & Function Definition Guard
+      // 0. Assignment vs Equation Solver Logic
       if (processed.includes('=') && !['==', '<=', '>='].some(op => processed.includes(op))) {
-        try {
-          // ENSURE scope is clean for the assignment
-          if (!this.variables || typeof this.variables !== 'object') {
-            this.variables = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, M: 0, X: 0, Y: 0 };
-          }
-          
-          math.evaluate(processed, this.variables);
-          
-          // SYNC & STORE FORMULA (Raw for Persistence)
-          try {
-            const nameMatch = processed.match(/^([a-zA-Z0-9_]+)\s*\(/);
-            if (nameMatch) {
-               this.formulas[nameMatch[1]] = processed; // Store raw assignment
-            }
-            
-            // Teach Nerdamer (needs := and sin/tan)
-            let ndDef = processed
-               .replace(/=/g, ':=')
-               .replace(/sen\(/g, 'sin(')
-               .replace(/tg\(/g, 'tan(')
-               .replace(/²/g, '^2')
-               .replace(/³/g, '^3');
-            nerdamer(ndDef); 
-          } catch(ne) { console.error("Nerdamer Sync Error:", ne); }
+        const sides = processed.split('=');
+        if (sides.length !== 2) return { text: "\\text{Erro de sintaxe}", value: null, isTex: true };
 
-          this.saveVariables();
-          return { text: "\\text{Definido.}", value: null, isTex: true };
-        } catch (err) {
-          console.log("MathJS Assignment Error:", err.message);
-          return { text: "\\text{Erro: } " + err.message.slice(0, 20), value: null, isTex: true };
+        const lhs = sides[0].trim();
+        const rhs = sides[1].trim();
+        const isAssignment = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(lhs) || /^[a-zA-Z_][a-zA-Z0-9_]*\s*\(.*\)$/.test(lhs);
+
+        if (isAssignment) {
+          try {
+            if (!this.variables) this.variables = {};
+
+            // 1. Numerics
+            math.evaluate(processed, this.variables);
+
+            // 2. Symbols & Persistence
+            const nameMatch = lhs.match(/^([a-zA-Z0-9_]+)/);
+            if (nameMatch) {
+              const varName = nameMatch[1];
+              // If it's a function definition like f(x)
+              if (lhs.includes('(')) {
+                this.formulas[varName] = processed;
+              } else {
+                // Regular variable
+                if (this.variables[varName] !== undefined) {
+                  delete this.formulas[varName]; // Clear if it was a formula
+                }
+              }
+            }
+
+            // Teach Nerdamer
+            try {
+              let ndDef = processed.replace(/=/g, ':=');
+              nerdamer(ndDef);
+            } catch (ne) { console.warn("Nerdamer assignment warn:", ne); }
+
+            this.saveVariables();
+            return { text: "\\text{Definido.}", value: null, isTex: true };
+          } catch (err) {
+            console.error("Assignment Error:", err);
+            return { text: "\\text{Erro: } " + (err.message || "inválido").slice(0, 20), value: null, isTex: true };
+          }
+        } else {
+          // GENERAL EQUATION SOLVER (Item 3)
+          try {
+            const varsFound = processed.match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
+            const solveVar = varsFound.find(v => v === 'x') || varsFound[0] || 'x';
+
+            // Textual Substitution (more robust than symbolic .sub() for equations)
+            let eqStr = processed;
+            const fullScope = { ...this.constantsScope, ...this.variables };
+            if (fullScope) {
+              Object.entries(fullScope).forEach(([v, val]) => {
+                if (v !== solveVar && typeof val === 'number') {
+                  const regex = new RegExp(`\\b${v}\\b`, 'g');
+                  eqStr = eqStr.replace(regex, val);
+                }
+              });
+            }
+
+            // Normalize: A + x = 100 -> (A + x) - (100)
+            if (eqStr.includes('=')) {
+              const sides = eqStr.split('=');
+              eqStr = `(${sides[0]}) - (${sides[1]})`;
+            }
+
+            const solutions = nerdamer.solve(eqStr, solveVar);
+            const tex = `${solveVar} = ${solutions.toTeX()}`;
+            this.ans = solutions.toString();
+            return { text: tex, value: solutions.toString(), isTex: true };
+          } catch (solveErr) {
+            console.error("Solve Error:", solveErr);
+            return { text: "\\text{Erro ao resolver}", value: null, isTex: true };
+          }
         }
       }
 
@@ -96,26 +154,26 @@ class CalculatorEngine {
       // Skip this if we are CURRENTLY defining a function
       if (!processed.includes('=') && !processed.includes(':=')) {
         Object.entries(this.formulas).forEach(([name, formula]) => {
-           const defMatch = formula.match(/^([a-zA-Z0-9_]+)\s*\(([a-zA-Z0-9_]+)\)\s*[:=]\s*(.*)$/);
-           if (defMatch) {
-              const [_, fName, fVar, fBody] = defMatch;
-              
-              // Only replace if it's the exact function name
-              const callRegex = new RegExp(`\\b${fName}\\s*\\(([^)]+)\\)`, 'g');
-              processed = processed.replace(callRegex, (match, arg) => {
-                 // Simple substitution: replace only isolated occurrences of the variable
-                 const varRegex = new RegExp(`\\b${fVar}\\b`, 'g');
-                 const expanded = fBody.replace(varRegex, `(${arg})`);
-                 return `(${expanded})`;
-              });
-           }
+          const defMatch = formula.match(/^([a-zA-Z0-9_]+)\s*\(([a-zA-Z0-9_]+)\)\s*[:=]\s*(.*)$/);
+          if (defMatch) {
+            const [_, fName, fVar, fBody] = defMatch;
+
+            // Only replace if it's the exact function name
+            const callRegex = new RegExp(`\\b${fName}\\s*\\(([^)]+)\\)`, 'g');
+            processed = processed.replace(callRegex, (match, arg) => {
+              // Simple substitution: replace only isolated occurrences of the variable
+              const varRegex = new RegExp(`\\b${fVar}\\b`, 'g');
+              const expanded = fBody.replace(varRegex, `(${arg})`);
+              return `(${expanded})`;
+            });
+          }
         });
       }
 
       // 3. Symbolic Calculus Guard (Nerdamer)
-      const symbolicOps = ['integral', 'diff', 'taylor', 'subst', 'limit'];
+      const symbolicOps = ['integral', 'diff', 'taylor', 'subst', 'limit', 'sum', 'product', 'solve'];
       const isSymbolicLogic = symbolicOps.some(op => processed.includes(op + '('));
-      
+
       if (isSymbolicLogic) {
         try {
           const processSymbolicArgs = (str, targetFunc, replacer) => {
@@ -149,7 +207,7 @@ class CalculatorEngine {
                   }
                 }
                 args.push(currentArg);
-                
+
                 let replaced = replacer(args);
                 result = result.substring(0, searchIdx) + replaced + result.substring(end + 1);
                 searchIdx += replaced.length;
@@ -161,33 +219,62 @@ class CalculatorEngine {
           };
 
           let ndExpr = processed;
-          
+
           ndExpr = processSymbolicArgs(ndExpr, 'integral', (args) => {
             const f = args[0] || '0';
-            const a = args[1] || '';
-            const b = args[2] || '';
-            if (!a.trim() || !b.trim()) return `integrate(${f}, x)`;
-            return `defint(${f}, ${a}, ${b}, x)`;
+            const v = (args.length >= 4) ? args[1] : 'x';
+            const a = (args.length >= 4) ? args[2] : (args[1] || '');
+            const b = (args.length >= 4) ? args[3] : (args[2] || '');
+            
+            if (!a.trim() || !b.trim()) return `integrate(${f}, ${v})`;
+            return `defint(${f}, ${a}, ${b}, ${v})`;
           });
-          
+
           ndExpr = processSymbolicArgs(ndExpr, 'subst', (args) => {
             const f = args[0] || '0';
             const v = args[1] || 'x';
             const val = args[2] || '0';
             return `sub(${v}, ${val}, ${f})`;
           });
-          
+
           ndExpr = processSymbolicArgs(ndExpr, 'diff', (args) => {
             const f = args[0] || '0';
-            const val = args[1] || '';
-            if (!val.trim()) return `diff(${f}, x)`;
-            return `sub(x, ${val}, diff(${f}, x))`;
+            const v = args[1] || 'x';
+            return `diff(${f}, ${v})`;
           });
 
           let sol = nerdamer(ndExpr);
+          // Forçar avaliação se for cálculo (integrais definidas, limites, derivadas e subst) para obter valor final
+          if (ndExpr.includes('defint') || ndExpr.includes('diff') || ndExpr.includes('limit') || ndExpr.includes('sub(')) {
+            sol = sol.evaluate();
+          }
+
           const val = sol.toString();
+          const tex = sol.toTeX();
+          this.preAns = this.ans;
           this.ans = val;
-          return { text: sol.toTeX(), value: val, isTex: true };
+          this.ansTex = tex;
+
+          // Se o resultado for um número ou fração simbólica, tenta formatar como fração latex para consistência
+          let numericVal = NaN;
+          try {
+            numericVal = math.evaluate(val);
+          } catch(e) {}
+
+          if (!isNaN(numericVal) && isFinite(numericVal)) {
+            try {
+              // Only try fraction if it's not a huge/tiny decimal
+              if (Math.abs(numericVal) > 1e-6 && Math.abs(numericVal) < 1e6) {
+                const frac = math.fraction(numericVal);
+                if (frac.d !== 1 && frac.d < 10000) {
+                  const fracTex = `\\frac{${frac.s === -1 ? '-' : ''}${frac.n}}{${frac.d}}`;
+                  return { text: fracTex, value: numericVal, isTex: true };
+                }
+              }
+            } catch (e) {}
+          }
+
+          return { text: tex, value: val, isTex: true };
         } catch (e) {
           return { text: "Erro Simbólico", value: 0 };
         }
@@ -201,17 +288,49 @@ class CalculatorEngine {
       const isDeg = unitMode === 'deg';
       let mathjsInput = processed;
       if (isDeg) {
-        mathjsInput = mathjsInput.replace(/(sin|cos|tan|sec|csc|cot)\(([^)]+)\)/g, '$1(($2) deg)');
+        // Enforce input for trig functions to be treated as degrees
+        mathjsInput = mathjsInput.replace(/\b(sin|cos|tan|sec|csc|cot)\(([^)]+)\)/g, '$1(($2) deg)');
+        // Enforce output for inverse trig and complex arg to be converted to degrees
+        mathjsInput = mathjsInput.replace(/\b(asin|acos|atan|atan2|arg)\(([^)]+)\)/g, 'unit($1($2), "rad") to "deg"');
       }
 
-      let result = math.evaluate(mathjsInput, this.variables);
-      
+      // Merge user variables with STEM constants
+      const evaluationScope = { ...this.constantsScope, ...this.variables };
+
+      let result = math.evaluate(mathjsInput, evaluationScope);
+
       if (isDeg && result && result.units && result.units[0]?.unit.name === 'rad') {
         result = result.toNumber('deg');
       }
 
+      // 3. Unit Handling (Item 5)
+      const isUnit = math.typeOf(result) === 'Unit';
+      if (isUnit) {
+        this.ans = result.toString();
+        const formatted = math.format(result, { precision: 14 });
+        const unitPart = result.formatUnits();
+        const valPart = math.format(math.number(result, unitPart), { precision: 14 });
+        
+        // Formatação profissional: Trocar 'deg' por símbolo de grau, outros por \text
+        let texUnit = `\\text{ ${unitPart}}`;
+        if (unitPart === 'deg') texUnit = '^{\\circ}';
+        
+        return {
+          text: `${valPart}${texUnit}`,
+          value: result.toString(),
+          isTex: true
+        };
+      }
+
+      this.preAns = this.ans;
       this.ans = result;
-      this.history.push({ input: expression, output: result });
+      this.ansTex = MathService.toLaTeX(result);
+      this.history.push({ input: expression, output: result, text: this.ansTex });
+
+      // Matrix/Array handling: return LaTeX immediately to avoid symbolic bypass
+      if ((result && result.isMatrix) || Array.isArray(result)) {
+        return { text: this.ansTex, value: result, isTex: true };
+      }
 
       // 6. Symbolic vs Numeric Formatting
       if (isSymbolic) {
@@ -231,9 +350,12 @@ class CalculatorEngine {
           }
 
           try {
-            const frac = math.fraction(result);
-            if (frac.d !== 1 && frac.d < 10000) {
-              return { text: math.format(frac, { fraction: 'ratio' }), value: result };
+            // Only try fraction if it's not a tiny/huge number that should be scientific
+            if (Math.abs(result) > 1e-4 && Math.abs(result) < 1e6) {
+              const frac = math.fraction(result);
+              if (frac.d !== 1 && frac.d < 10000) {
+                return { text: math.format(frac, { fraction: 'ratio' }), value: result };
+              }
             }
           } catch (e) { }
         }
@@ -241,16 +363,27 @@ class CalculatorEngine {
         try {
           let symbolicText = math.simplify(processed, this.variables).toString();
           if (symbolicText.includes('(') || symbolicText === processed) {
-            return { text: math.format(result, { precision: 14 }), value: result };
+            let finalStr = math.format(result, { precision: 14 });
+            if (/[0-9]e[+-]?[0-9]/.test(finalStr)) {
+              finalStr = finalStr.replace(/([0-9.]+)e([+-]?\d+)/g, '$1 \\cdot 10^{$2}');
+            }
+            return { text: finalStr, value: result, isTex: finalStr.includes('\\') };
           }
           return { text: symbolicText, value: result };
         } catch (e) { }
       }
 
-      return { text: math.format(result, { precision: 14 }), value: result };
+      let displayText = math.format(result, { precision: 14 });
+
+      // Convert scientific notation (e.g., 6.626e-34) to elegant LaTeX (\cdot 10^{-34})
+      if (/[0-9]e[+-]?[0-9]/.test(displayText)) {
+        displayText = displayText.replace(/([0-9.]+)e([+-]?\d+)/g, '$1 \\cdot 10^{$2}');
+      }
+
+      return { text: displayText, value: result, isTex: displayText.includes('\\') };
     } catch (error) {
-      console.error("Evaluation Error:", error);
-      return { text: "Math Error", value: null };
+      console.error("Evaluation Error with input:", expression, error);
+      return { text: `\\text{Erro: } ${error.message.substring(0, 30)}`, value: null };
     }
   }
 
@@ -268,6 +401,16 @@ class CalculatorEngine {
       results.push({ x, y: math.evaluate(expr, { x }) });
     }
     return results;
+  }
+  clearVariables() {
+    this.variables = {};
+  }
+
+  reset() {
+    this.history = [];
+    this.variables = {};
+    this.formulas = {};
+    this.ans = 0;
   }
 }
 

@@ -158,7 +158,6 @@ const CanvasArea = forwardRef(({
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [stageSize, setStageSize] = useState({ width: window.innerWidth, height: window.innerHeight });
-  const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
 
   const [patternImage, setPatternImage] = useState(null);
   const paperPattern = activeNote?.content?.background || 'dots';
@@ -197,63 +196,14 @@ const CanvasArea = forwardRef(({
 
     setPatternImage(canvas);
   }, [paperPattern, backgroundSize, isDarkMode]);
-  // Register Shortcuts
   useEffect(() => {
     const handleGlobalShortcuts = (e) => {
-      // ALT + C for Constants
-      if (e.altKey && e.code === 'KeyC') {
-        e.preventDefault();
-        setIsOmnibarOpen(true);
-      }
+      // Global shortcuts were here
     };
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
   }, []);
 
-  const handleInsertConstant = useCallback((value) => {
-    const activeNoteLocal = activeNote || globalActiveNote;
-    if (!activeNoteLocal) return;
-
-    // Check if a MathBlock is selected
-    const selectedBlockId = activeNoteLocal.content.selectedIds?.[0];
-    const selectedBlock = activeNoteLocal.content.blocks.find(b => b.id === selectedBlockId);
-
-    if (selectedBlock && selectedBlock.type === 'math') {
-      // Append to existing math block
-      const currentContent = selectedBlock.content || '';
-      const newContent = currentContent + (currentContent ? ' ' : '') + value;
-      updateNoteContent(activeNoteId, {
-        blocks: activeNoteLocal.content.blocks.map(b => 
-          b.id === selectedBlock.id ? { ...b, content: newContent } : b
-        )
-      });
-    } else {
-      // Create new math block at center of screen
-      const center = {
-        x: (-position.x + stageSize.width / 2) / scale,
-        y: (-position.y + stageSize.height / 2) / scale
-      };
-      
-      const newBlock = {
-        id: generateId(),
-        type: 'math',
-        content: value,
-        x: center.x - 100,
-        y: center.y - 50,
-        width: 200,
-        height: 100,
-        color: 'amber',
-        zIndex: (activeNoteLocal.content.blocks.length || 0) + 1
-      };
-
-      updateNoteContent(activeNoteId, {
-        blocks: [...(activeNoteLocal.content.blocks || []), newBlock],
-        selectedIds: [newBlock.id]
-      });
-    }
-    
-    saveNoteHistory();
-  }, [activeNote, globalActiveNote, activeNoteId, position, stageSize, scale, updateNoteContent, saveNoteHistory]);
 
   // Estados Unificados
   const [strokes, setStrokes] = useState([]);
@@ -512,6 +462,8 @@ const CanvasArea = forwardRef(({
       if (type === 'PLOT') {
         if (content === "undefined") return;
         setGgbBlocks(prev => [...prev, { id: newId, x: blockX, y: blockY, expression: content, width: 500, height: 400 }]);
+      } else if (type === 'ggb') {
+        setGgbBlocks(prev => [...prev, { id: newId, x: blockX, y: blockY, width: 600, height: 450, ...content }]);
       } else if (type === 'LATEX') {
         const safeContent = (content && content !== "undefined") ? content : "\\text{Erro: Conteúdo inválido.}";
         setMathBlocks(prev => [...prev, { id: newId, x: blockX, y: blockY, content: safeContent, fixedSize: false }]);
@@ -592,17 +544,6 @@ const CanvasArea = forwardRef(({
 
   useImperativeHandle(ref, () => imperativeHandle, [position, scale, textBlocks, imageBlocks, codeBlocks, mathBlocks, ggbBlocks, connections, strokes, saveToHistory]);
 
-  const updateAnyBlock = useCallback((type, id, newData) => {
-    if (type === 'text') setTextBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
-    if (type === 'code') setCodeBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
-    if (type === 'math') setMathBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
-    if (type === 'image') setImageBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
-    if (type === 'ggb') setGgbBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
-    if (type === 'mermaid') setMermaidBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
-    if (type === 'mindmap') setMindmapBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
-    if (type === 'pdf') setPdfBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
-  }, []);
-
   const removeAnyBlock = useCallback((id) => {
     setTextBlocks(prev => prev.filter(b => String(b.id) !== String(id)));
     setImageBlocks(prev => prev.filter(b => String(b.id) !== String(id)));
@@ -613,6 +554,21 @@ const CanvasArea = forwardRef(({
     setMindmapBlocks(prev => prev.filter(b => String(b.id) !== String(id)));
     setPdfBlocks(prev => prev.filter(b => String(b.id) !== String(id)));
   }, []);
+
+  const updateAnyBlock = useCallback((type, id, newData) => {
+    if (newData.isDeleted) {
+      removeAnyBlock(id);
+      return;
+    }
+    if (type === 'text') setTextBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
+    if (type === 'code') setCodeBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
+    if (type === 'math') setMathBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
+    if (type === 'image') setImageBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
+    if (type === 'ggb') setGgbBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
+    if (type === 'mermaid') setMermaidBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
+    if (type === 'mindmap') setMindmapBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
+    if (type === 'pdf') setPdfBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
+  }, [removeAnyBlock]);
 
   // Seleção Duplicada
   const duplicateSelection = useCallback(() => {
@@ -2013,11 +1969,6 @@ const CanvasArea = forwardRef(({
           activeNoteType={activeNote.type}
         />
       )}
-      <ScientificOmnibar 
-        isOpen={isOmnibarOpen} 
-        onClose={() => setIsOmnibarOpen(false)} 
-        onInsert={handleInsertConstant}
-      />
 
     </div>
   );
