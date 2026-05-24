@@ -21,27 +21,28 @@ const SymbolPalette = ({ isOpen, onClose, onInsert, theme = 'dark' }) => {
     }
   }, [isOpen]);
 
-  const handleMouseDown = (e) => {
+  const handlePointerDown = (e) => {
     if (e.target.closest('.drag-handle')) {
+      e.preventDefault();
       setIsDragging(true);
       dragStartOffset.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
     }
   };
 
   useEffect(() => {
-    const handleMouseMove = (e) => {
+    const handlePointerMove = (e) => {
       if (isDragging) {
         setPos({ x: e.clientX - dragStartOffset.current.x, y: e.clientY - dragStartOffset.current.y });
       }
     };
-    const handleMouseUp = () => setIsDragging(false);
+    const handlePointerUp = () => setIsDragging(false);
     if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('pointermove', handlePointerMove);
+      window.addEventListener('pointerup', handlePointerUp);
     }
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
     };
   }, [isDragging]);
 
@@ -78,7 +79,10 @@ const SymbolPalette = ({ isOpen, onClose, onInsert, theme = 'dark' }) => {
       }}
     >
       {/* DRAG HANDLE */}
-      <div className="drag-handle flex items-center justify-between px-5 py-4 bg-white/5 border-b border-white/5 cursor-grab active:cursor-grabbing">
+      <div 
+        onPointerDown={handlePointerDown}
+        className="drag-handle flex items-center justify-between px-5 py-4 bg-white/5 border-b border-white/5 cursor-grab active:cursor-grabbing"
+      >
         <div className="flex items-center gap-2">
           <GripHorizontal size={14} className="opacity-40" />
           <span className="text-[10px] font-black uppercase tracking-widest opacity-60">Biblioteca STEM</span>

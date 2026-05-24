@@ -66,7 +66,7 @@ const ConstantsMenu = ({ isOpen, onClose, onInsert, theme = 'dark' }) => {
 
   return ReactDOM.createPortal(
     <div 
-      className="constants-overlay fixed inset-0 flex items-center justify-center pointer-events-auto z-[100000] bg-black/60 backdrop-blur-sm"
+      className="constants-overlay fixed inset-0 flex items-center justify-center pointer-events-auto z-[100000] bg-[#030303]/95 backdrop-blur-3xl"
       onPointerDown={(e) => {
         console.log("STEM-DEBUG: Backdrop Clicked");
         onClose();
@@ -118,7 +118,7 @@ const ConstantsMenu = ({ isOpen, onClose, onInsert, theme = 'dark' }) => {
           <div className="flex bg-black/30 p-1 rounded-2xl gap-1">
             <button 
               onClick={() => setInsertMode('symbol')}
-              className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-[10px] font-bold transition-all ${insertMode === 'symbol' ? 'bg-accent-color text-white' : 'opacity-40 hover:opacity-100'}`}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-[10px] font-bold transition-all ${insertMode === 'symbol' ? 'bg-accent text-white' : 'opacity-40 hover:opacity-100'}`}
             >
               <Tags size={12} /> Símbolo (ex: c)
             </button>
@@ -152,7 +152,7 @@ const ConstantsMenu = ({ isOpen, onClose, onInsert, theme = 'dark' }) => {
                 }`}
               >
                 <div className="flex items-center gap-6">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-math transition-colors ${selectedIndex === idx ? 'bg-accent-color text-white' : 'bg-black/40 text-accent-color opacity-70'}`}>
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-math transition-colors ${selectedIndex === idx ? 'bg-accent text-white' : 'bg-black/40 text-accent opacity-70'}`}>
                     {item.l?.includes('_') ? (
                       <span className="flex items-baseline">
                         {item.l.split('_')[0]}<sub className="text-[0.6em] opacity-80 leading-none">{item.l.split('_')[1]}</sub>
@@ -165,7 +165,7 @@ const ConstantsMenu = ({ isOpen, onClose, onInsert, theme = 'dark' }) => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-xl font-mono text-[var(--text-primary)] group-hover:text-accent-color transition-colors">
+                  <div className="text-xl font-mono text-[var(--text-primary)] group-hover:text-accent transition-colors">
                     {insertMode === 'symbol' ? item.l : item.v}
                   </div>
                   <div className="text-[10px] opacity-30 mt-1">Clique para inserir</div>

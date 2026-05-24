@@ -1,31 +1,12 @@
 import React from 'react';
 
-const SelectionGroupOverlay = ({ bounds, onResize, onMove, onStartInteraction, onEndInteraction, onDoubleClick, isLocked, activeTool, canvasScale, canvasPan, isFreeformOnly }) => {
+const SelectionGroupOverlay = ({ bounds, onResize, onStartDrag, onStartInteraction, onEndInteraction, onDoubleClick, isLocked, activeTool, canvasScale, canvasPan, isFreeformOnly }) => {
     if (!bounds) return null;
 
     const s = canvasScale ?? 1;
     const px = canvasPan?.x ?? 0;
     const py = canvasPan?.y ?? 0;
 
-    const handlePointerDown = (e) => {
-        if (e.button === 2) return;
-        if (isLocked) { e.preventDefault(); e.stopPropagation(); return; }
-
-        // Only stop propagation if we are in cursor/selection mode
-        // If the user has a drawing tool (pen/highlighter), we want the events to bubble to CanvasArea
-        const isDrawingTool = ['pen', 'highlighter'].includes(activeTool);
-        if (isDrawingTool) {
-            return; // Bubble to CanvasArea for drawing
-        }
-
-        e.stopPropagation(); e.preventDefault();
-        if (onStartInteraction) onStartInteraction();
-        const startX = e.clientX; const startY = e.clientY;
-        let lastX = startX; let lastY = startY;
-        const onPointerMove = (ev) => { const dx = ev.clientX - lastX; const dy = ev.clientY - lastY; onMove(dx, dy); lastX = ev.clientX; lastY = ev.clientY; };
-        const onPointerUp = () => { window.removeEventListener('pointermove', onPointerMove); window.removeEventListener('pointerup', onPointerUp); if (onEndInteraction) onEndInteraction(); };
-        window.addEventListener('pointermove', onPointerMove); window.addEventListener('pointerup', onPointerUp);
-    };
     const handleResizeStart = (e, type) => {
         e.stopPropagation(); e.preventDefault();
         const startX = e.clientX;
@@ -87,7 +68,7 @@ const SelectionGroupOverlay = ({ bounds, onResize, onMove, onStartInteraction, o
             {/* Movement Backplane (Border only) */}
             {!isLocked && !isFreeformOnly && (
                 <div 
-                    onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e); }}
+                    onPointerDown={(e) => { e.stopPropagation(); if (onStartDrag) onStartDrag(e); }}
                     style={{
                         position: 'absolute',
                         inset: containerPadding - 2, // Precisely on the visual border

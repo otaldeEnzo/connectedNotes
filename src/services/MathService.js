@@ -223,14 +223,123 @@ export const MathService = {
     },
 
     /**
+     * Converts a 2D array or mathjs matrix into a LaTeX \begin{pmatrix} ... \end{pmatrix} string.
+     */
+    matrixToLaTeX(matrix) {
+        if (!matrix) return '0';
+        const arr = (matrix && matrix.isMatrix) ? matrix.toArray() : matrix;
+        if (!Array.isArray(arr) || arr.length === 0) return '0';
+        if (!Array.isArray(arr[0])) {
+            const cols = arr.map(val => {
+                if (typeof val === 'number') return Number(val.toFixed(4));
+                return String(val);
+            }).join(' \\\\ ');
+            return `\\begin{pmatrix} ${cols} \\end{pmatrix}`;
+        }
+        const rows = arr.map(r => r.map(val => {
+            if (typeof val === 'number') return Number(val.toFixed(4));
+            return String(val);
+        }).join(' & ')).join(' \\\\ ');
+        return `\\begin{pmatrix} ${rows} \\end{pmatrix}`;
+    },
+
+    /**
+     * Computes step-by-step Gaussian Elimination (RREF) for a numeric matrix.
+     */
+    computeRREFSteps(matrixData) {
+        if (!Array.isArray(matrixData) || matrixData.length === 0) return [];
+        
+        let M = matrixData.map(row => row.map(val => {
+            if (val === '' || val === undefined) return 0;
+            try {
+                const evaluated = math.evaluate(String(val));
+                return typeof evaluated === 'number' ? evaluated : parseFloat(evaluated) || 0;
+            } catch(e) {
+                const parsed = parseFloat(val);
+                return isNaN(parsed) ? 0 : parsed;
+            }
+        }));
+
+        const numRows = M.length;
+        const numCols = M[0].length;
+        const steps = [];
+
+        steps.push({
+            label: "Matriz Inicial",
+            matrix: M.map(row => [...row])
+        });
+
+        let lead = 0;
+        for (let r = 0; r < numRows; r++) {
+            if (lead >= numCols) break;
+            let i = r;
+            while (M[i][lead] === 0) {
+                i++;
+                if (i === numRows) {
+                    i = r;
+                    lead++;
+                    if (lead === numCols) return steps;
+                }
+            }
+
+            if (i !== r) {
+                let temp = M[i];
+                M[i] = M[r];
+                M[r] = temp;
+                steps.push({
+                    label: `Trocar Linha ${i + 1} e Linha ${r + 1} ($L_{${i+1}} \\leftrightarrow L_{${r+1}}$)`,
+                    matrix: M.map(row => [...row])
+                });
+            }
+
+            let val = M[r][lead];
+            if (val !== 0 && Math.abs(val - 1) > 1e-9) {
+                M[r] = M[r].map(x => x / val);
+                steps.push({
+                    label: `Multiplicar Linha ${r + 1} por $\\frac{1}{${Number(val.toFixed(4))}}$ ($L_{${r+1}} \\leftarrow \\frac{1}{${Number(val.toFixed(4))}} \\cdot L_{${r+1}}$)`,
+                    matrix: M.map(row => [...row])
+                });
+            }
+
+            for (let i = 0; i < numRows; i++) {
+                if (i !== r) {
+                    let factor = M[i][lead];
+                    if (Math.abs(factor) > 1e-9) {
+                        M[i] = M[i].map((x, colIdx) => x - factor * M[r][colIdx]);
+                        steps.push({
+                            label: `Subtrair ${Number(factor.toFixed(4))} vezes a Linha ${r + 1} da Linha ${i + 1} ($L_{${i+1}} \\leftarrow L_{${i+1}} - ${Number(factor.toFixed(4))} \\cdot L_{${r+1}}$)`,
+                            matrix: M.map(row => [...row])
+                        });
+                    }
+                }
+            }
+            lead++;
+        }
+
+        for (let i = 0; i < numRows; i++) {
+            for (let j = 0; j < numCols; j++) {
+                if (Math.abs(M[i][j]) < 1e-9) M[i][j] = 0;
+                else M[i][j] = Number(M[i][j].toFixed(4));
+            }
+        }
+
+        steps.push({
+            label: "Forma Escalonada Reduzida Final (RREF)",
+            matrix: M.map(row => [...row])
+        });
+
+        return steps;
+    },
+
+    /**
      * Converts a LaTeX string from MathLive back to a mathjs compatible string.
      */
     latexToMathJS(latex) {
         if (!latex) return '';
         
         let clean = latex
-            // Clean up LaTeX spacing commands first
-            .replace(/\\(,|:|;|!| )/g, '')
+            // Clean up LaTeX spacing commands first (using negative lookbehind to avoid matching the second backslash of \\)
+            .replace(/(?<!\\)\\(,|:|;|!| )/g, '')
             // Fractions: \frac{num}{den} -> (num)/(den) (suporta até 3 níveis de aninhamento)
             .replace(/\\frac\s*({(?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*)*?}|.)\s*({(?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*)*?}|.)/g, (match, n, d) => {
                 const num = n.startsWith('{') ? n.slice(1, -1) : n;
@@ -263,7 +372,7 @@ export const MathService = {
             .replace(/\\int(?:_{((?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*})*)}|_([a-zA-Z0-9]))?(?:\^{((?:[^{}]|{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*})*)}|\^([a-zA-Z0-9]))?\s*(.*?)\s*d([a-z])/g, (match, a1, a2, b1, b2, expr, v) => {
                 const a = a1 || a2 || '';
                 const b = b1 || b2 || '';
-                const cleanExpr = expr.replace(/\\(,|:|;|!| )/g, ''); 
+                const cleanExpr = expr.replace(/(?<!\\)\\(,|:|;|!| )/g, ''); 
                 if (!a && !b) return `integral(${cleanExpr}, ${v})`;
                 return `integral(${cleanExpr}, ${v}, ${a}, ${b})`;
             })

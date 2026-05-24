@@ -23,6 +23,13 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
     const [shadowNote, setShadowNote] = useState(null);
     const [isOmnibarOpen, setIsOmnibarOpen] = useState(false);
     const hiddenEditorRef = useRef(null);
+    const prevSizeRef = useRef({ width: 0, height: 0 });
+
+    // [PERF] Imperative transform refs — bypass React render cycle during continuous motion
+    const scaleRef = useRef(1);
+    const panRef = useRef({ x: 0, y: 0 });
+    const syncTimerRef = useRef(null);
+    const isMovingRef = useRef(false);
 
     const captureNote = useCallback(async (note, format) => {
         return new Promise((resolve, reject) => {
@@ -115,7 +122,7 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
 
     const containerRef = useRef(null);
 
-    // Listen for global shortcuts (Calculadora em qualquer nota)
+    // Listen for global shortcuts (Calculadora em qualquer nota) and toolbar toggle events
     useEffect(() => {
         const handleShortcuts = (e) => {
             if (e.altKey && e.code === 'KeyC') {
@@ -123,9 +130,20 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
                 setIsOmnibarOpen(prev => !prev);
             }
         };
+        const handleToggleEvent = () => {
+            setIsOmnibarOpen(prev => !prev);
+        };
         window.addEventListener('keydown', handleShortcuts);
-        return () => window.removeEventListener('keydown', handleShortcuts);
+        window.addEventListener('toggleScientificOmnibar', handleToggleEvent);
+        return () => {
+            window.removeEventListener('keydown', handleShortcuts);
+            window.removeEventListener('toggleScientificOmnibar', handleToggleEvent);
+        };
     }, []);
+
+    useEffect(() => {
+        window.dispatchEvent(new CustomEvent('scientificOmnibarStateChanged', { detail: { isOpen: isOmnibarOpen } }));
+    }, [isOmnibarOpen]);
 
     // Listen for global export triggers (from Sidebar/CommandBar)
     useEffect(() => {
@@ -147,7 +165,80 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
     useEffect(() => {
         setScale(1);
         setPanOffset({ x: 0, y: 0 });
+        scaleRef.current = 1;
+        panRef.current = { x: 0, y: 0 };
     }, [activeNoteId]);
+
+    // [PERF] Sync React state from refs — called when continuous motion stops
+    const syncReactState = useCallback(() => {
+        setScale(scaleRef.current);
+        setPanOffset({ ...panRef.current });
+        isMovingRef.current = false;
+    }, []);
+
+    const scheduleSync = useCallback(() => {
+        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = setTimeout(syncReactState, 100);
+    }, [syncReactState]);
+
+    // [PERF] Apply transform imperatively — bypasses React render completely
+    const applyImperativeTransform = useCallback((newPan, newScale) => {
+        panRef.current = newPan;
+        scaleRef.current = newScale;
+        isMovingRef.current = true;
+
+        // Directly update Konva layers and DOM transforms via imperative handle
+        if (canvasRef.current?.applyTransform) {
+            canvasRef.current.applyTransform(newPan, newScale);
+        }
+
+        // Schedule React state sync after motion stops
+        scheduleSync();
+    }, [scheduleSync, canvasRef]);
+
+    // Listen for container resize to adjust panOffset and keep the viewport centered
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container || !canNav) return;
+
+        // Initialize previous size
+        const rect = container.getBoundingClientRect();
+        prevSizeRef.current = { width: rect.width, height: rect.height };
+
+        const observer = new ResizeObserver((entries) => {
+            for (let entry of entries) {
+                const { width, height } = entry.contentRect;
+
+                const oldWidth = prevSizeRef.current.width;
+                const oldHeight = prevSizeRef.current.height;
+
+                if (oldWidth > 0 && oldHeight > 0) {
+                    const dx = (width - oldWidth) / 2;
+                    const dy = (height - oldHeight) / 2;
+
+                    if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+                        const shouldClamp = activeNote?.type === 'canvas';
+                        const newX = panRef.current.x + dx;
+                        const newY = panRef.current.y + dy;
+                        const newPan = {
+                            x: shouldClamp ? Math.min(newX, 0) : newX,
+                            y: shouldClamp ? Math.min(newY, 0) : newY
+                        };
+
+                        applyImperativeTransform(newPan, scaleRef.current);
+                        // Discrete resize events require immediate React state sync to prevent layout mismatch
+                        setScale(scaleRef.current);
+                        setPanOffset({ ...newPan });
+                    }
+                }
+
+                prevSizeRef.current = { width, height };
+            }
+        });
+
+        observer.observe(container);
+        return () => observer.disconnect();
+    }, [canNav, activeNote?.type, applyImperativeTransform]);
 
     // Simplified Mouse Tracking for Panning
     const handlePointerDown = (e) => {
@@ -170,17 +261,15 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
             const dx = e.clientX - lastMousePos.x;
             const dy = e.clientY - lastMousePos.y;
 
-            setPanOffset(prev => {
-                const nextX = prev.x + dx;
-                const nextY = prev.y + dy;
+            const prev = panRef.current;
+            const nextX = prev.x + dx;
+            const nextY = prev.y + dy;
+            const newPan = {
+                x: shouldClamp ? Math.min(nextX, 0) : nextX,
+                y: shouldClamp ? Math.min(nextY, 0) : nextY
+            };
 
-                // Trava no início absoluto da página (0, 0)
-                // Isso permite ver a margem visível em 80px e o "gutter"
-                return {
-                    x: shouldClamp ? Math.min(nextX, 0) : nextX,
-                    y: shouldClamp ? Math.min(nextY, 0) : nextY
-                };
-            });
+            applyImperativeTransform(newPan, scaleRef.current);
             setLastMousePos({ x: e.clientX, y: e.clientY });
         }
     };
@@ -189,6 +278,8 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
         if (isPanning) {
             setIsPanning(false);
             if (containerRef.current) containerRef.current.releasePointerCapture(e.pointerId);
+            // Force sync on pointer up
+            syncReactState();
         }
     };
 
@@ -201,6 +292,8 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
         }
 
         const shouldClamp = activeNote?.type === 'canvas';
+        const currentScale = scaleRef.current;
+        const currentPan = panRef.current;
 
         if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
@@ -219,16 +312,17 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
                 const focusY = rect.height / 2;
 
                 const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-                const newScale = Math.max(0.1, Math.min(scale * zoomFactor, 5));
+                const newScale = Math.max(0.1, Math.min(currentScale * zoomFactor, 5));
 
                 const nextX = focusX - worldX * newScale;
                 const nextY = focusY - worldY * newScale;
 
-                setPanOffset({
+                const newPan = {
                     x: shouldClamp ? Math.min(nextX, 0) : nextX,
                     y: shouldClamp ? Math.min(nextY, 0) : nextY
-                });
-                setScale(newScale);
+                };
+
+                applyImperativeTransform(newPan, newScale);
                 return;
             }
 
@@ -236,19 +330,20 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
             let focusY = e.clientY - rect.top;
 
             const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-            const newScale = Math.max(0.1, Math.min(scale * zoomFactor, 5));
+            const newScale = Math.max(0.1, Math.min(currentScale * zoomFactor, 5));
 
-            const worldX = (focusX - panOffset.x) / scale;
-            const worldY = (focusY - panOffset.y) / scale;
+            const worldX = (focusX - currentPan.x) / currentScale;
+            const worldY = (focusY - currentPan.y) / currentScale;
 
             const nextX = focusX - worldX * newScale;
             const nextY = focusY - worldY * newScale;
 
-            setPanOffset({
+            const newPan = {
                 x: shouldClamp ? Math.min(nextX, 0) : nextX,
                 y: shouldClamp ? Math.min(nextY, 0) : nextY
-            });
-            setScale(newScale);
+            };
+
+            applyImperativeTransform(newPan, newScale);
         } else {
             // Scroll normal (Shift+Scroll para horizontal)
             let dx = e.deltaX;
@@ -257,17 +352,16 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
                 dx = dy;
                 dy = 0;
             }
-            // Clamping no scroll também
-            setPanOffset(prev => {
-                const nextX = prev.x - dx;
-                const nextY = prev.y - dy;
-                return {
-                    x: shouldClamp ? Math.min(nextX, 0) : nextX,
-                    y: shouldClamp ? Math.min(nextY, 0) : nextY
-                };
-            });
+            const nextX = currentPan.x - dx;
+            const nextY = currentPan.y - dy;
+            const newPan = {
+                x: shouldClamp ? Math.min(nextX, 0) : nextX,
+                y: shouldClamp ? Math.min(nextY, 0) : nextY
+            };
+
+            applyImperativeTransform(newPan, currentScale);
         }
-    }, [canNav, activeNote?.type, scale, panOffset, isOverInteractiveBlock]);
+    }, [canNav, activeNote?.type, isOverInteractiveBlock, applyImperativeTransform, canvasRef]);
 
     useEffect(() => {
         const el = containerRef.current;
@@ -310,7 +404,10 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
                         {...commonProps}
                         ref={canvasRef}
                         setAiPanel={setAiPanel}
-                        onMoveView={(newPan) => setPanOffset(newPan)}
+                        onMoveView={(newPan) => {
+                            panRef.current = newPan;
+                            setPanOffset(newPan);
+                        }}
                         isMiniMapEnabled={isMiniMapEnabled}
                     />
                 );
@@ -520,6 +617,8 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
             <ScientificOmnibar
                 isOpen={isOmnibarOpen}
                 onClose={() => setIsOmnibarOpen(false)}
+                canvasPan={panOffset}
+                canvasScale={scale}
                 onAddBlock={(type, content) => {
                     if (activeNote.type === 'canvas' && canvasRef.current) {
                         canvasRef.current.addBlock(type, content);

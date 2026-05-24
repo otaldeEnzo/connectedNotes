@@ -1,4 +1,4 @@
-import React, { forwardRef, useState, useRef, useEffect } from "react";
+import React, { forwardRef, useState, useRef, useEffect, useCallback } from "react";
 import { X } from "lucide-react";
 
 const BlockWrapper = forwardRef(
@@ -80,27 +80,23 @@ const BlockWrapper = forwardRef(
 
     const isSelected = isEditing || isDragging;
 
-    // Viewport Culling logic
-    const [isVisible, setIsVisible] = useState(true);
+    // Viewport Culling logic (Synchronous)
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+    const margin = 300;
+    const bWidth = (block.width || block.measuredWidth || 400) * s;
+    const bHeight = (block.height || block.measuredHeight || 300) * s;
+    const isVisible = (
+      screenX + bWidth > -margin &&
+      screenX < viewportW + margin &&
+      screenY + bHeight > -margin &&
+      screenY < viewportH + margin
+    );
+
+    const measuredDimsRef = useRef({ w: block.measuredWidth, h: block.measuredHeight });
     useEffect(() => {
-      const checkVisibility = () => {
-        const viewportW = window.innerWidth;
-        const viewportH = window.innerHeight;
-        const margin = 300;
-        const bWidth = (block.width || 400) * s;
-        const bHeight = (block.height || 300) * s;
-        const inViewport = (
-          screenX + bWidth > -margin &&
-          screenX < viewportW + margin &&
-          screenY + bHeight > -margin &&
-          screenY < viewportH + margin
-        );
-        setIsVisible(inViewport);
-      };
-      checkVisibility();
-      window.addEventListener('resize', checkVisibility);
-      return () => window.removeEventListener('resize', checkVisibility);
-    }, [screenX, screenY, block.width, block.height, s]);
+      measuredDimsRef.current = { w: block.measuredWidth, h: block.measuredHeight };
+    }, [block.measuredWidth, block.measuredHeight]);
 
     // Report dimensions to canvas
     useEffect(() => {
@@ -110,15 +106,31 @@ const BlockWrapper = forwardRef(
         for (let entry of entries) {
           const { width, height } = entry.contentRect;
           // Only update if significantly changed to avoid loops
-          if (Math.abs(width - (block.measuredWidth || 0)) > 1 ||
-            Math.abs(height - (block.measuredHeight || 0)) > 1) {
+          if (Math.abs(width - (measuredDimsRef.current.w || 0)) > 1 ||
+            Math.abs(height - (measuredDimsRef.current.h || 0)) > 1) {
             updateBlock(block.id, { measuredWidth: width, measuredHeight: height });
           }
         }
       });
       observer.observe(target);
       return () => observer.disconnect();
-    }, [block.id, block.measuredWidth, block.measuredHeight, updateBlock, ref]);
+    }, [block.id, updateBlock, cardRef]);
+
+    if (!isVisible && !isSelected) {
+      return (
+        <div
+          ref={cardRef}
+          data-block-id={block.id}
+          className="absolute opacity-0 pointer-events-none"
+          style={{
+            width: useFixed && block.width ? `${block.width}px` : `${block.measuredWidth || 400}px`,
+            height: useFixed && block.height ? `${block.height}px` : `${block.measuredHeight || 300}px`,
+            transform: `translate3d(${screenX}px, ${screenY}px, 0) scale(${s})`,
+            transformOrigin: '0 0',
+          }}
+        />
+      );
+    }
 
     return (
       <div
@@ -126,13 +138,25 @@ const BlockWrapper = forwardRef(
         data-block-id={block.id}
         className={`absolute pointer-events-auto ${isDragging ? "opacity-90 z-[1001]" : ""} ${className}`}
         style={{
-          left: screenX,
-          top: screenY,
-          transform: `translateZ(0) scale(${s * (isDragging ? 1.02 : 1)})`,
+          transform: `translate3d(${screenX}px, ${screenY}px, 0) scale(${s * (isDragging ? 1.02 : 1)})`,
           transformOrigin: '0 0',
           width: useFixed && block.width ? `${block.width}px` : "auto",
           height: useFixed && block.height ? `${block.height}px` : "auto",
           zIndex: isEditing ? 1000 : isDragging ? 1001 : block.zIndex || 50,
+        }}
+        onDoubleClick={(e) => {
+          if (e.target.closest(".no-interact") || isRenamingTitle) {
+            e.stopPropagation();
+            return;
+          }
+          if (e.target.closest(".block-content") && isEditing) {
+            e.stopPropagation();
+            return;
+          }
+          if (onDoubleClick) {
+            e.stopPropagation();
+            onDoubleClick(e);
+          }
         }}
         onPointerDown={(e) => {
           if (e.target.closest("button") || e.target.closest("input") || e.target.closest(".no-interact") || isRenamingTitle) {
@@ -174,8 +198,8 @@ const BlockWrapper = forwardRef(
           className={`glass-extreme glass-card w-full h-full flex flex-col rounded-[2.5rem] transition-[box-shadow,border-color,background] duration-300 ${allowOverflow ? '' : 'overflow-hidden'} ${shadowTailwind}`}
           style={{
             background: "var(--glass-bg)",
-            backdropFilter: isVisible ? `blur(var(--glass-blur)) saturate(250%) brightness(0.95)` : 'none',
-            WebkitBackdropFilter: isVisible ? `blur(var(--glass-blur)) saturate(250%) brightness(0.95)` : 'none',
+            backdropFilter: `blur(var(--glass-blur)) saturate(250%) brightness(0.95)`,
+            WebkitBackdropFilter: `blur(var(--glass-blur)) saturate(250%) brightness(0.95)`,
             border: '1.5px solid var(--glass-border)',
             boxShadow: `var(--glass-shadow), 0 0 0 calc(var(--select-opacity, 0) * 2px) var(--accent-color)`,
             "--select-opacity": isSelected ? 1 : 0,

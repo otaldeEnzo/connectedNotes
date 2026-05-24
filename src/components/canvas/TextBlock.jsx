@@ -84,10 +84,9 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
 
     const fontSizes = ['12px', '14px', '16px', '18px', '20px', '24px', '32px'];
 
-    // Common Tailwind button class for toolbar
     const toolBtnClass = (isActive) => `
         p-2 rounded-xl transition-all duration-300 flex items-center justify-center 
-        ${isActive ? 'bg-accent-color text-white' : 'hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] opacity-60 hover:opacity-100'}
+        ${isActive ? 'bg-accent text-white' : 'hover:bg-black/5 dark:hover:bg-white/10 text-[var(--text-secondary)] opacity-60 hover:opacity-100'}
         active:scale-95
     `;
 

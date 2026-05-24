@@ -134,7 +134,7 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
                     setEditing(true);
                     setIsPaletteOpen(!isPaletteOpen); 
                 }}
-                className={`p-1.5 rounded-lg transition-all duration-300 liquid-button ${isPaletteOpen ? 'bg-accent-color text-white opacity-100' : 'bg-[var(--glass-surface)] text-[var(--text-primary)] opacity-50 hover:opacity-100 hover:text-white'}`}
+                className={`p-1.5 rounded-lg transition-all duration-300 liquid-button ${isPaletteOpen ? 'bg-accent text-white opacity-100' : 'bg-[var(--glass-surface)] text-[var(--text-primary)] opacity-50 hover:opacity-100 hover:text-white'}`}
                 title="Paleta de Símbolos STEM"
             >
                 <Sigma size={12} />

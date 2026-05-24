@@ -1,4 +1,4 @@
-import React, { forwardRef, useState, useEffect, useRef, useCallback, useImperativeHandle, memo } from 'react';
+import React, { forwardRef, useState, useEffect, useLayoutEffect, useRef, useCallback, useImperativeHandle, memo } from 'react';
 import { Stage, Layer, Line, Path, Rect, Circle, Group } from 'react-konva';
 import { queryGemini } from '../../services/AIService';
 import { MathService } from '../../services/MathService';
@@ -6,6 +6,9 @@ import { useNotes } from '../../contexts/NotesContext';
 import { ExportService } from '../../services/ExportService';
 import { Sigma, Zap } from 'lucide-react';
 import AIPanel from '../AIPanel';
+import { useCanvasStore } from '../../store/useCanvasStore';
+import { useShallow } from 'zustand/react/shallow';
+import { simplifyPoints } from '../../utils/simplify';
 
 import TextBlock from './TextBlock';
 import ImageBlock from './ImageBlock';
@@ -42,6 +45,35 @@ import {
   getAnchorPointById,
   generateId
 } from './CanvasUtils';
+
+// Helper to reliably stringify canvas content for comparisons (independent of key order)
+const sortedStringify = (obj) => {
+  if (obj === null || typeof obj !== 'object') {
+    return JSON.stringify(obj);
+  }
+  if (Array.isArray(obj)) {
+    return '[' + obj.map(sortedStringify).join(',') + ']';
+  }
+  const keys = Object.keys(obj).sort();
+  return '{' + keys.map(k => JSON.stringify(k) + ':' + sortedStringify(obj[k])).join(',') + '}';
+};
+
+// Helper to isolate only the canvas properties to avoid mismatch on other document-specific properties
+const extractCanvasContent = (content) => {
+  if (!content) return {};
+  return {
+    strokes: content.strokes || [],
+    textBlocks: content.textBlocks || [],
+    imageBlocks: content.imageBlocks || [],
+    codeBlocks: content.codeBlocks || [],
+    mathBlocks: content.mathBlocks || [],
+    ggbBlocks: content.ggbBlocks || [],
+    mermaidBlocks: content.mermaidBlocks || [],
+    mindmapBlocks: content.mindmapBlocks || [],
+    pdfBlocks: content.pdfBlocks || [],
+    connections: content.connections || []
+  };
+};
 
 // --- Optimized Sub-Component ---
 const MemoizedStroke = React.memo(({ stroke, isSelected, isDarkMode }) => {
@@ -114,13 +146,64 @@ const MemoizedStroke = React.memo(({ stroke, isSelected, isDarkMode }) => {
       />
     </Group>
   );
-}, (prev, next) => {
-  return prev.stroke.id === next.stroke.id &&
-    prev.isSelected === next.isSelected &&
-    prev.isDarkMode === next.isDarkMode &&
-    prev.stroke.points === next.stroke.points &&
-    prev.stroke.color === next.stroke.color &&
-    prev.stroke.zIndex === next.stroke.zIndex;
+});
+
+const TILE_SIZE = 1500; // Define dimensions for spatial grid caching tiles
+
+const StrokeTile = memo(({ tileKey, strokes, scale, isDarkMode, selectedStrokeIds }) => {
+  const groupRef = useRef(null);
+
+  useEffect(() => {
+    if (!groupRef.current) return;
+
+    // Clear old cache immediately
+    try {
+      groupRef.current.clearCache();
+    } catch (e) { }
+
+    // Debounce recreation of cache for this specific grid tile
+    const timer = setTimeout(() => {
+      if (groupRef.current && strokes.length > 0) {
+        try {
+          const unselected = strokes.filter(s => !selectedStrokeIds.includes(s.id));
+          if (unselected.length === 0) return;
+
+          const bounds = getGroupBounds([], unselected);
+          if (bounds && bounds.width > 0 && bounds.height > 0) {
+            groupRef.current.cache({
+              x: bounds.x - 10,
+              y: bounds.y - 10,
+              width: bounds.width + 20,
+              height: bounds.height + 20,
+              pixelRatio: Math.min(1.5, scale || 1) // Cap pixel ratio to keep canvas sizes reasonable
+            });
+            groupRef.current.getLayer()?.batchDraw();
+          }
+        } catch (e) {
+          console.warn("Grid tile caching error:", e);
+        }
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [strokes, scale, isDarkMode, selectedStrokeIds]);
+
+  const unselectedStrokes = strokes.filter(s => !selectedStrokeIds.includes(s.id));
+
+  if (unselectedStrokes.length === 0) return null;
+
+  return (
+    <Group ref={groupRef}>
+      {unselectedStrokes.map(s => (
+        <MemoizedStroke
+          key={s.id}
+          stroke={s}
+          isSelected={false}
+          isDarkMode={isDarkMode}
+        />
+      ))}
+    </Group>
+  );
 });
 
 // --- Componente Principal ---
@@ -154,12 +237,41 @@ const CanvasArea = forwardRef(({
   const rafRef = useRef(null);
   const hasUpdatesRef = useRef(false);
 
+  // [FASE 3 OPTIMIZATION] Konva Cache & Baking for static strokes Group
+  const strokesGroupRef = useRef(null);
+  const selectedStrokesGroupRef = useRef(null);
+
+  // [PERF] Imperative DOM refs for zero-React-render transform updates
+  const konvaLayerRefs = useRef([]);  // Array of Konva Layer refs
+  const infiniteCanvasRef = useRef(null);  // The .infinite-canvas div
+  const glassBlocksLayerRef = useRef(null);  // The .glass-blocks-layer div
+  const positionRef = useRef(position);  // Track current position for imperative access
+  const scaleRef = useRef(scale);  // Track current scale for imperative access
+  const selectionRectRef = useRef(null); // { startX, startY, currentX, currentY } for selection rectangle coordinates
+  const selectionRectKonvaRef = useRef(null); // Reference to Konva Rect element for selection box rendering
+
+  // Keep refs in sync with props, and reset glass layer compensating transform
+  // CRITICAL: useLayoutEffect runs synchronously BEFORE the browser paints.
+  // useEffect ran AFTER paint, causing 1 frame where blocks had BOTH the new React position
+  // AND the old delta CSS transform on the container = double-offset flicker.
+  useLayoutEffect(() => {
+    positionRef.current = position;
+    scaleRef.current = scale;
+    // When React re-renders with final position/scale, blocks reposition correctly,
+    // so reset the compensating CSS transform on the glass layer
+    if (glassBlocksLayerRef.current) {
+      glassBlocksLayerRef.current.style.transform = 'translateZ(0)';
+    }
+  }, [position, scale]);
+
+
 
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [stageSize, setStageSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
   const [patternImage, setPatternImage] = useState(null);
+  const [patternImageUrl, setPatternImageUrl] = useState('');
   const paperPattern = activeNote?.content?.background || 'dots';
   const backgroundSize = activeNote?.content?.backgroundSize || 40;
 
@@ -195,6 +307,7 @@ const CanvasArea = forwardRef(({
     }
 
     setPatternImage(canvas);
+    setPatternImageUrl(canvas.toDataURL());
   }, [paperPattern, backgroundSize, isDarkMode]);
   useEffect(() => {
     const handleGlobalShortcuts = (e) => {
@@ -204,34 +317,138 @@ const CanvasArea = forwardRef(({
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
   }, []);
 
+  // Handle container resizing (e.g. devtools toggle, sidebar toggle, window resizing)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-  // Estados Unificados
-  const [strokes, setStrokes] = useState([]);
-  const [textBlocks, setTextBlocks] = useState([]);
-  const [imageBlocks, setImageBlocks] = useState([]);
-  const [codeBlocks, setCodeBlocks] = useState([]);
-  const [mathBlocks, setMathBlocks] = useState([]);
-  const [ggbBlocks, setGgbBlocks] = useState([]);
-  const [mermaidBlocks, setMermaidBlocks] = useState([]);
-  const [mindmapBlocks, setMindmapBlocks] = useState([]);
-  const [connections, setConnections] = useState([]);
-  const [isDrawing, setIsDrawing] = useState(false);
+    const observer = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        const { width, height } = entry.contentRect;
+        setStageSize({ width, height });
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+
+  // Estados Unificados via Zustand (Fase 1 Otimização)
+  const strokes = useCanvasStore(useShallow(state => Object.values(state.strokes)));
+  const textBlocks = useCanvasStore(useShallow(state => Object.values(state.textBlocks)));
+  const imageBlocks = useCanvasStore(useShallow(state => Object.values(state.imageBlocks)));
+  const codeBlocks = useCanvasStore(useShallow(state => Object.values(state.codeBlocks)));
+  const mathBlocks = useCanvasStore(useShallow(state => Object.values(state.mathBlocks)));
+  const ggbBlocks = useCanvasStore(useShallow(state => Object.values(state.ggbBlocks)));
+  const mermaidBlocks = useCanvasStore(useShallow(state => Object.values(state.mermaidBlocks)));
+  const mindmapBlocks = useCanvasStore(useShallow(state => Object.values(state.mindmapBlocks)));
+  const pdfBlocks = useCanvasStore(useShallow(state => Object.values(state.pdfBlocks)));
+  const connections = useCanvasStore(useShallow(state => Object.values(state.connections)));
+
+  const setStrokes = useCanvasStore(state => state.setStrokes);
+  const setTextBlocks = useCanvasStore(state => state.setTextBlocks);
+  const setImageBlocks = useCanvasStore(state => state.setImageBlocks);
+  const setCodeBlocks = useCanvasStore(state => state.setCodeBlocks);
+  const setMathBlocks = useCanvasStore(state => state.setMathBlocks);
+  const setGgbBlocks = useCanvasStore(state => state.setGgbBlocks);
+  const setMermaidBlocks = useCanvasStore(state => state.setMermaidBlocks);
+  const setMindmapBlocks = useCanvasStore(state => state.setMindmapBlocks);
+  const setPdfBlocks = useCanvasStore(state => state.setPdfBlocks);
+  const setConnections = useCanvasStore(state => state.setConnections);
+
+  const selectedIds = useCanvasStore(state => state.selectedIds);
+  const setSelectedIds = useCanvasStore(state => state.setSelectedIds);
+  const selectedStrokeIds = useCanvasStore(state => state.selectedStrokeIds);
+  const setSelectedStrokeIds = useCanvasStore(state => state.setSelectedStrokeIds);
+  const selectedConnectionIds = useCanvasStore(state => state.selectedConnectionIds);
+  const setSelectedConnectionIds = useCanvasStore(state => state.setSelectedConnectionIds);
+
+  const lastSelectedStrokeIdsRef = useRef(selectedStrokeIds);
+
+  useEffect(() => {
+    const selectionChanged = lastSelectedStrokeIdsRef.current !== selectedStrokeIds;
+    lastSelectedStrokeIdsRef.current = selectedStrokeIds;
+
+    if (selectionChanged) {
+      try {
+        if (selectedStrokesGroupRef.current) {
+          selectedStrokesGroupRef.current.clearCache();
+        }
+        selectedStrokesGroupRef.current?.getLayer()?.batchDraw();
+      } catch (e) {
+        console.warn("Konva clearCache error:", e);
+      }
+    }
+
+    const timer = setTimeout(() => {
+      if (selectedStrokesGroupRef.current && selectedStrokeIds.length > 0) {
+        try {
+          const selectedStrokes = strokes.filter(s => selectedStrokeIds.includes(s.id));
+          const bounds = getGroupBounds([], selectedStrokes);
+          if (bounds && bounds.width > 0 && bounds.height > 0) {
+            const maxDimension = 3000;
+            const w = Math.min(bounds.width + 20, maxDimension);
+            const h = Math.min(bounds.height + 20, maxDimension);
+
+            selectedStrokesGroupRef.current.clearCache();
+            selectedStrokesGroupRef.current.cache({
+              x: bounds.x - 10,
+              y: bounds.y - 10,
+              width: w,
+              height: h,
+              pixelRatio: Math.min(1.5, scale || 1)
+            });
+            selectedStrokesGroupRef.current.getLayer()?.batchDraw();
+          }
+        } catch (e) {
+          console.warn("Konva selected caching error:", e);
+        }
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [strokes, scale, isDarkMode, selectedStrokeIds]);
+
+  const groupedTiles = React.useMemo(() => {
+    const tiles = {};
+    strokes.forEach(s => {
+      if ((s.zIndex || 0) >= 100) return;
+      const bounds = getStrokeBounds(s.points);
+      if (!bounds) return;
+      const tileX = Math.floor((bounds.x + bounds.width / 2) / TILE_SIZE);
+      const tileY = Math.floor((bounds.y + bounds.height / 2) / TILE_SIZE);
+      const key = `${tileX},${tileY}`;
+      if (!tiles[key]) tiles[key] = [];
+      tiles[key].push(s);
+    });
+    return tiles;
+  }, [strokes]);
+
+  const isDrawing = useCanvasStore(state => state.isDrawing);
+  const setIsDrawing = useCanvasStore(state => state.setIsDrawing);
+  const isErasing = useCanvasStore(state => state.isErasing);
+  const setIsErasing = useCanvasStore(state => state.setIsErasing);
+  const isDraggingSelection = useCanvasStore(state => state.isDraggingSelection);
+  const setIsDraggingSelection = useCanvasStore(state => state.setIsDraggingSelection);
+
+  const editingBlockId = useCanvasStore(state => state.editingBlockId);
+  const setEditingBlockId = useCanvasStore(state => state.setEditingBlockId);
+  const hoveredBlockId = useCanvasStore(state => state.hoveredBlockId);
+  const setHoveredBlockId = useCanvasStore(state => state.setHoveredBlockId);
+  const connectingState = useCanvasStore(state => state.connectingState);
+  const setConnectingState = useCanvasStore(state => state.setConnectingState);
+  const eraserCursorPos = useCanvasStore(state => state.eraserCursorPos);
+  const setEraserCursorPos = useCanvasStore(state => state.setEraserCursorPos);
+
+  const loadNoteData = useCanvasStore(state => state.loadNoteData);
+
+  // Estados Gestuais locais temporários (Preservados locais para evitar poluição global)
   const [currentStroke, setCurrentStroke] = useState(null);
-  const [isErasing, setIsErasing] = useState(false);
-  const [selectionRect, setSelectionRect] = useState(null);
-  const [pdfBlocks, setPdfBlocks] = useState(activeNote?.content?.pdfBlocks || []);
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [selectedStrokeIds, setSelectedStrokeIds] = useState([]);
-  const [isDraggingSelection, setIsDraggingSelection] = useState(false);
-  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
-  const [editingBlockId, setEditingBlockId] = useState(null);
-  const [connectingState, setConnectingState] = useState(null);
-  const [hoveredBlockId, setHoveredBlockId] = useState(null);
-  const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [ghostShape, setGhostShape] = useState(null);
   const [postSnapManipulation, setPostSnapManipulation] = useState(null);
   const [isNoteLoaded, setIsNoteLoaded] = useState(false);
-  const [eraserCursorPos, setEraserCursorPos] = useState(null);
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
 
   // [OPTIMIZATION] Unified Render Loop
   const performRender = useCallback(() => {
@@ -284,16 +501,12 @@ const CanvasArea = forwardRef(({
       };
     }
 
-    if (!patternImage) return { backgroundColor: 'transparent' };
+    if (!patternImageUrl) return { backgroundColor: 'transparent' };
 
-    try {
-      return {
-        backgroundImage: `url(${patternImage.toDataURL()})`,
-        backgroundRepeat: 'repeat'
-      };
-    } catch (e) {
-      return { backgroundColor: 'transparent' };
-    }
+    return {
+      backgroundImage: `url(${patternImageUrl})`,
+      backgroundRepeat: 'repeat'
+    };
   };
 
   // [HYBRID EXPORT] SVG injection support for background captures
@@ -435,7 +648,11 @@ const CanvasArea = forwardRef(({
   useEffect(() => {
     setSelectedIds([]);
     setSelectedStrokeIds([]);
-    setSelectionRect(null);
+    selectionRectRef.current = null;
+    if (selectionRectKonvaRef.current) {
+      selectionRectKonvaRef.current.setAttrs({ visible: false });
+      selectionRectKonvaRef.current.getLayer()?.batchDraw();
+    }
     setIsDraggingSelection(false);
     setEditingBlockId(null);
   }, [activeTool]);
@@ -464,7 +681,7 @@ const CanvasArea = forwardRef(({
         setGgbBlocks(prev => [...prev, { id: newId, x: blockX, y: blockY, expression: content, width: 500, height: 400 }]);
       } else if (type === 'ggb') {
         setGgbBlocks(prev => [...prev, { id: newId, x: blockX, y: blockY, width: 600, height: 450, ...content }]);
-      } else if (type === 'LATEX') {
+      } else if (type === 'LATEX' || type === 'math') {
         const safeContent = (content && content !== "undefined") ? content : "\\text{Erro: Conteúdo inválido.}";
         setMathBlocks(prev => [...prev, { id: newId, x: blockX, y: blockY, content: safeContent, fixedSize: false }]);
       }
@@ -539,7 +756,47 @@ const CanvasArea = forwardRef(({
     getInfiniteCanvasElement: () => containerRef.current?.querySelector('.infinite-canvas'),
     getBackgroundStyle: () => getBackgroundStyle(),
     prepareExport,
-    finalizeExport
+    finalizeExport,
+
+    // [PERF] Imperative transform — updates DOM directly, bypassing React render cycle
+    applyTransform: (newPan, newScale) => {
+      positionRef.current = newPan;
+      scaleRef.current = newScale;
+
+      // 1. Update all Konva layers directly via their native API
+      konvaLayerRefs.current.forEach(layer => {
+        if (layer) {
+          layer.x(newPan.x);
+          layer.y(newPan.y);
+          layer.scaleX(newScale);
+          layer.scaleY(newScale);
+          layer.batchDraw();
+        }
+      });
+
+      // 2. Update the CSS-transformed infinite-canvas div
+      if (infiniteCanvasRef.current) {
+        infiniteCanvasRef.current.style.transform = `translate(${newPan.x}px, ${newPan.y}px) scale(${newScale})`;
+      }
+
+      // 3. Update glass blocks layer — each block computes its own screen position from canvasScale/canvasPan props,
+      //    but during imperative motion we update them via CSS transform on the container instead
+      if (glassBlocksLayerRef.current) {
+        // During imperative motion, we apply a delta transform to the glass layer
+        // The blocks are positioned based on the React-committed position/scale, so we need to
+        // compute the delta from the last React-committed values and apply it as a CSS offset
+        const reactPan = { x: position.x, y: position.y };  // Last React-committed values
+        const reactScale = scale;
+        const dx = newPan.x - reactPan.x;
+        const dy = newPan.y - reactPan.y;
+        const ds = newScale / reactScale;
+
+        // Apply a compensating transform: translate by delta, scale around origin
+        // This works because blocks are already positioned at screenX/screenY based on reactPan/reactScale
+        glassBlocksLayerRef.current.style.transform = `translateZ(0) translate(${dx}px, ${dy}px) scale(${ds})`;
+        glassBlocksLayerRef.current.style.transformOrigin = '0 0';
+      }
+    }
   };
 
   useImperativeHandle(ref, () => imperativeHandle, [position, scale, textBlocks, imageBlocks, codeBlocks, mathBlocks, ggbBlocks, connections, strokes, saveToHistory]);
@@ -949,59 +1206,52 @@ const CanvasArea = forwardRef(({
   // Carrega Nota (Unificado) - Optimized to prevent selection loss during auto-saves
   useEffect(() => {
     if (activeNote) {
-      const content = activeNote.content || {};
-      const contentJson = JSON.stringify(content);
+      const content = extractCanvasContent(activeNote.content);
+      const contentJson = sortedStringify(content);
 
       // Only perform a full reload if the note ID changed OR if the content was updated externally
       // (e.g. via Undo/Redo or from another session, meaning it differs from our lastSavedJson)
       if (activeNote.id !== lastLoadedNoteId.current || contentJson !== lastSavedJson.current) {
         setIsNoteLoaded(false);
-        setStrokes(content.strokes || []);
-        setTextBlocks(content.textBlocks || []);
-        setImageBlocks(content.imageBlocks || []);
-        setCodeBlocks(content.codeBlocks || []);
-        setMathBlocks(content.mathBlocks || []);
-        setGgbBlocks(content.ggbBlocks || []);
-        setMermaidBlocks(content.mermaidBlocks || []);
-        setMindmapBlocks(content.mindmapBlocks || []);
-        setPdfBlocks(content.pdfBlocks || []);
-        setConnections(content.connections || []);
-
-        // PERSISTENCE FIX: Only clear selection if we are switching to a DIFFERENT note
-        if (activeNote.id !== lastLoadedNoteId.current) {
-          setSelectedIds([]);
-          setSelectedStrokeIds([]);
-          setSelectedConnectionIds([]);
-        }
+        loadNoteData(content);
 
         lastLoadedNoteId.current = activeNote.id;
         lastSavedJson.current = contentJson;
         setIsNoteLoaded(true);
       }
     }
-  }, [activeNote?.id, activeNote?.content]);
+  }, [activeNote?.id, activeNote?.content, loadNoteData]);
 
   // Salva Nota (Unificado) - Optimized to avoid stuttering during interaction
   useEffect(() => {
     // SUSPEND auto-save while dragging to prevent stuttering and re-render cycles
-    if (activeNoteId && isNoteLoaded && !isDraggingSelection) {
-      const timer = setTimeout(() => {
-        const safeMermaid = typeof mermaidBlocks !== 'undefined' ? mermaidBlocks : [];
-        const safeMindmap = typeof mindmapBlocks !== 'undefined' ? mindmapBlocks : [];
+    // CRITICAL SAFETY CHECK: Only save if the note is loaded, matched, and content actually changed
+    if (activeNoteId && isNoteLoaded && !isDraggingSelection && activeNoteId === lastLoadedNoteId.current) {
+      const safeMermaid = typeof mermaidBlocks !== 'undefined' ? mermaidBlocks : [];
+      const safeMindmap = typeof mindmapBlocks !== 'undefined' ? mindmapBlocks : [];
 
-        const content = {
-          strokes,
-          textBlocks,
-          imageBlocks,
-          codeBlocks,
-          mathBlocks,
-          ggbBlocks,
-          mermaidBlocks: safeMermaid,
-          mindmapBlocks: safeMindmap,
-          pdfBlocks: pdfBlocks,
-          connections
-        };
-        lastSavedJson.current = JSON.stringify(content);
+      const content = {
+        strokes,
+        textBlocks,
+        imageBlocks,
+        codeBlocks,
+        mathBlocks,
+        ggbBlocks,
+        mermaidBlocks: safeMermaid,
+        mindmapBlocks: safeMindmap,
+        pdfBlocks: pdfBlocks,
+        connections
+      };
+
+      const contentJson = sortedStringify(content);
+
+      // Evita loops infinitos e gravações redundantes se o conteúdo for idêntico
+      if (contentJson === lastSavedJson.current) {
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        lastSavedJson.current = contentJson;
         updateNoteContent(activeNoteId, content);
       }, 1000); // Increased debounce for cleaner performance
       return () => clearTimeout(timer);
@@ -1362,8 +1612,8 @@ const CanvasArea = forwardRef(({
         const newSel = selectedIds.includes(clickedBlock.id) ? selectedIds : [clickedBlock.id];
         if (!selectedIds.includes(clickedBlock.id)) {
           setSelectedIds([clickedBlock.id]);
-          setSelectedStrokeIds([]);
-          setSelectedConnectionIds([]);
+          if (selectedStrokeIds.length > 0) setSelectedStrokeIds([]);
+          if (selectedConnectionIds.length > 0) setSelectedConnectionIds([]);
         }
         startDrag(e, newSel, []);
         containerRef.current?.setPointerCapture(e.pointerId); return;
@@ -1374,8 +1624,8 @@ const CanvasArea = forwardRef(({
         const newStrokeSel = selectedStrokeIds.includes(sid) ? selectedStrokeIds : [sid];
         if (!selectedStrokeIds.includes(sid)) {
           setSelectedStrokeIds([sid]);
-          setSelectedIds([]);
-          setSelectedConnectionIds([]);
+          if (selectedIds.length > 0) setSelectedIds([]);
+          if (selectedConnectionIds.length > 0) setSelectedConnectionIds([]);
         }
         startDrag(e, [], newStrokeSel);
         containerRef.current?.setPointerCapture(e.pointerId); return;
@@ -1388,11 +1638,25 @@ const CanvasArea = forwardRef(({
       })?.id;
       if (cid && activeTool === 'cursor') {
         setSelectedConnectionIds(prev => e.shiftKey ? (prev.includes(cid) ? prev.filter(x => x !== cid) : [...prev, cid]) : [cid]);
-        setSelectedIds([]); setSelectedStrokeIds([]); return;
+        if (selectedIds.length > 0) setSelectedIds([]);
+        if (selectedStrokeIds.length > 0) setSelectedStrokeIds([]);
+        return;
       }
 
-      setSelectedIds([]); setSelectedStrokeIds([]); setSelectedConnectionIds([]);
-      setSelectionRect({ startX: pt.x, startY: pt.y, currentX: pt.x, currentY: pt.y });
+      if (selectedIds.length > 0) setSelectedIds([]);
+      if (selectedStrokeIds.length > 0) setSelectedStrokeIds([]);
+      if (selectedConnectionIds.length > 0) setSelectedConnectionIds([]);
+      selectionRectRef.current = { startX: pt.x, startY: pt.y, currentX: pt.x, currentY: pt.y };
+      if (selectionRectKonvaRef.current) {
+        selectionRectKonvaRef.current.setAttrs({
+          x: pt.x,
+          y: pt.y,
+          width: 0,
+          height: 0,
+          visible: true
+        });
+        selectionRectKonvaRef.current.getLayer()?.batchDraw();
+      }
       containerRef.current?.setPointerCapture(e.pointerId); return;
     }
     // ... (drawing logic remains as is for now)
@@ -1450,7 +1714,7 @@ const CanvasArea = forwardRef(({
     const pt = screenToCanvas(e.clientX, e.clientY);
 
     // [PRO CONNECTORS] Hover detection for handles
-    if (activeTool === 'cursor' && !isDrawing && !isDraggingSelection && !selectionRect) {
+    if (activeTool === 'cursor' && !isDrawing && !isDraggingSelection && !selectionRectRef.current) {
       const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks];
       const hBlock = allB.find(b => isPointInBlock(b, pt, 20)); // Padding de 20px para manter as alças ativas
       if (hBlock?.id !== hoveredBlockId) setHoveredBlockId(hBlock?.id || null);
@@ -1485,7 +1749,27 @@ const CanvasArea = forwardRef(({
     }
 
     if (isErasing) { setStrokes(p => p.filter(s => !isStrokeClicked(s, pt, 15 / scale))); return; }
-    if (selectionRect) { setSelectionRect(p => ({ ...p, currentX: pt.x, currentY: pt.y })); return; }
+    if (selectionRectRef.current) {
+      const rectVal = selectionRectRef.current;
+      rectVal.currentX = pt.x;
+      rectVal.currentY = pt.y;
+
+      if (selectionRectKonvaRef.current) {
+        const rx = Math.min(rectVal.startX, rectVal.currentX);
+        const ry = Math.min(rectVal.startY, rectVal.currentY);
+        const rw = Math.abs(rectVal.currentX - rectVal.startX);
+        const rh = Math.abs(rectVal.currentY - rectVal.startY);
+        selectionRectKonvaRef.current.setAttrs({
+          x: rx,
+          y: ry,
+          width: rw,
+          height: rh,
+          visible: true
+        });
+        selectionRectKonvaRef.current.getLayer()?.batchDraw();
+      }
+      return;
+    }
     if (isDraggingSelection && dragStartRef.current && !isResizingRef.current) {
       nextDragPosRef.current = { x: e.clientX, y: e.clientY };
 
@@ -1496,30 +1780,34 @@ const CanvasArea = forwardRef(({
             return;
           }
 
-          const dx = (nextDragPosRef.current.x - dragStartRef.current.mouse.x) / scale;
-          const dy = (nextDragPosRef.current.y - dragStartRef.current.mouse.y) / scale;
+          const screenDx = nextDragPosRef.current.x - dragStartRef.current.mouse.x;
+          const screenDy = nextDragPosRef.current.y - dragStartRef.current.mouse.y;
 
-          const moveBlock = b => {
-            const start = dragStartRef.current.blocks[b.id];
-            if (!start) return b;
-            return { ...b, x: start.x + dx, y: start.y + dy };
-          };
+          // 1. Move Selection Overlay DOM element directly
+          const overlay = containerRef.current?.querySelector('.selection-overlay-container');
+          if (overlay) {
+            overlay.style.transform = `translate3d(${screenDx}px, ${screenDy}px, 0) scale(${scale})`;
+          }
 
-          const moveStroke = s => {
-            const startPoints = dragStartRef.current.strokes[s.id];
-            if (!startPoints) return s;
-            return { ...s, points: startPoints.map(p => ({ ...p, x: p.x + dx, y: p.y + dy })) };
-          };
+          // 2. Move Dragged Blocks DOM elements directly
+          selectedIds.forEach(id => {
+            const blockEl = containerRef.current?.querySelector(`[data-block-id="${id}"]`);
+            const start = dragStartRef.current?.blocks[id];
+            if (blockEl && start) {
+              const initialScreenX = position.x + start.x * scale;
+              const initialScreenY = position.y + start.y * scale;
+              const currentScreenX = initialScreenX + screenDx;
+              const currentScreenY = initialScreenY + screenDy;
+              blockEl.style.transform = `translate3d(${currentScreenX}px, ${currentScreenY}px, 0) scale(${scale * 1.02})`;
+            }
+          });
 
-          setTextBlocks(prev => prev.map(moveBlock));
-          setImageBlocks(prev => prev.map(moveBlock));
-          setCodeBlocks(prev => prev.map(moveBlock));
-          setMathBlocks(prev => prev.map(moveBlock));
-          setGgbBlocks(prev => prev.map(moveBlock));
-          setMermaidBlocks(prev => prev.map(moveBlock));
-          setMindmapBlocks(prev => prev.map(moveBlock));
-          setPdfBlocks(prev => prev.map(moveBlock));
-          setStrokes(prev => prev.map(moveStroke));
+          // 3. Move Selected Strokes Konva Group directly
+          if (selectedStrokesGroupRef.current) {
+            selectedStrokesGroupRef.current.x(screenDx / scale);
+            selectedStrokesGroupRef.current.y(screenDy / scale);
+            selectedStrokesGroupRef.current.getLayer()?.batchDraw();
+          }
 
           dragRafRef.current = null;
         });
@@ -1669,22 +1957,98 @@ const CanvasArea = forwardRef(({
     containerRef.current?.releasePointerCapture(e.pointerId);
     if (currentStroke) {
       const fpts = (currentStroke.isNeatShape) ? currentStroke.points : (activeStrokePointsRef.current.length ? activeStrokePointsRef.current : currentStroke.points);
-      const fstroke = { ...currentStroke, points: fpts };
+      // [FASE 3] Ramer-Douglas-Peucker (RDP) Simplification
+      const simplifiedPts = currentStroke.isNeatShape ? fpts : simplifyPoints(fpts, 0.4);
+      const fstroke = { ...currentStroke, points: simplifiedPts };
       setStrokes(p => p.find(s => s.id === fstroke.id) ? p : [...p, fstroke]);
       setCurrentStroke(null); activeStrokePointsRef.current = [];
     }
-    if (selectionRect) {
+    if (selectionRectRef.current) {
+      const rectVal = selectionRectRef.current;
+      const selRect = {
+        startX: rectVal.startX,
+        startY: rectVal.startY,
+        currentX: rectVal.currentX,
+        currentY: rectVal.currentY
+      };
+
       const nIds = [], nSIds = [], nCIds = [];
       const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks];
-      allB.forEach(b => { if (isBlockIntersecting(b, selectionRect)) nIds.push(b.id); });
-      strokes.forEach(s => { if (isStrokeInRect(s, selectionRect)) nSIds.push(s.id); });
+      allB.forEach(b => { if (isBlockIntersecting(b, selRect)) nIds.push(b.id); });
+      strokes.forEach(s => { if (isStrokeInRect(s, selRect)) nSIds.push(s.id); });
       connections.forEach(c => {
         const start = getAnchorPointById(c.fromId, c.fromSide, allB);
         const end = getAnchorPointById(c.toId, c.toSide, allB);
-        if (start && end && isConnectionInRect(c, start, end, selectionRect)) nCIds.push(c.id);
+        if (start && end && isConnectionInRect(c, start, end, selRect)) nCIds.push(c.id);
       });
-      setSelectedIds(nIds); setSelectedStrokeIds(nSIds); setSelectedConnectionIds(nCIds); setSelectionRect(null);
+
+      if (selectionRectKonvaRef.current) {
+        selectionRectKonvaRef.current.setAttrs({ visible: false });
+        selectionRectKonvaRef.current.getLayer()?.batchDraw();
+      }
+      selectionRectRef.current = null;
+      setSelectedIds(nIds); setSelectedStrokeIds(nSIds); setSelectedConnectionIds(nCIds);
     }
+    if (isDraggingSelection && dragStartRef.current) {
+      // Use the last captured drag position if available, as pointerup clientX/Y can be zero or invalid in captured states
+      const hasMoved = nextDragPosRef.current !== null;
+      const lastX = hasMoved ? nextDragPosRef.current.x : dragStartRef.current.mouse.x;
+      const lastY = hasMoved ? nextDragPosRef.current.y : dragStartRef.current.mouse.y;
+
+      const finalScreenDx = lastX - dragStartRef.current.mouse.x;
+      const finalScreenDy = lastY - dragStartRef.current.mouse.y;
+
+      const dx = finalScreenDx / scale;
+      const dy = finalScreenDy / scale;
+
+      // 1. Reset temporary imperative transforms in DOM immediately to prevent offset double-application
+      const overlay = containerRef.current?.querySelector('.selection-overlay-container');
+      if (overlay) {
+        overlay.style.transform = '';
+      }
+
+      selectedIds.forEach(id => {
+        const blockEl = containerRef.current?.querySelector(`[data-block-id="${id}"]`);
+        if (blockEl) {
+          blockEl.style.transform = '';
+        }
+      });
+
+      if (dx !== 0 || dy !== 0) {
+        const moveBlock = b => {
+          const start = dragStartRef.current.blocks[b.id];
+          if (!start) return b;
+          return { ...b, x: Math.max(0, start.x + dx), y: Math.max(0, start.y + dy) };
+        };
+
+        const moveStroke = s => {
+          const startPoints = dragStartRef.current.strokes[s.id];
+          if (!startPoints) return s;
+          return { ...s, points: startPoints.map(p => ({ ...p, x: p.x + dx, y: p.y + dy })) };
+        };
+
+        setTextBlocks(prev => prev.map(moveBlock));
+        setImageBlocks(prev => prev.map(moveBlock));
+        setCodeBlocks(prev => prev.map(moveBlock));
+        setMathBlocks(prev => prev.map(moveBlock));
+        setGgbBlocks(prev => prev.map(moveBlock));
+        setMermaidBlocks(prev => prev.map(moveBlock));
+        setMindmapBlocks(prev => prev.map(moveBlock));
+        setPdfBlocks(prev => prev.map(moveBlock));
+        setStrokes(prev => prev.map(moveStroke));
+      }
+
+      // Reset temporary imperative positions in Konva
+      if (selectedStrokesGroupRef.current) {
+        selectedStrokesGroupRef.current.x(0);
+        selectedStrokesGroupRef.current.y(0);
+        selectedStrokesGroupRef.current.getLayer()?.batchDraw();
+      }
+
+      dragStartRef.current = null;
+      nextDragPosRef.current = null;
+    }
+
     if (isDraggingSelection || isDrawing) saveToHistory();
     setIsDrawing(false); setIsErasing(false); setIsDraggingSelection(false);
     if (connectingState?.targetId) {
@@ -1733,7 +2097,7 @@ const CanvasArea = forwardRef(({
   if (!activeNote) return <div className="loading">Carregando...</div>;
 
   return (
-    <div className="canvas-viewport" ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onContextMenu={e => e.preventDefault()} style={{
+    <div className={`canvas-viewport ${isPanning ? 'is-panning' : ''}`} ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onContextMenu={e => e.preventDefault()} style={{
       width: '100%',
       height: '100%',
       overflow: 'hidden',
@@ -1748,10 +2112,14 @@ const CanvasArea = forwardRef(({
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+        .is-panning .glass-card {
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+        }
       `}</style>
       <Stage width={stageSize.width} height={stageSize.height} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1, pointerEvents: (isPanning || activeTool === 'cursor') ? 'all' : 'all' }}>
         {/* Background Layer */}
-        <Layer x={position.x} y={position.y} scaleX={scale} scaleY={scale} listening={false}>
+        <Layer ref={el => { konvaLayerRefs.current[0] = el; }} x={position.x} y={position.y} scaleX={scale} scaleY={scale} listening={false}>
           {patternImage && paperPattern !== 'blank' && (
             <Rect
               x={-25000}
@@ -1783,18 +2151,34 @@ const CanvasArea = forwardRef(({
             </>
           )}
         </Layer>
-        <Layer x={position.x} y={position.y} scaleX={scale} scaleY={scale}>
-          {strokes.filter(s => (s.zIndex || 0) < 100).map(s => (
-            <MemoizedStroke
-              key={s.id}
-              stroke={s}
-              isSelected={selectedStrokeIds.includes(s.id)}
+        <Layer ref={el => { konvaLayerRefs.current[1] = el; }} x={position.x} y={position.y} scaleX={scale} scaleY={scale}>
+          {/* Spatial Grid cached Tiles for inactive/unselected strokes */}
+          {Object.entries(groupedTiles).map(([key, tileStrokes]) => (
+            <StrokeTile
+              key={key}
+              tileKey={key}
+              strokes={tileStrokes}
+              scale={scale}
               isDarkMode={isDarkMode}
+              selectedStrokeIds={selectedStrokeIds}
             />
           ))}
-          <ConnectionLayer connections={connections} allBlocks={[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks]} tempConnection={connectingState} selectedIds={selectedConnectionIds} scale={scale} onSelect={(id, shift) => setSelectedConnectionIds(prev => shift ? (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]) : [id])} />
+
+          {/* Renderização dinâmica apenas para traços ativos/selecionados (para contorno de seleção interativo) */}
+          <Group ref={selectedStrokesGroupRef}>
+            {strokes.filter(s => (s.zIndex || 0) < 100 && selectedStrokeIds.includes(s.id)).map(s => (
+              <MemoizedStroke
+                key={s.id}
+                stroke={s}
+                isSelected={true}
+                isDarkMode={isDarkMode}
+              />
+            ))}
+          </Group>
+
+          <ConnectionLayer connections={connections} allBlocks={[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks]} tempConnection={connectingState} selectedIds={selectedConnectionIds} scale={scale} isDarkMode={isDarkMode} onSelect={(id, shift) => setSelectedConnectionIds(prev => shift ? (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]) : [id])} />
         </Layer>
-        <Layer x={position.x} y={position.y} scaleX={scale} scaleY={scale} listening={false}>
+        <Layer ref={el => { konvaLayerRefs.current[2] = el; }} x={position.x} y={position.y} scaleX={scale} scaleY={scale} listening={false}>
           {currentStroke && (
             <Path
               ref={activeStrokePathRef}
@@ -1809,18 +2193,14 @@ const CanvasArea = forwardRef(({
             />
           )}
           {ghostShape && <Path data={getNeatPathData(ghostShape.points, ghostShape.type, ['arrow', 'line'].includes(ghostShape.type))} stroke="#6366f1" strokeWidth={2 / scale} dash={[5, 5]} opacity={0.5} />}
-          {selectionRect && (
-            <Rect
-              x={Math.min(selectionRect.startX, selectionRect.currentX)}
-              y={Math.min(selectionRect.startY, selectionRect.currentY)}
-              width={Math.abs(selectionRect.currentX - selectionRect.startX)}
-              height={Math.abs(selectionRect.currentY - selectionRect.startY)}
-              fill="rgba(99, 102, 241, 0.05)"
-              stroke="#6366f1"
-              strokeWidth={1 / scale}
-              dash={[4, 4]}
-            />
-          )}
+          <Rect
+            ref={selectionRectKonvaRef}
+            visible={false}
+            fill="rgba(99, 102, 241, 0.05)"
+            stroke="#6366f1"
+            strokeWidth={1 / scale}
+            dash={[4, 4]}
+          />
           {activeTool === 'eraser' && eraserCursorPos && (
             <Circle
               x={eraserCursorPos.x}
@@ -1835,7 +2215,7 @@ const CanvasArea = forwardRef(({
       </Stage>
 
       {/* ====== LAYER 2a: Background + SVG strokes (transformed) ====== */}
-      <div className="infinite-canvas" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transformOrigin: '0 0', position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 2 }}>
+      <div ref={infiniteCanvasRef} className="infinite-canvas" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transformOrigin: '0 0', position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 2 }}>
         <div style={{ position: 'absolute', top: 0, left: 0, width: 50000, height: 50000, pointerEvents: 'none', ...getBackgroundStyle() }} />
 
         {/* GGBBlock stays here (no backdrop-filter needed, has iframe) */}
@@ -1872,7 +2252,7 @@ const CanvasArea = forwardRef(({
       </div>
 
       {/* ====== LAYER 2b: Glass blocks (NO parent transform — backdrop-filter works!) ====== */}
-      <div className="glass-blocks-layer" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10000, isolation: 'isolate', transform: 'translateZ(0)' }}>
+      <div ref={glassBlocksLayerRef} className="glass-blocks-layer" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10000, isolation: 'isolate', transform: 'translateZ(0)', transformOrigin: '0 0' }}>
         {imageBlocks.map(b => <ImageBlock key={b.id} block={b} activeTool={activeTool} updateBlock={(id, d) => updateAnyBlock('image', id, d)} onInteract={handleBlockInteract} removeBlock={removeAnyBlock} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {codeBlocks.map(b => <CodeBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('code', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {textBlocks.map(b => <TextBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('text', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
@@ -1899,7 +2279,7 @@ const CanvasArea = forwardRef(({
         ))}
         <SelectionGroupOverlay
           bounds={groupBounds}
-          onMove={handleGroupMove}
+          onStartDrag={(e) => startDrag(e, selectedIds, selectedStrokeIds)}
           onResize={handleGroupResize}
           onStartInteraction={(isResize) => {
             if (isResize) isResizingRef.current = true;

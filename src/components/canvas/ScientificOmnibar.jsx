@@ -9,6 +9,7 @@ import { X, Atom, Bookmark, Layers, Pencil, Plus, Maximize2, Calculator, Zap, Fl
 import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 import ConstantsMenu from './ConstantsMenu';
+import MatrixWorkspace from './MatrixWorkspace';
 
 // ========== MOSCARO STYLED MATHFIELD ==========
 const ScientificMathField = forwardRef(({ value, onChange, onEnter, isAllSelected, onUndo, onRedo }, ref) => {
@@ -253,7 +254,7 @@ const MemorySidebar = ({ variables = {}, formulas = {}, ans, onToggle, isOpen, o
   );
 };
 
-const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
+const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock, canvasPan, canvasScale }) => {
   const [calcInput, setCalcInput] = useState('');
   const [calcResult, setCalcResult] = useState('0');
   const [activeMode, setActiveMode] = useState('calculate');
@@ -280,9 +281,9 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
           const min = parseFloat(range.min);
           const max = parseFloat(range.max);
           const speed = (max - min) / 400; // Variable speed based on range width
-          
+
           val += dir * speed;
-          
+
           // Bounce at limits
           if (val >= max) {
             val = max;
@@ -333,7 +334,7 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
   // Add Interactive Block to Note
   const handleSnapshot = useCallback(() => {
     console.log("[ScientificOmnibar] Creating interactive GGB block for note...");
-    
+
     // 1. Gather active functions
     const activeFuncs = graphFunctions.filter(f => f.visible);
     if (activeFuncs.length === 0 && Object.keys(graphParams).length === 0) {
@@ -343,7 +344,7 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
 
     // 2. Prepare GGB commands
     const commands = [];
-    
+
     // Add parameters first so functions can depend on them
     Object.entries(graphParams).forEach(([name, val]) => {
       commands.push(`${name} = ${val}`);
@@ -355,7 +356,7 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
       const hasExplicitName = f.command.includes('=') || f.command.includes(':');
       const cmd = hasExplicitName ? f.command : `${name}: ${f.command}`;
       commands.push(cmd);
-      
+
       // Add color command
       if (f.color) {
         // GGB setColor uses R, G, B as 0-1 values or name
@@ -368,8 +369,8 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
     if (onAddBlock) {
       const combinedExpression = commands.join('\n');
       console.log("[ScientificOmnibar] Sending GGB block content:", combinedExpression);
-      
-      onAddBlock('ggb', { 
+
+      onAddBlock('ggb', {
         expression: combinedExpression,
         customTitle: activeFuncs.length > 0 ? `Gráfico de ${activeFuncs[0].command.split('=')[0]}` : 'Gráfico Dinâmico'
       });
@@ -514,9 +515,9 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
           const existingIdx = prev.findIndex(f => f.ggbName === ggbName);
           if (existingIdx !== -1) {
             const next = [...prev];
-            next[existingIdx] = { 
-              ...next[existingIdx], 
-              latex: calcInput, 
+            next[existingIdx] = {
+              ...next[existingIdx],
+              latex: calcInput,
               command: ggbCommand,
               visible: true // Re-show if it was hidden
             };
@@ -904,7 +905,7 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[99999] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div
-        className={`w-full transition-all duration-700 bg-[#0d0d0f]/95 backdrop-blur-3xl rounded-[60px] border border-white/5 flex shadow-[0_100px_200px_rgba(0,0,0,1)] overflow-hidden animate-in zoom-in-95 pointer-events-auto ${activeMode === 'graph' ? 'max-w-[95vw] h-[92vh]' : 'max-w-[1100px] max-h-[90vh]'}`}
+        className={`w-full transition-all duration-700 bg-[#0d0d0f]/95 backdrop-blur-3xl rounded-[60px] border border-white/5 flex shadow-[0_100px_200px_rgba(0,0,0,1)] overflow-hidden animate-in zoom-in-95 pointer-events-auto ${activeMode === 'graph' || activeMode === 'matrix' ? 'max-w-[95vw] h-[92vh]' : 'max-w-[1100px] max-h-[90vh]'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <ModeRail activeMode={activeMode} setMode={setActiveMode} />
@@ -936,8 +937,8 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
             </div>
           </div>
 
-          <div className={`flex h-full overflow-hidden transition-all duration-200 ${activeMode === 'graph' ? 'gap-6' : 'gap-10'}`}>
-            <div className={`flex flex-col transition-all duration-700 ${(activeMode === 'graph' || isMemorySidebarOpen) ? 'w-[400px] min-w-[400px]' : 'flex-1'}`}>
+          <div className={`flex h-full overflow-hidden transition-all duration-200 ${activeMode === 'graph' || activeMode === 'matrix' ? 'gap-6' : 'gap-10'}`}>
+            <div className={`flex flex-col transition-all duration-700 ${(activeMode === 'graph' || activeMode === 'matrix' || isMemorySidebarOpen) ? 'w-[400px] min-w-[400px]' : 'flex-1'}`}>
 
               {/* SCROLLABLE CONTENT ZONE (LCD + RESULT) */}
               <div className="flex-none overflow-y-auto custom-scrollbar pr-2 mb-4 flex flex-col gap-4">
@@ -1135,33 +1136,33 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
                       <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">Tabela de Valores</h3>
                       <button onClick={() => setIsTableOpen(false)} className="text-white/20 hover:text-white"><X size={16} /></button>
                     </div>
-                    
+
                     <div className="grid grid-cols-3 gap-2 py-2 border-b border-white/5">
                       <div className="flex flex-col gap-1">
                         <span className="text-[8px] font-bold text-white/20 uppercase">Início</span>
-                        <input 
-                          type="number" 
-                          value={tableConfig.min} 
-                          onChange={(e) => setTableConfig(prev => ({...prev, min: Number(e.target.value)}))}
+                        <input
+                          type="number"
+                          value={tableConfig.min}
+                          onChange={(e) => setTableConfig(prev => ({ ...prev, min: Number(e.target.value) }))}
                           className="bg-white/5 border-none outline-none rounded-lg p-2 text-white text-[10px] font-bold text-center"
                         />
                       </div>
                       <div className="flex flex-col gap-1">
                         <span className="text-[8px] font-bold text-white/20 uppercase">Fim</span>
-                        <input 
-                          type="number" 
-                          value={tableConfig.max} 
-                          onChange={(e) => setTableConfig(prev => ({...prev, max: Number(e.target.value)}))}
+                        <input
+                          type="number"
+                          value={tableConfig.max}
+                          onChange={(e) => setTableConfig(prev => ({ ...prev, max: Number(e.target.value) }))}
                           className="bg-white/5 border-none outline-none rounded-lg p-2 text-white text-[10px] font-bold text-center"
                         />
                       </div>
                       <div className="flex flex-col gap-1">
                         <span className="text-[8px] font-bold text-white/20 uppercase">Passo</span>
-                        <input 
-                          type="number" 
+                        <input
+                          type="number"
                           step="0.1"
-                          value={tableConfig.step} 
-                          onChange={(e) => setTableConfig(prev => ({...prev, step: Number(e.target.value)}))}
+                          value={tableConfig.step}
+                          onChange={(e) => setTableConfig(prev => ({ ...prev, step: Number(e.target.value) }))}
                           className="bg-white/5 border-none outline-none rounded-lg p-2 text-white text-[10px] font-bold text-center"
                         />
                       </div>
@@ -1173,7 +1174,7 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
                           <tr className="text-white/40 font-black uppercase tracking-widest">
                             <th className="py-2 text-left">X</th>
                             {graphFunctions.filter(f => f.visible).map(f => (
-                              <th key={f.id} className="py-2 text-right" style={{color: f.color}}>Y</th>
+                              <th key={f.id} className="py-2 text-right" style={{ color: f.color }}>Y</th>
                             ))}
                           </tr>
                         </thead>
@@ -1215,8 +1216,8 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
                               {/* Header: Name & Value */}
                               <div className="flex justify-between items-start">
                                 <span className="text-[11px] font-mono text-[#2c2c2c] leading-none font-bold flex items-center">
-                                  {name} = 
-                                  <input 
+                                  {name} =
+                                  <input
                                     type="text"
                                     value={tempParamInputs[name] !== undefined ? tempParamInputs[name] : Number(val.toFixed(4))}
                                     onFocus={(e) => {
@@ -1281,8 +1282,8 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
                                     setParamRanges(prev => ({ ...prev, [name]: { ...range, max: s } }));
                                   }}
                                 />
-                                
-                                <button 
+
+                                <button
                                   onClick={() => {
                                     setAnimatingParams(curr => {
                                       if (curr[name]) {
@@ -1329,7 +1330,9 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
                   }
                 }}
               />
-            ) : (isMemorySidebarOpen || activeMode === 'graph') ? (
+            ) : activeMode === 'matrix' ? (
+              <MatrixWorkspace canvasPan={canvasPan} canvasScale={canvasScale} />
+            ) : (isMemorySidebarOpen || activeMode === 'graph' || activeMode === 'matrix') ? (
               <div className="flex-1 h-full relative flex flex-col justify-center items-center opacity-20">
                 {/* Only show this placeholder if ONE of the sidebars is technically active or expected */}
                 <Calculator size={48} className="mb-4" />
@@ -1351,7 +1354,7 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
               </div>
             )}
 
-            {!isMemorySidebarOpen && activeMode !== 'graph' && (
+            {!isMemorySidebarOpen && activeMode !== 'graph' && activeMode !== 'matrix' && (
               <button
                 onClick={() => setIsMemorySidebarOpen(true)}
                 className="absolute right-0 top-1/2 -translate-y-1/2 w-12 h-60 bg-white/[0.02] hover:bg-white/5 border-l border-y border-white/5 hover:border-indigo-500/40 rounded-l-3xl flex flex-col items-center justify-center gap-4 transition-all group z-50"
@@ -1454,4 +1457,5 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock }) => {
 };
 
 export default ScientificOmnibar;
+
 

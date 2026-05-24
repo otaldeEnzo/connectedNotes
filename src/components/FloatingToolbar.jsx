@@ -43,6 +43,14 @@ const Icons = {
       <circle cx="11" cy="11" r="1.5" fill="var(--accent-color)" />
       <path d="M20 4l-1 1m0-1l1 1" stroke="var(--accent-color)" />
     </svg>
+  ),
+  Calculator: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect>
+      <line x1="8" y1="6" x2="16" y2="6"></line>
+      <line x1="16" y1="14" x2="16" y2="18"></line>
+      <path d="M16 10h.01M12 10h.01M8 10h.01M12 14h.01M8 14h.01M12 18h.01M8 18h.01"></path>
+    </svg>
   )
 };
 
@@ -191,6 +199,22 @@ const FloatingToolbar = ({
       setActiveForcedShape(null);
     }
   }, [showShapeMenu, activeForcedShape, setActiveForcedShape]);
+
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+
+  useEffect(() => {
+    const handleStateChange = (e) => {
+      if (e.detail && typeof e.detail.isOpen === 'boolean') {
+        setIsCalculatorOpen(e.detail.isOpen);
+      }
+    };
+    window.addEventListener('scientificOmnibarStateChanged', handleStateChange);
+    return () => window.removeEventListener('scientificOmnibarStateChanged', handleStateChange);
+  }, []);
+
+  const handleCalculatorClick = () => {
+    window.dispatchEvent(new CustomEvent('toggleScientificOmnibar'));
+  };
 
   const [isDragging, setIsDragging] = useState(false);
   const [orientation, setOrientation] = useState(() => {
@@ -941,6 +965,7 @@ const FloatingToolbar = ({
 
             <ToolbarButton toolId="cursor" icon={Icons.Cursor} label="Cursor" isActive={activeTool === 'cursor'} onClick={() => { setActiveTool('cursor'); closeAllSubMenus(); }} />
             <ToolbarButton toolId="ai-lasso" icon={Icons.AI} label="AI" isActive={activeTool === 'ai-lasso'} onClick={() => { setActiveTool('ai-lasso'); closeAllSubMenus(); }} />
+            <ToolbarButton toolId="calculator" icon={Icons.Calculator} label="Calculadora Científica (Alt+C)" isActive={isCalculatorOpen} onClick={() => { handleCalculatorClick(); closeAllSubMenus(); }} />
 
             <div style={{ width: orientation === 'horizontal' ? '1px' : '12px', height: orientation === 'horizontal' ? '12px' : '1px', background: 'var(--border-color)', margin: '0 4px', opacity: 0.5 }} />
 
