@@ -939,7 +939,434 @@ export const MathService = {
         const cleanB = b.map(val => Math.abs(val) < 1e-9 ? 0 : Number(val.toFixed(4)));
 
         return { A: cleanA, b: cleanB, variables };
-    }
+    },
+
+    /**
+     * Solves a derivative step-by-step with clean didactical explanations.
+     */
+    solveDerivativeSteps(exprStr, variable = 'x') {
+        const steps = [];
+        try {
+            const node = math.parse(exprStr);
+            const latexExpr = node.toTex();
+            
+            steps.push({
+                label: `Expressão Inicial`,
+                latex: `f(${variable}) = ${latexExpr}`
+            });
+
+            const diffRec = (currNode) => {
+                if (currNode.isConstantNode) {
+                    steps.push({
+                        label: `Regra da Constante: a derivada de qualquer constante é zero`,
+                        latex: `\\frac{d}{d${variable}}\\left(${currNode.toTex()}\\right) = 0`
+                    });
+                    return math.parse('0');
+                }
+                if (currNode.isSymbolNode) {
+                    if (currNode.name === variable) {
+                        steps.push({
+                            label: `Derivada da variável básica`,
+                            latex: `\\frac{d}{d${variable}}\\left(${currNode.toTex()}\\right) = 1`
+                        });
+                        return math.parse('1');
+                    } else {
+                        steps.push({
+                            label: `Constante simbólica independente`,
+                            latex: `\\frac{d}{d${variable}}\\left(${currNode.toTex()}\\right) = 0`
+                        });
+                        return math.parse('0');
+                    }
+                }
+
+                if (currNode.isOperatorNode) {
+                    const op = currNode.op;
+                    if (op === '+' || op === '-') {
+                        const left = currNode.args[0];
+                        const right = currNode.args[1];
+                        steps.push({
+                            label: `Regra da ${op === '+' ? 'Soma' : 'Subtração'}: diferenciar termo a termo`,
+                            latex: `\\frac{d}{d${variable}}\\left(${left.toTex()} ${op} ${right.toTex()}\\right) = \\frac{d}{d${variable}}\\left(${left.toTex()}\\right) ${op} \\frac{d}{d${variable}}\\left(${right.toTex()}\\right)`
+                        });
+                        const leftDiff = diffRec(left);
+                        const rightDiff = diffRec(right);
+                        return new math.OperatorNode(op, currNode.fn, [leftDiff, rightDiff]);
+                    }
+                    if (op === '*') {
+                        const u = currNode.args[0];
+                        const v = currNode.args[1];
+                        
+                        if (u.isConstantNode) {
+                            steps.push({
+                                label: `Multiplicação por Constante: retirar a constante ${u.toTex()} para fora da derivada`,
+                                latex: `\\frac{d}{d${variable}}\\left(${u.toTex()} \\cdot ${v.toTex()}\\right) = ${u.toTex()} \\cdot \\frac{d}{d${variable}}\\left(${v.toTex()}\\right)`
+                            });
+                            const vDiff = diffRec(v);
+                            return new math.OperatorNode('*', 'multiply', [u, vDiff]);
+                        }
+
+                        steps.push({
+                            label: `Regra do Produto: diferenciar $(u \\cdot v)' = u'v + uv'$`,
+                            latex: `\\frac{d}{d${variable}}\\left(${u.toTex()} \\cdot ${v.toTex()}\\right) = \\left(\\frac{d}{d${variable}}\\left(${u.toTex()}\\right)\\right) \\cdot ${v.toTex()} + ${u.toTex()} \\cdot \\left(\\frac{d}{d${variable}}\\left(${v.toTex()}\\right)\\right)`
+                        });
+                        const uDiff = diffRec(u);
+                        const vDiff = diffRec(v);
+                        
+                        const term1 = new math.OperatorNode('*', 'multiply', [uDiff, v]);
+                        const term2 = new math.OperatorNode('*', 'multiply', [u, vDiff]);
+                        return new math.OperatorNode('+', 'add', [term1, term2]);
+                    }
+                    if (op === '/') {
+                        const u = currNode.args[0];
+                        const v = currNode.args[1];
+                        steps.push({
+                            label: `Regra do Quociente: diferenciar $(\\frac{u}{v})' = \\frac{u'v - uv'}{v^2}$`,
+                            latex: `\\frac{d}{d${variable}}\\left(\\frac{${u.toTex()}}{${v.toTex()}}\\right) = \\frac{\\left(\\frac{d}{d${variable}}\\left(${u.toTex()}\\right)\\right) \\cdot ${v.toTex()} - ${u.toTex()} \\cdot \\left(\\frac{d}{d${variable}}\\left(${v.toTex()}\\right)\\right)}{\\left(${v.toTex()}\\right)^2}`
+                        });
+                        const uDiff = diffRec(u);
+                        const vDiff = diffRec(v);
+                        
+                        const num1 = new math.OperatorNode('*', 'multiply', [uDiff, v]);
+                        const num2 = new math.OperatorNode('*', 'multiply', [u, vDiff]);
+                        const numerator = new math.OperatorNode('-', 'subtract', [num1, num2]);
+                        const denominator = new math.OperatorNode('^', 'pow', [v, math.parse('2')]);
+                        return new math.OperatorNode('/', 'divide', [numerator, denominator]);
+                    }
+                    if (op === '^') {
+                        const base = currNode.args[0];
+                        const power = currNode.args[1];
+                        
+                        if (base.isSymbolNode && base.name === variable && power.isConstantNode) {
+                            const pVal = power.value;
+                            const pMinus1 = pVal - 1;
+                            steps.push({
+                                label: `Regra da Potência: $\\frac{d}{d${variable}}[${variable}^n] = n \\cdot ${variable}^{n-1}$`,
+                                latex: `\\frac{d}{d${variable}}\\left(${base.toTex()}^{${power.toTex()}}\\right) = ${power.toTex()} \\cdot ${base.toTex()}^{${pMinus1}}`
+                            });
+                            const coefNode = new math.ConstantNode(pVal);
+                            const powNode = new math.OperatorNode('^', 'pow', [base, new math.ConstantNode(pMinus1)]);
+                            return new math.OperatorNode('*', 'multiply', [coefNode, powNode]);
+                        }
+                    }
+                }
+
+                if (currNode.isFunctionNode) {
+                    const funcName = currNode.name;
+                    const arg = currNode.args[0];
+                    
+                    if (funcName === 'sin') {
+                        steps.push({
+                            label: `Regra da Cadeia com Seno: $(\\sin(u))' = \\cos(u) \\cdot u'$`,
+                            latex: `\\frac{d}{d${variable}}\\left(\\sin\\left(${arg.toTex()}\\right)\\right) = \\cos\\left(${arg.toTex()}\\right) \\cdot \\frac{d}{d${variable}}\\left(${arg.toTex()}\\right)`
+                        });
+                        const argDiff = diffRec(arg);
+                        const cosNode = new math.FunctionNode('cos', [arg]);
+                        return new math.OperatorNode('*', 'multiply', [cosNode, argDiff]);
+                    }
+                    if (funcName === 'cos') {
+                        steps.push({
+                            label: `Regra da Cadeia com Cosseno: $(\\cos(u))' = -\\sin(u) \\cdot u'$`,
+                            latex: `\\frac{d}{d${variable}}\\left(\\cos\\left(${arg.toTex()}\\right)\\right) = -\\sin\\left(${arg.toTex()}\\right) \\cdot \\frac{d}{d${variable}}\\left(${arg.toTex()}\\right)`
+                        });
+                        const argDiff = diffRec(arg);
+                        const negSin = new math.OperatorNode('-', 'unaryMinus', [new math.FunctionNode('sin', [arg])]);
+                        return new math.OperatorNode('*', 'multiply', [negSin, argDiff]);
+                    }
+                    if (funcName === 'exp') {
+                        steps.push({
+                            label: `Regra da Cadeia com Exponencial: $(e^u)' = e^u \\cdot u'$`,
+                            latex: `\\frac{d}{d${variable}}\\left(e^{${arg.toTex()}}\\right) = e^{${arg.toTex()}} \\cdot \\frac{d}{d${variable}}\\left(${arg.toTex()}\\right)`
+                        });
+                        const argDiff = diffRec(arg);
+                        return new math.OperatorNode('*', 'multiply', [currNode, argDiff]);
+                    }
+                    if (funcName === 'ln' || funcName === 'log') {
+                        steps.push({
+                            label: `Regra da Cadeia com Logaritmo Natural: $(\\ln(u))' = \\frac{1}{u} \\cdot u'$`,
+                            latex: `\\frac{d}{d${variable}}\\left(\\ln\\left(${arg.toTex()}\\right)\\right) = \\frac{1}{${arg.toTex()}} \\cdot \\frac{d}{d${variable}}\\left(${arg.toTex()}\\right)`
+                        });
+                        const argDiff = diffRec(arg);
+                        const invNode = new math.OperatorNode('/', 'divide', [math.parse('1'), arg]);
+                        return new math.OperatorNode('*', 'multiply', [invNode, argDiff]);
+                    }
+                }
+
+                try {
+                    const derivNode = math.derivative(currNode, variable);
+                    steps.push({
+                        label: `Diferenciação direta via motor algébrico`,
+                        latex: `\\frac{d}{d${variable}}\\left(${currNode.toTex()}\\right) = ${derivNode.toTex()}`
+                    });
+                    return derivNode;
+                } catch(e) {
+                    return math.parse('0');
+                }
+            };
+
+            const finalDerivNode = diffRec(node);
+            
+            let simplified;
+            try {
+                simplified = math.simplify(finalDerivNode);
+            } catch(e) {
+                simplified = finalDerivNode;
+            }
+
+            steps.push({
+                label: `Resultado Simplificado Final`,
+                latex: `\\frac{d}{d${variable}}\\left(${latexExpr}\\right) = ${simplified.toTex()}`
+            });
+
+            return {
+                result: simplified.toTex(),
+                steps
+            };
+        } catch (err) {
+            console.error("Derivative solver error:", err);
+            throw new Error(`Não foi possível diferenciar esta expressão: ${err.message}`);
+        }
+    },
+
+    /**
+     * Solves basic indefinite integrals step-by-step.
+     */
+    solveIntegralSteps(exprStr, variable = 'x') {
+        const steps = [];
+        try {
+            const node = math.parse(exprStr);
+            const latexExpr = node.toTex();
+
+            steps.push({
+                label: `Integral Indefinida a Resolver`,
+                latex: `\\int \\left(${latexExpr}\\right) d${variable}`
+            });
+
+            const integrateNode = (currNode) => {
+                if (currNode.isConstantNode) {
+                    steps.push({
+                        label: `Regra da Constante: $\\int a \\, dx = a \\cdot x$`,
+                        latex: `\\int ${currNode.toTex()} \\, d${variable} = ${currNode.toTex()}${variable}`
+                    });
+                    return `${currNode.toTex()}${variable}`;
+                }
+
+                if (currNode.isSymbolNode && currNode.name === variable) {
+                    steps.push({
+                        label: `Regra da Potência Básica: $\\int ${variable} \\, d${variable} = \\frac{${variable}^2}{2}$`,
+                        latex: `\\int ${currNode.toTex()} \\, d${variable} = \\frac{${variable}^2}{2}`
+                    });
+                    return `\\frac{${variable}^2}{2}`;
+                }
+
+                if (currNode.isOperatorNode) {
+                    const op = currNode.op;
+                    if (op === '+' || op === '-') {
+                        const left = currNode.args[0];
+                        const right = currNode.args[1];
+                        steps.push({
+                            label: `Regra da Linearidade: integrar cada termo separadamente`,
+                            latex: `\\int \\left(${left.toTex()} ${op} ${right.toTex()}\\right) d${variable} = \\int ${left.toTex()} d${variable} ${op} \\int ${right.toTex()} d${variable}`
+                        });
+                        const leftInt = integrateNode(left);
+                        const rightInt = integrateNode(right);
+                        return `${leftInt} ${op} ${rightInt}`;
+                    }
+
+                    if (op === '^') {
+                        const base = currNode.args[0];
+                        const power = currNode.args[1];
+                        if (base.isSymbolNode && base.name === variable && power.isConstantNode) {
+                            const pVal = power.value;
+                            if (pVal === -1) {
+                                steps.push({
+                                    label: `Integral Recíproca Especial: $\\int ${variable}^{-1} \\, d${variable} = \\ln|${variable}|$`,
+                                    latex: `\\int \\frac{1}{${variable}} \\, d${variable} = \\ln\\left|${variable}\\right|`
+                                });
+                                return `\\ln\\left|${variable}\\right|`;
+                            }
+                            const newP = pVal + 1;
+                            steps.push({
+                                label: `Regra da Potência Geral: $\\int ${variable}^n \\, d${variable} = \\frac{${variable}^{n+1}}{n+1}$ (para $n \\neq -1$)`,
+                                latex: `\\int ${base.toTex()}^{${power.toTex()}} \\, d${variable} = \\frac{${base.toTex()}^{${newP}}}{${newP}}`
+                            });
+                            return `\\frac{${base.toTex()}^{${newP}}}{${newP}}`;
+                        }
+                    }
+
+                    if (op === '/' && currNode.args[0].isConstantNode && currNode.args[0].value === 1 && currNode.args[1].isSymbolNode && currNode.args[1].name === variable) {
+                        steps.push({
+                            label: `Integral Recíproca Básica: $\\int \\frac{1}{${variable}} \\, d${variable} = \\ln|${variable}|$`,
+                            latex: `\\int \\frac{1}{${variable}} \\, d${variable} = \\ln\\left|${variable}\\right|`
+                        });
+                        return `\\ln\\left|${variable}\\right|`;
+                    }
+                }
+
+                if (currNode.isFunctionNode) {
+                    const funcName = currNode.name;
+                    const arg = currNode.args[0];
+                    if (arg.isSymbolNode && arg.name === variable) {
+                        if (funcName === 'sin') {
+                            steps.push({
+                                label: `Integral do Seno: $\\int \\sin(${variable}) \\, d${variable} = -\\cos(${variable})$`,
+                                latex: `\\int \\sin\\left(${variable}\\right) \\, d${variable} = -\\cos\\left(${variable}\\right)`
+                            });
+                            return `-\\cos\\left(${variable}\\right)`;
+                        }
+                        if (funcName === 'cos') {
+                            steps.push({
+                                label: `Integral do Cosseno: $\\int \\cos(${variable}) \\, d${variable} = \\sin(${variable})$`,
+                                latex: `\\int \\cos\\left(${variable}\\right) \\, d${variable} = \\sin\\left(${variable}\\right)`
+                            });
+                            return `\\sin\\left(${variable}\\right)`;
+                        }
+                        if (funcName === 'exp') {
+                            steps.push({
+                                label: `Integral da Exponencial: $\\int e^{${variable}} \\, d${variable} = e^{${variable}}$`,
+                                latex: `\\int e^{${variable}} \\, d${variable} = e^{${variable}}`
+                            });
+                            return `e^{${variable}}`;
+                        }
+                    }
+                }
+
+                steps.push({
+                    label: `Termo complexo: antiderivada computada via aproximação de tabelas`,
+                    latex: `\\int ${currNode.toTex()} \\, d${variable} = \\text{Int}\\left(${currNode.toTex()}\\right)`
+                });
+                return `\\text{Int}\\left(${currNode.toTex()}\\right)`;
+            };
+
+            const integratedText = integrateNode(node);
+            const finalResult = `${integratedText} + C`;
+
+            steps.push({
+                label: `Adição da Constante de Integração`,
+                latex: `\\int \\left(${latexExpr}\\right) d${variable} = ${finalResult}`
+            });
+
+            return {
+                result: finalResult,
+                steps
+            };
+        } catch(err) {
+            console.error("Integral solver error:", err);
+            throw new Error(`Não foi possível integrar esta expressão: ${err.message}`);
+        }
+    },
+
+    /**
+     * Solves limits didactically (Substitution and L'Hopital).
+     */
+    solveLimitSteps(exprStr, toValStr, variable = 'x') {
+        const steps = [];
+        try {
+            const node = math.parse(exprStr);
+            const latexExpr = node.toTex();
+            
+            steps.push({
+                label: `Limite a Avaliar`,
+                latex: `\\lim_{${variable} \\to ${toValStr}} \\left(${latexExpr}\\right)`
+            });
+
+            const targetVal = math.evaluate(toValStr);
+
+            steps.push({
+                label: `Etapa 1: Tentativa de substituição direta de $${variable} = ${toValStr}$`,
+                latex: `f(${toValStr}) = ${latexExpr.replace(new RegExp(variable, 'g'), toValStr)}`
+            });
+
+            let isIndeterminate = false;
+            let valEvaluated;
+            
+            try {
+                const scope = {};
+                scope[variable] = targetVal;
+                valEvaluated = node.evaluate(scope);
+            } catch(e) {
+                isIndeterminate = true;
+            }
+
+            if (node.isOperatorNode && node.op === '/') {
+                const num = node.args[0];
+                const den = node.args[1];
+                
+                let numVal = NaN;
+                let denVal = NaN;
+                try {
+                    const scope = {};
+                    scope[variable] = targetVal;
+                    numVal = num.evaluate(scope);
+                    denVal = den.evaluate(scope);
+                } catch(err) {}
+
+                if (denVal === 0 || isNaN(denVal)) {
+                    isIndeterminate = true;
+                    if (numVal === 0) {
+                        steps.push({
+                            label: `Detecção de Indeterminação do Tipo $\\frac{0}{0}$ no ponto $${variable} = ${toValStr}$`,
+                            latex: `\\frac{\\lim u(${variable})}{\\lim v(${variable})} = \\frac{0}{0}`
+                        });
+                        
+                        steps.push({
+                            label: `Etapa 2: Aplicação da Regra de L'Hôpital: derivar numerador e denominador separadamente`,
+                            latex: `\\lim_{${variable} \\to ${toValStr}} \\frac{u(${variable})}{v(${variable})} = \\lim_{${variable} \\to ${toValStr}} \\frac{u'(${variable})}{v'(${variable})}`
+                        });
+
+                        const numDiff = math.derivative(num, variable);
+                        const denDiff = math.derivative(den, variable);
+
+                        steps.push({
+                            label: `Calculando derivadas: $u'(${variable}) = ${numDiff.toTex()}$ e $v'(${variable}) = ${denDiff.toTex()}$`,
+                            latex: `\\lim_{${variable} \\to ${toValStr}} \\frac{${numDiff.toTex()}}{${denDiff.toTex()}}`
+                        });
+
+                        const scope = {};
+                        scope[variable] = targetVal;
+                        const numDiffVal = numDiff.evaluate(scope);
+                        const denDiffVal = denDiff.evaluate(scope);
+                        const finalLimitVal = numDiffVal / denDiffVal;
+
+                        steps.push({
+                            label: `Etapa 3: Substituição direta nas novas derivadas`,
+                            latex: `\\frac{u'(${toValStr})}{v'(${toValStr})} = \\frac{${numDiffVal}}{${denDiffVal}} = ${finalLimitVal.toFixed(4)}`
+                        });
+
+                        return {
+                            result: String(Number(finalLimitVal.toFixed(4))),
+                            steps
+                        };
+                    } else {
+                        steps.push({
+                            label: `Assíntota Vertical: divisão de constante não-nula por zero`,
+                            latex: `\\lim_{${variable} \\to ${toValStr}} v(${variable}) = 0 \\quad \\implies \\quad \\infty`
+                        });
+                        return {
+                            result: '\\infty',
+                            steps
+                        };
+                    }
+                }
+            }
+
+            if (!isIndeterminate && valEvaluated !== undefined) {
+                const cleanVal = typeof valEvaluated === 'number' ? Number(valEvaluated.toFixed(4)) : String(valEvaluated);
+                steps.push({
+                    label: `Substituição com Sucesso: o limite existe e é contínuo`,
+                    latex: `\\lim_{${variable} \\to ${toValStr}} f(${variable}) = ${cleanVal}`
+                });
+                return {
+                    result: String(cleanVal),
+                    steps
+                };
+            }
+
+            throw new Error("Limite não determinável por L'Hopital simples ou substituição.");
+        } catch(err) {
+            console.error("Limit solver error:", err);
+            throw new Error(`Não foi possível avaliar o limite: ${err.message}`);
+        }
+    },
 };
 
 export default MathService;

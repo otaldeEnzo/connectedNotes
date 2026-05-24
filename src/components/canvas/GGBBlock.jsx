@@ -141,6 +141,27 @@ const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool,
         return () => { mounted = false; };
     }, [block.id]);
 
+    // External changes sync
+    useEffect(() => {
+        if (!isLoaded || !ggbApiRef.current) return;
+        try {
+            // Evaluate expression or commands
+            if (block.commands) {
+                block.commands.forEach(cmd => {
+                    try { ggbApiRef.current.evalCommand(cmd); } catch (e) { }
+                });
+            } else if (block.expression) {
+                try { ggbApiRef.current.evalCommand(block.expression); } catch (e) { }
+            }
+            if (block.expression !== undefined) {
+                setInputExpression(block.expression);
+                setCurrentTitle(block.customTitle || `Gráfico de ${block.expression}`);
+            }
+        } catch (e) {
+            console.warn("External GGB sync error", e);
+        }
+    }, [block.expression, block.commands, isLoaded]);
+
     // Apply expression to GeoGebra
     const applyExpression = useCallback(() => {
         if (!ggbApiRef.current || !inputExpression.trim()) return;

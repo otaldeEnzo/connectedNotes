@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import 'mathlive'; // Registers <math-field> custom element
 import { stemEngine } from '../../services/CalculatorEngine';
@@ -10,9 +10,10 @@ import 'katex/dist/katex.min.css';
 import { InlineMath } from 'react-katex';
 import ConstantsMenu from './ConstantsMenu';
 import MatrixWorkspace from './MatrixWorkspace';
+import CalculusWorkspace from './CalculusWorkspace';
 
 // ========== MOSCARO STYLED MATHFIELD ==========
-const ScientificMathField = forwardRef(({ value, onChange, onEnter, isAllSelected, onUndo, onRedo }, ref) => {
+const ScientificMathField = forwardRef(({ value, onChange, onEnter, isAllSelected, onUndo, onRedo, onKeyDown }, ref) => {
   const mfRef = useRef(null);
   const internalValueUpdate = useRef(false);
 
@@ -51,6 +52,11 @@ const ScientificMathField = forwardRef(({ value, onChange, onEnter, isAllSelecte
     };
 
     const handleKeydown = (e) => {
+      if (onKeyDown) {
+        onKeyDown(e);
+        if (e.defaultPrevented) return;
+      }
+
       // Custom Undo/Redo logic (Skip cursor movements)
       if (e.ctrlKey && e.key === 'z') {
         e.preventDefault();
@@ -412,6 +418,114 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock, canvasPan, c
   const mathFieldRef = useRef(null);
   const lastValue = useRef(0);
 
+  // Smart History and Autocomplete states
+  const [sessionHistory, setSessionHistory] = useState([]);
+  const [historyIdx, setHistoryIdx] = useState(-1);
+  const [autocompleteQuery, setAutocompleteQuery] = useState(null);
+  const [autocompleteIndex, setAutocompleteIndex] = useState(0);
+
+  const LATEX_AUTOCOMPLETE_SUGGESTIONS = useMemo(() => [
+    { label: 'Fração', cmd: '\\frac{?}{?}', display: '\\frac{a}{b}' },
+    { label: 'Raiz Quadrada', cmd: '\\sqrt{?}', display: '\\sqrt{x}' },
+    { label: 'Integral Definida', cmd: '\\int_{?}^{?}', display: '\\int_{a}^{b}' },
+    { label: 'Somatório', cmd: '\\sum_{?}^{?}', display: '\\sum_{i=1}^{n}' },
+    { label: 'Limite', cmd: '\\lim_{? \\to ?}', display: '\\lim_{x \\to x_0}' },
+    { label: 'Derivada', cmd: '\\frac{d}{d?}', display: '\\frac{d}{dx}' },
+    { label: 'Derivada Parcial', cmd: '\\frac{\\partial}{\\partial?}', display: '\\frac{\\partial}{\\partial x}' },
+    { label: 'Alfa', cmd: '\\alpha', display: '\\alpha' },
+    { label: 'Beta', cmd: '\\beta', display: '\\beta' },
+    { label: 'Theta', cmd: '\\theta', display: '\\theta' },
+    { label: 'Pi', cmd: '\\pi', display: '\\pi' },
+    { label: 'Delta', cmd: '\\Delta', display: '\\Delta' },
+    { label: 'Infinito', cmd: '\\infty', display: '\\infty' },
+    { label: 'Determinante', cmd: '\\det\\left( ? \\right)', display: '\\det(M)' },
+    { label: 'Seno', cmd: '\\sin\\left( ? \\right)', display: '\\sin(x)' },
+    { label: 'Cosseno', cmd: '\\cos\\left( ? \\right)', display: '\\cos(x)' }
+  ], []);
+
+  const filteredSuggestions = useMemo(() => {
+    if (autocompleteQuery === null) return [];
+    return LATEX_AUTOCOMPLETE_SUGGESTIONS.filter(s => 
+      s.cmd.toLowerCase().includes(autocompleteQuery.toLowerCase()) ||
+      s.label.toLowerCase().includes(autocompleteQuery.toLowerCase())
+    );
+  }, [autocompleteQuery, LATEX_AUTOCOMPLETE_SUGGESTIONS]);
+
+  const insertAutocomplete = useCallback((selected) => {
+    if (!mathFieldRef.current) return;
+    const mf = mathFieldRef.current;
+    const val = mf.value || '';
+    const match = val.match(/\\([a-zA-Z]*)$/);
+    
+    if (match) {
+      const prefix = val.substring(0, val.length - match[0].length);
+      mf.setValue(prefix);
+    }
+    
+    mf.insert(selected.cmd);
+    setAutocompleteQuery(null);
+    setAutocompleteIndex(0);
+    setTimeout(() => mf.focus(), 50);
+  }, []);
+
+  const handleMathKeyDown = useCallback((e) => {
+    if (autocompleteQuery !== null && filteredSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setAutocompleteIndex(prev => (prev + 1) % filteredSuggestions.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setAutocompleteIndex(prev => (prev - 1 + filteredSuggestions.length) % filteredSuggestions.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const selected = filteredSuggestions[autocompleteIndex];
+        insertAutocomplete(selected);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setAutocompleteQuery(null);
+        return;
+      }
+    }
+
+    if (e.key === 'ArrowUp') {
+      if (sessionHistory.length > 0) {
+        e.preventDefault();
+        const nextIdx = historyIdx === -1 ? sessionHistory.length - 1 : Math.max(0, historyIdx - 1);
+        setHistoryIdx(nextIdx);
+        const expr = sessionHistory[nextIdx];
+        setCalcInput(expr);
+        if (mathFieldRef.current) {
+          mathFieldRef.current.setValue(expr);
+        }
+      }
+    } else if (e.key === 'ArrowDown') {
+      if (sessionHistory.length > 0 && historyIdx !== -1) {
+        e.preventDefault();
+        if (historyIdx === sessionHistory.length - 1) {
+          setHistoryIdx(-1);
+          setCalcInput('');
+          if (mathFieldRef.current) {
+            mathFieldRef.current.setValue('');
+          }
+        } else {
+          const nextIdx = historyIdx + 1;
+          setHistoryIdx(nextIdx);
+          const expr = sessionHistory[nextIdx];
+          setCalcInput(expr);
+          if (mathFieldRef.current) {
+            mathFieldRef.current.setValue(expr);
+          }
+        }
+      }
+    }
+  }, [autocompleteQuery, filteredSuggestions, autocompleteIndex, sessionHistory, historyIdx, insertAutocomplete]);
+
 
   const handleInputChange = useCallback((val) => {
     const isDeletion = val.length < lastValue.current;
@@ -443,6 +557,15 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock, canvasPan, c
     setCalcInput(processed);
     if (processed !== val && mathFieldRef.current) {
       mathFieldRef.current.setValue(processed);
+    }
+
+    // Autocomplete backslash parsing
+    const match = processed.match(/\\([a-zA-Z]*)$/);
+    if (match) {
+      setAutocompleteQuery(match[1]);
+      setAutocompleteIndex(0);
+    } else {
+      setAutocompleteQuery(null);
     }
 
   }, [activeMode, graphFunctions]);
@@ -596,6 +719,13 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock, canvasPan, c
       // Ensure the result is never just '0' if the engine returned something else
       const finalResult = String(evaluation.text || evaluation.value || '0');
       setCalcResult(finalResult);
+
+      // Cache expression to history
+      setSessionHistory(prev => {
+        if (prev[prev.length - 1] === currentInput) return prev;
+        return [...prev, currentInput];
+      });
+      setHistoryIdx(-1);
 
       // Auto-plot in Graph mode if we just defined something (f(x)=, a=, etc)
       if (activeMode === 'graph' && finalResult === '\\text{Definido.}') {
@@ -905,7 +1035,7 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock, canvasPan, c
   return ReactDOM.createPortal(
     <div className="fixed inset-0 z-[99999] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div
-        className={`w-full transition-all duration-700 bg-[#0d0d0f]/95 backdrop-blur-3xl rounded-[60px] border border-white/5 flex shadow-[0_100px_200px_rgba(0,0,0,1)] overflow-hidden animate-in zoom-in-95 pointer-events-auto ${activeMode === 'graph' || activeMode === 'matrix' ? 'max-w-[95vw] h-[92vh]' : 'max-w-[1100px] max-h-[90vh]'}`}
+        className={`w-full transition-all duration-700 bg-[#0d0d0f]/95 backdrop-blur-3xl rounded-[60px] border border-white/5 flex shadow-[0_100px_200px_rgba(0,0,0,1)] overflow-hidden animate-in zoom-in-95 pointer-events-auto ${activeMode === 'graph' || activeMode === 'matrix' || activeMode === 'calculus' ? 'max-w-[95vw] h-[92vh]' : 'max-w-[1100px] max-h-[90vh]'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <ModeRail activeMode={activeMode} setMode={setActiveMode} />
@@ -937,8 +1067,8 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock, canvasPan, c
             </div>
           </div>
 
-          <div className={`flex h-full overflow-hidden transition-all duration-200 ${activeMode === 'graph' || activeMode === 'matrix' ? 'gap-6' : 'gap-10'}`}>
-            <div className={`flex flex-col transition-all duration-700 ${(activeMode === 'graph' || activeMode === 'matrix' || isMemorySidebarOpen) ? 'w-[400px] min-w-[400px]' : 'flex-1'}`}>
+          <div className={`flex h-full overflow-hidden transition-all duration-200 ${activeMode === 'graph' || activeMode === 'matrix' || activeMode === 'calculus' ? 'gap-6' : 'gap-10'}`}>
+            <div className={`flex flex-col transition-all duration-700 ${(activeMode === 'graph' || activeMode === 'matrix' || activeMode === 'calculus' || isMemorySidebarOpen) ? 'w-[400px] min-w-[400px]' : 'flex-1'}`}>
 
               {/* SCROLLABLE CONTENT ZONE (LCD + RESULT) */}
               <div className="flex-none overflow-y-auto custom-scrollbar pr-2 mb-4 flex flex-col gap-4">
@@ -951,7 +1081,27 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock, canvasPan, c
                     isAllSelected={isAllSelected}
                     onUndo={handleUndo}
                     onRedo={handleRedo}
+                    onKeyDown={handleMathKeyDown}
                   />
+
+                  {/* AUTOCOMPLETE POPULAR SEARCHES POPUP */}
+                  {autocompleteQuery !== null && filteredSuggestions.length > 0 && (
+                    <div className="bg-[#16161a]/95 border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-50 p-2 flex flex-col gap-1 max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in duration-200">
+                      {filteredSuggestions.map((s, idx) => (
+                        <button
+                          key={s.cmd}
+                          onClick={() => insertAutocomplete(s)}
+                          className={`w-full text-left px-3 py-2 rounded-xl text-[10px] font-bold flex items-center justify-between transition-all ${idx === autocompleteIndex ? 'bg-indigo-600 text-white' : 'hover:bg-white/5 text-white/50'}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-indigo-400">{s.display}</span>
+                            <span className="text-white/80 font-medium pl-2">{s.label}</span>
+                          </div>
+                          <span className="text-[8px] opacity-40 font-mono">{s.cmd}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {/* RESULT DISPLAY (MOSCARO) */}
                   <div className="w-full flex justify-end items-center px-10 py-6 bg-white/[0.03] rounded-[35px] border border-white/10 relative group/result min-h-[85px] shadow-inner-soft">
@@ -1332,7 +1482,9 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock, canvasPan, c
               />
             ) : activeMode === 'matrix' ? (
               <MatrixWorkspace canvasPan={canvasPan} canvasScale={canvasScale} />
-            ) : (isMemorySidebarOpen || activeMode === 'graph' || activeMode === 'matrix') ? (
+            ) : activeMode === 'calculus' ? (
+              <CalculusWorkspace canvasPan={canvasPan} canvasScale={canvasScale} />
+            ) : (isMemorySidebarOpen || activeMode === 'graph' || activeMode === 'matrix' || activeMode === 'calculus') ? (
               <div className="flex-1 h-full relative flex flex-col justify-center items-center opacity-20">
                 {/* Only show this placeholder if ONE of the sidebars is technically active or expected */}
                 <Calculator size={48} className="mb-4" />
@@ -1354,7 +1506,7 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock, canvasPan, c
               </div>
             )}
 
-            {!isMemorySidebarOpen && activeMode !== 'graph' && activeMode !== 'matrix' && (
+            {!isMemorySidebarOpen && activeMode !== 'graph' && activeMode !== 'matrix' && activeMode !== 'calculus' && (
               <button
                 onClick={() => setIsMemorySidebarOpen(true)}
                 className="absolute right-0 top-1/2 -translate-y-1/2 w-12 h-60 bg-white/[0.02] hover:bg-white/5 border-l border-y border-white/5 hover:border-indigo-500/40 rounded-l-3xl flex flex-col items-center justify-center gap-4 transition-all group z-50"

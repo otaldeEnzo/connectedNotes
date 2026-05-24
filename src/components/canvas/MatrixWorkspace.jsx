@@ -701,6 +701,39 @@ const MatrixWorkspace = ({ canvasPan, canvasScale }) => {
     });
   };
 
+  const handleCreateLinearTransformBlock = (m) => {
+    const zoom = canvasScale || 1;
+    const pan = canvasPan || { x: 0, y: 0 };
+    
+    const centerX = (-pan.x + (window.innerWidth / 2)) / zoom;
+    const centerY = (-pan.y + (window.innerHeight / 2)) / zoom;
+
+    const evaluated = getEvaluatedMatrix(m);
+    const aVal = evaluated[0] && evaluated[0][0] !== undefined ? parseFloat(evaluated[0][0]) : 1.0;
+    const bVal = evaluated[0] && evaluated[0][1] !== undefined ? parseFloat(evaluated[0][1]) : 0.0;
+    const cVal = evaluated[1] && evaluated[1][0] !== undefined ? parseFloat(evaluated[1][0]) : 0.0;
+    const dVal = evaluated[1] && evaluated[1][1] !== undefined ? parseFloat(evaluated[1][1]) : 1.0;
+
+    const generateUID = () => 'mat_' + Math.random().toString(36).substring(2, 7) + '_' + Date.now();
+    const transformBlock = {
+      id: generateUID(),
+      type: 'linear_transform',
+      x: centerX - 260,
+      y: centerY - 270,
+      width: 520,
+      height: 540,
+      matrixA: isNaN(aVal) ? 1.0 : aVal,
+      matrixB: isNaN(bVal) ? 0.0 : bVal,
+      matrixC: isNaN(cVal) ? 0.0 : cVal,
+      matrixD: isNaN(dVal) ? 1.0 : dVal,
+      customTitle: `Espaço Transf. de ${m.id}`,
+      color: '#8b5cf6'
+    };
+
+    const setMathBlocks = useCanvasStore.getState().setMathBlocks;
+    setMathBlocks(prev => [...prev, transformBlock]);
+  };
+
   // ----------------------------------------------------
   // EXPORT TO NOTE: Spawns connected flowchart blocks
   // ----------------------------------------------------
@@ -1251,6 +1284,15 @@ const MatrixWorkspace = ({ canvasPan, canvasScale }) => {
                 >
                   Aleat.
                 </button>
+                {m.rows === 2 && m.cols === 2 && (
+                  <button
+                    onClick={() => handleCreateLinearTransformBlock(m)}
+                    className="h-6 px-2 rounded-md bg-violet-600/20 border border-violet-500/30 text-violet-300 hover:bg-violet-600/30 text-[8px] font-black uppercase tracking-widest transition-all"
+                    title="Visualizar Transformação Linear 2D no Canvas"
+                  >
+                    Espaço 2D
+                  </button>
+                )}
               </div>
 
               {matrices.length > 1 && (

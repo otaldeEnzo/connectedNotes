@@ -19,6 +19,7 @@ import {
   LineChart,
   ChevronUp,
   ChevronDown,
+  Sparkles,
 } from "lucide-react";
 import "katex/dist/katex.min.css";
 import { InlineMath } from "react-katex";
@@ -49,6 +50,7 @@ export const ModeRail = ({ activeMode, setMode }) => {
     { id: "graph", icon: LineChart, label: "Gráfico" },
     { id: "table", icon: FunctionSquare, label: "Tabela" },
     { id: "equation", icon: ChevronRight, label: "Equação" },
+    { id: "calculus", icon: Sparkles, label: "Passo a Passo" },
     { id: "spreadsheet", icon: Search, label: "Planilha" },
   ];
 
