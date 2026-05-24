@@ -477,6 +477,468 @@ export const MathService = {
             .replace(/\s/g, ''); // Remove spaces
 
         return clean;
+    },
+
+    /**
+     * Helper to evaluate a dynamic matrix cell values into a purely numeric matrix.
+     */
+    evaluateNumericMatrix(matrixData) {
+        if (!Array.isArray(matrixData)) return [];
+        return matrixData.map(row => row.map(val => {
+            if (val === '' || val === undefined || val === null) return 0;
+            try {
+                const evaluated = math.evaluate(String(val));
+                if (typeof evaluated === 'number') return evaluated;
+                if (evaluated && evaluated.isComplex) return evaluated.re;
+                if (evaluated && evaluated.isFraction) return evaluated.valueOf();
+                const parsed = parseFloat(evaluated);
+                return isNaN(parsed) ? 0 : parsed;
+            } catch(e) {
+                const parsed = parseFloat(val);
+                return isNaN(parsed) ? 0 : parsed;
+            }
+        }));
+    },
+
+    /**
+     * Solves a linear system Ax = b using RREF and determines solution parameters.
+     */
+    solveLinearSystem(matrixA, vectorB) {
+        const A = this.evaluateNumericMatrix(matrixA);
+        const m = A.length;
+        const n = A[0].length;
+        
+        const b = vectorB.map(val => {
+            if (val === '' || val === undefined || val === null) return 0;
+            try {
+                const evaluated = math.evaluate(String(val));
+                if (typeof evaluated === 'number') return evaluated;
+                if (evaluated && evaluated.isFraction) return evaluated.valueOf();
+                return parseFloat(evaluated) || 0;
+            } catch(e) {
+                return parseFloat(val) || 0;
+            }
+        });
+        
+        const augmented = A.map((row, idx) => [...row, b[idx]]);
+        
+        const rrefSteps = this.computeRREFSteps(augmented);
+        if (rrefSteps.length === 0) {
+            return { status: 'none', solutionTex: '\\text{Erro ao calcular RREF.}', steps: [] };
+        }
+        
+        const R = rrefSteps[rrefSteps.length - 1].matrix;
+        
+        let isInconsistent = false;
+        for (let r = 0; r < m; r++) {
+            let coeffAllZero = true;
+            for (let c = 0; c < n; c++) {
+                if (Math.abs(R[r][c]) > 1e-9) {
+                    coeffAllZero = false;
+                    break;
+                }
+            }
+            if (coeffAllZero && Math.abs(R[r][n]) > 1e-9) {
+                isInconsistent = true;
+                break;
+            }
+        }
+        
+        if (isInconsistent) {
+            return {
+                status: 'none',
+                solutionTex: '\\text{Sem Solução (Sistema Inconsistente)}',
+                steps: rrefSteps,
+                augmentedRREF: R
+            };
+        }
+        
+        const pivotCols = [];
+        const rowOfPivot = [];
+        for (let r = 0; r < m; r++) {
+            let lead = -1;
+            for (let c = 0; c < n; c++) {
+                if (Math.abs(R[r][c] - 1) < 1e-9) {
+                    let allZerosBefore = true;
+                    for (let prev = 0; prev < c; prev++) {
+                        if (Math.abs(R[r][prev]) > 1e-9) allZerosBefore = false;
+                    }
+                    if (allZerosBefore) {
+                        lead = c;
+                        break;
+                    }
+                }
+            }
+            if (lead !== -1) {
+                pivotCols.push(lead);
+                rowOfPivot[lead] = r;
+            }
+        }
+        
+        const freeCols = Array.from({ length: n }, (_, idx) => idx).filter(c => !pivotCols.includes(c));
+        
+        if (freeCols.length === 0) {
+            const solVec = Array(n).fill(0);
+            const details = [];
+            for (let j = 0; j < n; j++) {
+                const r = rowOfPivot[j];
+                const val = r !== undefined ? R[r][n] : 0;
+                solVec[j] = Number(val.toFixed(4));
+                details.push(`x_{${j + 1}} = ${solVec[j]}`);
+            }
+            const tex = `\\begin{pmatrix} ${solVec.join(' \\\\ ')} \\end{pmatrix}`;
+            
+            return {
+                status: 'unique',
+                solutionTex: `\\mathbf{x} = ${tex} \\quad \\left( ${details.join(', ')} \\right)`,
+                steps: rrefSteps,
+                augmentedRREF: R,
+                solutionVector: solVec
+            };
+        } else {
+            const paramMap = {};
+            freeCols.forEach((f, idx) => {
+                paramMap[f] = `t_{${idx + 1}}`;
+            });
+            
+            const equations = [];
+            for (let j = 0; j < n; j++) {
+                if (pivotCols.includes(j)) {
+                    const r = rowOfPivot[j];
+                    const constantVal = R[r][n];
+                    let eq = '';
+                    if (Math.abs(constantVal) > 1e-9 || freeCols.length === 0) {
+                        eq += Number(constantVal.toFixed(4));
+                    }
+                    
+                    freeCols.forEach(f => {
+                        const coef = -R[r][f];
+                        if (Math.abs(coef) > 1e-9) {
+                            const sign = coef > 0 ? (eq ? ' + ' : '') : ' - ';
+                            const absCoef = Math.abs(coef);
+                            const coefStr = Math.abs(absCoef - 1) < 1e-9 ? '' : Number(absCoef.toFixed(4));
+                            eq += `${sign}${coefStr}${paramMap[f]}`;
+                        }
+                    });
+                    
+                    if (!eq) eq = '0';
+                    equations.push(`x_{${j + 1}} = ${eq}`);
+                } else {
+                    equations.push(`x_{${j + 1}} = ${paramMap[j]} \\quad (\\text{livre})`);
+                }
+            }
+            
+            const xpVec = Array(n).fill(0);
+            pivotCols.forEach(p => {
+                const r = rowOfPivot[p];
+                xpVec[p] = Number(R[r][n].toFixed(4));
+            });
+            
+            let tex = `\\mathbf{x} = ${this.matrixToLaTeX(xpVec)}`;
+            
+            freeCols.forEach((f, idx) => {
+                const v = Array(n).fill(0);
+                v[f] = 1;
+                pivotCols.forEach(p => {
+                    const r = rowOfPivot[p];
+                    v[p] = Number((-R[r][f]).toFixed(4));
+                });
+                
+                tex += ` + ${paramMap[f]} ${this.matrixToLaTeX(v)}`;
+            });
+            
+            return {
+                status: 'infinite',
+                solutionTex: `\\begin{aligned} &${tex} \\\\[8pt] &\\text{Soluções: } \\begin{cases} ${equations.join(' \\\\ ')} \\end{cases} \\end{aligned}`,
+                steps: rrefSteps,
+                augmentedRREF: R,
+                freeVariables: freeCols.length
+            };
+        }
+    },
+
+    /**
+     * Computes LU Decomposition A = P^T L U.
+     */
+    decomposeLU(matrixA) {
+        const A = this.evaluateNumericMatrix(matrixA);
+        const n = A.length;
+        if (n !== A[0].length) {
+            throw new Error("A decomposição LU exige uma matriz quadrada.");
+        }
+        
+        const res = math.lup(A);
+        const L_arr = res.L.isMatrix ? res.L.toArray() : res.L;
+        const U_arr = res.U.isMatrix ? res.U.toArray() : res.U;
+        const p_arr = res.p;
+        
+        const P_arr = Array.from({ length: n }, () => Array(n).fill(0));
+        p_arr.forEach((pVal, idx) => {
+            P_arr[idx][pVal] = 1;
+        });
+        
+        const cleanMatrix = (mat) => mat.map(row => row.map(val => Math.abs(val) < 1e-9 ? 0 : Number(val.toFixed(4))));
+        
+        return {
+            P: P_arr,
+            L: cleanMatrix(L_arr),
+            U: cleanMatrix(U_arr)
+        };
+    },
+
+    /**
+     * Computes QR Decomposition A = Q R.
+     */
+    decomposeQR(matrixA) {
+        const A = this.evaluateNumericMatrix(matrixA);
+        const m = A.length;
+        const n = A[0].length;
+        
+        const Q = Array.from({ length: m }, () => Array(n).fill(0));
+        const R = Array.from({ length: n }, () => Array(n).fill(0));
+        
+        for (let j = 0; j < n; j++) {
+            let v = Array.from({ length: m }, (_, i) => A[i][j]);
+            for (let i = 0; i < j; i++) {
+                let qi = Array.from({ length: m }, (_, r) => Q[r][i]);
+                let dot = qi.reduce((sum, qval, r) => sum + qval * A[r][j], 0);
+                R[i][j] = dot;
+                for (let r = 0; r < m; r++) {
+                    v[r] -= dot * qi[r];
+                }
+            }
+            let norm = Math.sqrt(v.reduce((sum, val) => sum + val * val, 0));
+            if (norm < 1e-9) {
+                R[j][j] = 0;
+                for (let r = 0; r < m; r++) Q[r][j] = 0;
+            } else {
+                R[j][j] = norm;
+                for (let r = 0; r < m; r++) {
+                    Q[r][j] = v[r] / norm;
+                }
+            }
+        }
+        
+        const cleanMatrix = (mat) => mat.map(row => row.map(val => Math.abs(val) < 1e-9 ? 0 : Number(val.toFixed(4))));
+        return { Q: cleanMatrix(Q), R: cleanMatrix(R) };
+    },
+
+    /**
+     * Computes Cholesky Decomposition A = L L^T.
+     */
+    decomposeCholesky(matrixA) {
+        const A = this.evaluateNumericMatrix(matrixA);
+        const n = A.length;
+        if (n !== A[0].length) {
+            throw new Error("A decomposição de Cholesky exige uma matriz quadrada.");
+        }
+        
+        for (let i = 0; i < n; i++) {
+            for (let j = 0; j < n; j++) {
+                if (Math.abs(A[i][j] - A[j][i]) > 1e-9) {
+                    throw new Error("A matriz de Cholesky deve ser simétrica.");
+                }
+            }
+        }
+        
+        const L = Array.from({ length: n }, () => Array(n).fill(0));
+        for (let i = 0; i < n; i++) {
+            for (let j = 0; j <= i; j++) {
+                let sum = 0;
+                for (let k = 0; k < j; k++) {
+                    sum += L[i][k] * L[j][k];
+                }
+                
+                if (i === j) {
+                    const val = A[i][i] - sum;
+                    if (val <= 0) {
+                        throw new Error("A matriz de Cholesky deve ser definida positiva.");
+                    }
+                    L[i][j] = Math.sqrt(val);
+                } else {
+                    L[i][j] = (A[i][j] - sum) / L[j][j];
+                }
+            }
+        }
+        
+        const cleanMatrix = (mat) => mat.map(row => row.map(val => Math.abs(val) < 1e-9 ? 0 : Number(val.toFixed(4))));
+        return { L: cleanMatrix(L) };
+    },
+
+    /**
+     * Computes Rank, Nullity, Column Space Basis and Null Space Basis (Kernel).
+     */
+    analyzeVectorSpace(matrixA) {
+        const A = this.evaluateNumericMatrix(matrixA);
+        const m = A.length;
+        const n = A[0].length;
+        
+        const rrefSteps = this.computeRREFSteps(A);
+        if (rrefSteps.length === 0) {
+            return { rank: 0, nullity: n, colSpaceBasis: [], nullSpaceBasis: [] };
+        }
+        
+        const R = rrefSteps[rrefSteps.length - 1].matrix;
+        
+        const pivotCols = [];
+        const rowOfPivot = [];
+        for (let r = 0; r < m; r++) {
+            let lead = -1;
+            for (let c = 0; c < n; c++) {
+                if (Math.abs(R[r][c] - 1) < 1e-9) {
+                    let allZerosBefore = true;
+                    for (let prev = 0; prev < c; prev++) {
+                        if (Math.abs(R[r][prev]) > 1e-9) allZerosBefore = false;
+                    }
+                    if (allZerosBefore) {
+                        lead = c;
+                        break;
+                    }
+                }
+            }
+            if (lead !== -1) {
+                pivotCols.push(lead);
+                rowOfPivot[lead] = r;
+            }
+        }
+        
+        const rank = pivotCols.length;
+        const nullity = n - rank;
+        
+        const colSpaceBasis = pivotCols.map(colIdx => {
+            return Array.from({ length: m }, (_, r) => Number(A[r][colIdx].toFixed(4)));
+        });
+        
+        const nullSpaceBasis = [];
+        if (nullity > 0) {
+            const freeCols = Array.from({ length: n }, (_, idx) => idx).filter(c => !pivotCols.includes(c));
+            
+            freeCols.forEach(f => {
+                const vec = Array(n).fill(0);
+                vec[f] = 1;
+                
+                pivotCols.forEach(p => {
+                    const r = rowOfPivot[p];
+                    vec[p] = -R[r][f];
+                });
+                
+                const cleanVec = vec.map(val => Math.abs(val) < 1e-9 ? 0 : Number(val.toFixed(4)));
+                nullSpaceBasis.push(cleanVec);
+            });
+        }
+        
+        return {
+            rank,
+            nullity,
+            colSpaceBasis,
+            nullSpaceBasis,
+            augmentedRREF: R
+        };
+    },
+
+    /**
+     * Parses a system of linear equations from strings and extracts A and b matrices.
+     */
+    parseLinearEquations(equationsStrings) {
+        if (!Array.isArray(equationsStrings) || equationsStrings.length === 0) {
+            throw new Error("Nenhuma equação fornecida.");
+        }
+
+        const equations = equationsStrings
+            .map(eq => eq.trim())
+            .filter(eq => eq !== '');
+
+        if (equations.length === 0) {
+            throw new Error("Nenhuma equação válida fornecida.");
+        }
+
+        const parsedExprs = [];
+        const variablesSet = new Set();
+        const ignoreSymbols = new Set(['pi', 'e', 'i', 'Infinity', 'NaN', 'true', 'false']);
+
+        equations.forEach((eq, idx) => {
+            let lhs = eq;
+            let rhs = '0';
+            if (eq.includes('=')) {
+                const parts = eq.split('=');
+                if (parts.length !== 2) {
+                    throw new Error(`Equação ${idx + 1} inválida: deve conter exatamente um caractere '='.`);
+                }
+                lhs = parts[0].trim();
+                rhs = parts[1].trim();
+            }
+
+            const normalExpr = `(${lhs}) - (${rhs})`;
+            let node;
+            try {
+                node = math.parse(normalExpr);
+            } catch (err) {
+                throw new Error(`Erro de sintaxe na Equação ${idx + 1}: ${err.message}`);
+            }
+
+            parsedExprs.push({ node, exprStr: normalExpr, index: idx + 1 });
+
+            function findSymbols(n) {
+                if (n.type === 'SymbolNode') {
+                    if (!ignoreSymbols.has(n.name) && typeof math[n.name] === 'undefined') {
+                        variablesSet.add(n.name);
+                    }
+                }
+                n.forEach(findSymbols);
+            }
+            findSymbols(node);
+        });
+
+        const variables = Array.from(variablesSet).sort();
+        if (variables.length === 0) {
+            throw new Error("Nenhuma variável encontrada nas equações (ex: use x, y, z).");
+        }
+
+        const m = parsedExprs.length;
+        const n = variables.length;
+
+        const A = Array.from({ length: m }, () => Array(n).fill(0));
+        const b = Array(m).fill(0);
+
+        const zeroScope = {};
+        const oneScope = {};
+        variables.forEach(v => {
+            zeroScope[v] = 0;
+            oneScope[v] = 1;
+        });
+
+        parsedExprs.forEach((item, i) => {
+            let constEval;
+            try {
+                constEval = item.node.evaluate(zeroScope);
+                b[i] = -constEval;
+            } catch (err) {
+                throw new Error(`Erro ao avaliar a constante na Equação ${item.index}.`);
+            }
+
+            variables.forEach((v, j) => {
+                let deriv;
+                try {
+                    deriv = math.derivative(item.node, v);
+                } catch (err) {
+                    throw new Error(`Erro ao calcular a derivada na Equação ${item.index} para a variável ${v}.`);
+                }
+
+                const coefZero = deriv.evaluate(zeroScope);
+                const coefOne = deriv.evaluate(oneScope);
+
+                if (Math.abs(coefZero - coefOne) > 1e-9) {
+                    throw new Error(`A Equação ${item.index} não é linear para a variável ${v} (ex: evite potências ou multiplicações de variáveis).`);
+                }
+
+                A[i][j] = coefZero;
+            });
+        });
+
+        const cleanA = A.map(row => row.map(val => Math.abs(val) < 1e-9 ? 0 : Number(val.toFixed(4))));
+        const cleanB = b.map(val => Math.abs(val) < 1e-9 ? 0 : Number(val.toFixed(4)));
+
+        return { A: cleanA, b: cleanB, variables };
     }
 };
 
