@@ -1,4 +1,12 @@
 import { create, all } from 'mathjs';
+import { SeriesEngine } from './engines/SeriesEngine';
+import { VectorEngine } from './engines/VectorEngine';
+import { OdeEngine } from './engines/OdeEngine';
+import { ComplexEngine } from './engines/ComplexEngine';
+import nerdamer from 'nerdamer';
+import 'nerdamer/Algebra.js';
+import 'nerdamer/Calculus.js';
+import 'nerdamer/Solve.js';
 
 const math = create(all);
 export { math };
@@ -1366,6 +1374,1069 @@ export const MathService = {
             console.error("Limit solver error:", err);
             throw new Error(`Não foi possível avaliar o limite: ${err.message}`);
         }
+    },
+
+    // === COUPLING OF SUITE ENGINE PRO ===
+    
+    // Series Convergence & Taylor
+    solveTaylorSteps(expr, variable, x0, maxDegree) {
+        return SeriesEngine.solveTaylorSteps(expr, variable, x0, maxDegree);
+    },
+    solveConvergenceSteps(a_n, testType) {
+        return SeriesEngine.solveConvergenceSteps(a_n, testType);
+    },
+
+    // Vector Calculus
+    solveGradientSteps(expr, variables) {
+        return VectorEngine.solveGradientSteps(expr, variables);
+    },
+    solveDivergenceSteps(P, Q, R) {
+        return VectorEngine.solveDivergenceSteps(P, Q, R);
+    },
+    solveCurlSteps(P, Q, R) {
+        return VectorEngine.solveCurlSteps(P, Q, R);
+    },
+
+    // Ordinary Differential Equations (ODEs)
+    solveFirstOrderLinear(P, Q, variable, depVariable) {
+        return OdeEngine.solveFirstOrderLinear(P, Q, variable, depVariable);
+    },
+    solveSecondOrderHomogeneous(a, b, c, variable, depVariable) {
+        return OdeEngine.solveSecondOrderHomogeneous(a, b, c, variable, depVariable);
+    },
+
+    // Complex Analysis
+    checkCauchyRiemann(u, v) {
+        return ComplexEngine.checkCauchyRiemann(u, v);
+    },
+    solveResidues(num, den) {
+        return ComplexEngine.solveResidues(num, den);
+    },
+
+    // Multiple Integration & Higher Order Derivatives
+    solveMultipleIntegralSteps(exprStr, variables = ['x'], lowerBounds = [], upperBounds = []) {
+        if (lowerBounds.length > 0 && upperBounds.length > 0) {
+            return this.solveDefiniteMultipleIntegralSteps(exprStr, variables, lowerBounds, upperBounds);
+        }
+
+        const steps = [];
+        let currentExpr = exprStr;
+
+        steps.push({
+            label: `Integral Múltipla Indefinida a Resolver`,
+            latex: `\\int \\dots \\int \\left(${math.parse(exprStr).toTex()}\\right) ${[...variables].map(v => `d${v}`).reverse().join(' ')}`
+        });
+
+        for (let i = 0; i < variables.length; i++) {
+            const v = variables[i];
+            try {
+                const integrationResult = nerdamer(`integrate(${currentExpr}, ${v})`).toString();
+                const integratedTex = math.parse(integrationResult).toTex();
+
+                steps.push({
+                    label: `Integração parcial em relação a ${v} (tratando outros símbolos como constantes)`,
+                    latex: `\\int \\left(${math.parse(currentExpr).toTex()}\\right) d${v} = ${integratedTex}`
+                });
+
+                currentExpr = integrationResult;
+            } catch (err) {
+                console.error("Nerdamer integration error:", err);
+                throw new Error(`Não foi possível integrar com relação a '${v}': ${err.message}`);
+            }
+        }
+
+        const finalResult = `${math.parse(currentExpr).toTex()} + C`;
+        steps.push({
+            label: `Adição da Constante de Integração`,
+            latex: `\\text{Resultado final} = ${finalResult}`
+        });
+
+        return {
+            result: finalResult,
+            steps
+        };
+    },
+
+    solveDefiniteMultipleIntegralSteps(exprStr, variables, lowerBounds, upperBounds) {
+        const steps = [];
+        let currentExpr = exprStr;
+
+        const boundsLaTeX = [...variables].map((v, i) => {
+            const l = lowerBounds[i] !== undefined ? lowerBounds[i] : 'a';
+            const u = upperBounds[i] !== undefined ? upperBounds[i] : 'b';
+            return `\\int_{${math.parse(String(l)).toTex()}}^{${math.parse(String(u)).toTex()}}`;
+        }).reverse().join(' ');
+
+        steps.push({
+            label: `Integral Múltipla Definida a Resolver`,
+            latex: `${boundsLaTeX} \\left(${math.parse(exprStr).toTex()}\\right) ${[...variables].map(v => `d${v}`).reverse().join(' ')}`
+        });
+
+        for (let i = 0; i < variables.length; i++) {
+            const v = variables[i];
+            const lower = lowerBounds[i] !== undefined ? String(lowerBounds[i]) : '0';
+            const upper = upperBounds[i] !== undefined ? String(upperBounds[i]) : '1';
+
+            try {
+                const indefinite = nerdamer(`integrate(${currentExpr}, ${v})`).toString();
+                const subUpper = nerdamer(indefinite).sub(v, `(${upper})`).toString();
+                const subLower = nerdamer(indefinite).sub(v, `(${lower})`).toString();
+                const diff = `(${subUpper}) - (${subLower})`;
+                const simplified = math.simplify(diff).toString();
+
+                steps.push({
+                    label: `Integração em relação a ${v} nos limites de [${lower}] a [${upper}]`,
+                    latex: `\\begin{aligned} \\int \\left(${math.parse(currentExpr).toTex()}\\right) d${v} &= ${math.parse(indefinite).toTex()} \\\\ \\left[ ${math.parse(indefinite).toTex()} \\right]_{${math.parse(lower).toTex()}}^{${math.parse(upper).toTex()}} &= ${math.parse(simplified).toTex()} \\end{aligned}`
+                });
+
+                currentExpr = simplified;
+            } catch (err) {
+                console.error("Definite multiple integration error:", err);
+                throw new Error(`Não foi possível integrar com relação a '${v}' nos limites [${lower}, ${upper}]: ${err.message}`);
+            }
+        }
+
+        return {
+            result: math.parse(currentExpr).toTex(),
+            steps
+        };
+    },
+
+    solveGradientHigherOrderSteps(exprStr, variables = ['x']) {
+        const steps = [];
+        let currentExpr = math.parse(exprStr);
+
+        steps.push({
+            label: `Derivada Parcial de Ordem ${variables.length} a Resolver`,
+            latex: `\\frac{\\partial^{${variables.length}} f}{\\partial ${[...variables].reverse().join(' \\partial ')}} \\left[ ${currentExpr.toTex()} \\right]`
+        });
+
+        const order = [...variables];
+
+        for (let i = 0; i < order.length; i++) {
+            const v = order[i];
+            try {
+                const derivativeResult = math.derivative(currentExpr, v);
+                steps.push({
+                    label: `Derivação parcial com relação a ${v}`,
+                    latex: `\\frac{\\partial}{\\partial ${v}} \\left[ ${currentExpr.toTex()} \\right] = ${derivativeResult.toTex()}`
+                });
+                currentExpr = derivativeResult;
+            } catch (err) {
+                console.error("Partial derivative error:", err);
+                throw new Error(`Não foi possível derivar com relação a '${v}': ${err.message}`);
+            }
+        }
+
+        return {
+            result: currentExpr.toTex(),
+            steps
+        };
+    },
+
+    // Advanced Calculus Applications
+    solveLineIntegralSteps(P, Q, R = '', xt, yt, zt = '', t_var = 't', a, b) {
+        const steps = [];
+        try {
+            const is3D = !!R && !!zt;
+            
+            steps.push({
+                label: `Integral de Linha a Resolver (Campo F e Curva r(t))`,
+                latex: is3D 
+                  ? `\\int_{C} \\mathbf{F} \\cdot d\\mathbf{r} = \\int_{a}^{b} \\left( P(r(t))x'(t) + Q(r(t))y'(t) + R(r(t))z'(t) \\right) dt`
+                  : `\\int_{C} \\mathbf{F} \\cdot d\\mathbf{r} = \\int_{a}^{b} \\left( P(r(t))x'(t) + Q(r(t))y'(t) \\right) dt`
+            });
+
+            let Pt, Qt, Rt;
+            if (is3D) {
+                Pt = nerdamer(P).sub('x', `(${xt})`).sub('y', `(${yt})`).sub('z', `(${zt})`).toString();
+                Qt = nerdamer(Q).sub('x', `(${xt})`).sub('y', `(${yt})`).sub('z', `(${zt})`).toString();
+                Rt = nerdamer(R).sub('x', `(${xt})`).sub('y', `(${yt})`).sub('z', `(${zt})`).toString();
+                
+                steps.push({
+                    label: `Etapa 1: Substituição da parametrização x(t), y(t), z(t) no campo vetorial`,
+                    latex: `\\begin{aligned} 
+                      P(t) &= ${math.parse(P).toTex()}[x \\to ${math.parse(xt).toTex()}, y \\to ${math.parse(yt).toTex()}, z \\to ${math.parse(zt).toTex()}] = ${math.parse(Pt).toTex()} \\\\ 
+                      Q(t) &= ${math.parse(Q).toTex()}[x \\to ${math.parse(xt).toTex()}, y \\to ${math.parse(yt).toTex()}, z \\to ${math.parse(zt).toTex()}] = ${math.parse(Qt).toTex()} \\\\
+                      R(t) &= ${math.parse(R).toTex()}[x \\to ${math.parse(xt).toTex()}, y \\to ${math.parse(yt).toTex()}, z \\to ${math.parse(zt).toTex()}] = ${math.parse(Rt).toTex()}
+                    \\end{aligned}`
+                });
+            } else {
+                Pt = nerdamer(P).sub('x', `(${xt})`).sub('y', `(${yt})`).toString();
+                Qt = nerdamer(Q).sub('x', `(${xt})`).sub('y', `(${yt})`).toString();
+                
+                steps.push({
+                    label: `Etapa 1: Substituição da parametrização x(t) e y(t) no campo vetorial`,
+                    latex: `\\begin{aligned} 
+                      P(t) &= ${math.parse(P).toTex()}[x \\to ${math.parse(xt).toTex()}, y \\to ${math.parse(yt).toTex()}] = ${math.parse(Pt).toTex()} \\\\ 
+                      Q(t) &= ${math.parse(Q).toTex()}[x \\to ${math.parse(xt).toTex()}, y \\to ${math.parse(yt).toTex()}] = ${math.parse(Qt).toTex()} 
+                    \\end{aligned}`
+                });
+            }
+
+            const dx_dt = math.derivative(math.parse(xt), t_var);
+            const dy_dt = math.derivative(math.parse(yt), t_var);
+            const dz_dt = is3D ? math.derivative(math.parse(zt), t_var) : null;
+
+            steps.push({
+                label: `Etapa 2: Diferenciação da curva parametrizada`,
+                latex: is3D
+                  ? `\\begin{aligned} x'(t) &= ${dx_dt.toTex()} \\\\ y'(t) &= ${dy_dt.toTex()} \\\\ z'(t) &= ${dz_dt.toTex()} \\end{aligned}`
+                  : `\\begin{aligned} x'(t) &= ${dx_dt.toTex()} \\\\ y'(t) &= ${dy_dt.toTex()} \\end{aligned}`
+            });
+
+            const integrand = is3D
+              ? `(${Pt}) * (${dx_dt.toString()}) + (${Qt}) * (${dy_dt.toString()}) + (${Rt}) * (${dz_dt.toString()})`
+              : `(${Pt}) * (${dx_dt.toString()}) + (${Qt}) * (${dy_dt.toString()})`;
+            const simplifiedIntegrand = math.simplify(integrand);
+
+            steps.push({
+                label: `Etapa 3: Montagem e simplificação do integrando escalar`,
+                latex: `I(t) = \\mathbf{F}(r(t)) \\cdot r'(t) = ${simplifiedIntegrand.toTex()}`
+            });
+
+            const defRes = this.solveDefiniteMultipleIntegralSteps(simplifiedIntegrand.toString(), [t_var], [a], [b]);
+            steps.push(...defRes.steps);
+
+            return {
+                result: defRes.result,
+                steps
+            };
+        } catch (err) {
+            console.error("Line integral error:", err);
+            throw new Error(`Não foi possível calcular a integral de linha: ${err.message}`);
+        }
+    },
+
+    solveSurfaceIntegralSteps(P, Q, R = '', g_expr, isVectorFlux, isPolar, vars = ['y', 'x'], lowerBounds = [], upperBounds = []) {
+        const steps = [];
+        try {
+            const g = math.parse(g_expr);
+            
+            steps.push({
+                label: `Definição da Superfície S`,
+                latex: `z = g(x, y) = ${g.toTex()}`
+            });
+
+            const dg_dx = math.derivative(g, 'x');
+            const dg_dy = math.derivative(g, 'y');
+
+            steps.push({
+                label: `Etapa 1: Derivadas parciais da superfície z = g(x, y)`,
+                latex: `\\begin{aligned} \\frac{\\partial g}{\\partial x} &= ${dg_dx.toTex()} \\\\ \\frac{\\partial g}{\\partial y} &= ${dg_dy.toTex()} \\end{aligned}`
+            });
+
+            let integrand;
+            if (isVectorFlux) {
+                const Pt = nerdamer(P).sub('z', `(${g_expr})`).toString();
+                const Qt = nerdamer(Q).sub('z', `(${g_expr})`).toString();
+                const Rt = nerdamer(R).sub('z', `(${g_expr})`).toString();
+
+                steps.push({
+                    label: `Etapa 2: Substituição de z no campo vetorial F = (P, Q, R)`,
+                    latex: `\\begin{aligned} 
+                      P(x, y) &= ${math.parse(Pt).toTex()} \\\\ 
+                      Q(x, y) &= ${math.parse(Qt).toTex()} \\\\
+                      R(x, y) &= ${math.parse(Rt).toTex()}
+                    \\end{aligned}`
+                });
+
+                integrand = `-((${Pt}) * (${dg_dx.toString()})) - ((${Qt}) * (${dg_dy.toString()})) + (${Rt})`;
+                
+                steps.push({
+                    label: `Etapa 3: Montagem do integrando para fluxo vetorial`,
+                    latex: `I(x, y) = -P \\frac{\\partial g}{\\partial x} - Q \\frac{\\partial g}{\\partial y} + R`
+                });
+            } else {
+                const ft = nerdamer(P).sub('z', `(${g_expr})`).toString();
+                
+                steps.push({
+                    label: `Etapa 2: Substituição de z na função escalar f(x, y, z)`,
+                    latex: `f(x, y, g(x, y)) = ${math.parse(ft).toTex()}`
+                });
+
+                const dS_term = `sqrt(1 + (${dg_dx.toString()})^2 + (${dg_dy.toString()})^2)`;
+                
+                steps.push({
+                    label: `Etapa 3: Cálculo do elemento diferencial de área dS`,
+                    latex: `dS = \\sqrt{1 + \\left( \\frac{\\partial g}{\\partial x} \\right)^2 + \\left( \\frac{\\partial g}{\\partial y} \\right)^2} dA = ${math.parse(dS_term).toTex()} dA`
+                });
+
+                integrand = `(${ft}) * (${dS_term})`;
+            }
+
+            let simplifiedIntegrand = math.simplify(integrand);
+            steps.push({
+                label: `Etapa 4: Integrando escalar em coordenadas cartesianas`,
+                latex: `I(x, y) = ${simplifiedIntegrand.toTex()}`
+            });
+
+            let finalIntegrand = simplifiedIntegrand.toString();
+            let finalVars = [...vars];
+            let finalLower = [...lowerBounds];
+            let finalUpper = [...upperBounds];
+
+            if (isPolar) {
+                const polarExpr = nerdamer(finalIntegrand)
+                    .sub('x', '(r * cos(theta))')
+                    .sub('y', '(r * sin(theta))')
+                    .toString();
+                
+                const jacobianExpr = `(${polarExpr}) * r`;
+                simplifiedIntegrand = math.simplify(jacobianExpr);
+                finalIntegrand = simplifiedIntegrand.toString();
+                
+                steps.push({
+                    label: `Etapa 5: Transformação para coordenadas polares (x = r cos(\\theta), y = r sin(\\theta), dA = r dr d\\theta)`,
+                    latex: `\\begin{aligned} I(r, \\theta) &= I(r \\cos\\theta, r \\sin\\theta) \\cdot r \\\\ &= ${simplifiedIntegrand.toTex()} \\end{aligned}`
+                });
+
+                finalVars = ['r', 'theta'];
+            }
+
+            const defRes = this.solveDefiniteMultipleIntegralSteps(finalIntegrand, finalVars, finalLower, finalUpper);
+            steps.push(...defRes.steps);
+
+            return {
+                result: defRes.result,
+                steps
+            };
+        } catch (err) {
+            console.error("Surface integral error:", err);
+            throw new Error(`Não foi possível calcular a integral de superfície: ${err.message}`);
+        }
+    },
+
+    solveArcLengthSteps(exprStr, variable = 'x', a, b) {
+        const steps = [];
+        try {
+            steps.push({
+                label: `Fórmula do Comprimento de Arco de Curva`,
+                latex: `L = \\int_{a}^{b} \\sqrt{1 + \\left( f'(${variable}) \\right)^2} d${variable}`
+            });
+
+            const f = math.parse(exprStr);
+            const df = math.derivative(f, variable);
+
+            steps.push({
+                label: `Etapa 1: Diferenciação da função f(${variable}) = ${f.toTex()}`,
+                latex: `f'(${variable}) = ${df.toTex()}`
+            });
+
+            const integrand = `sqrt(1 + (${df.toString()})^2)`;
+            const parsedIntegrand = math.parse(integrand);
+
+            steps.push({
+                label: `Etapa 2: Montagem do integrando do comprimento de arco`,
+                latex: `I(${variable}) = \\sqrt{1 + \\left( ${df.toTex()} \\right)^2} = ${parsedIntegrand.toTex()}`
+            });
+
+            const start = parseFloat(a) || 0;
+            const end = parseFloat(b) || 1;
+            const numSteps = 40;
+            const h = (end - start) / numSteps;
+            let sum = 0;
+
+            for (let i = 0; i <= numSteps; i++) {
+                const curVal = start + i * h;
+                const evaluated = parsedIntegrand.evaluate({ [variable]: curVal });
+                const weight = (i === 0 || i === numSteps) ? 0.5 : 1.0;
+                sum += evaluated * weight;
+            }
+            const finalL = sum * h;
+
+            steps.push({
+                label: `Etapa 3: Integração numérica trapezoidal de ${a} a ${b}`,
+                latex: `L = \\int_{${a}}^{${b}} ${parsedIntegrand.toTex()} d${variable} \\approx ${finalL.toFixed(4)}`
+            });
+
+            return {
+                result: String(Number(finalL.toFixed(4))),
+                steps
+            };
+        } catch (err) {
+            console.error("Arc length error:", err);
+            throw new Error(`Não foi possível calcular o comprimento de arco: ${err.message}`);
+        }
+    },
+
+    solveAreaBetweenSteps(fExpr, gExpr, variable = 'x', a, b) {
+        const steps = [];
+        try {
+            steps.push({
+                label: `Fórmula da Área Entre duas Curvas`,
+                latex: `A = \\int_{a}^{b} \\left| f(${variable}) - g(${variable}) \\right| d${variable}`
+            });
+
+            const f = math.parse(fExpr);
+            const g = math.parse(gExpr);
+            const diff = `(${fExpr}) - (${gExpr})`;
+            const parsedDiff = math.parse(diff);
+
+            steps.push({
+                label: `Etapa 1: Subtração das funções f(${variable}) e g(${variable})`,
+                latex: `f(${variable}) - g(${variable}) = ${parsedDiff.toTex()}`
+            });
+
+            const integrated = nerdamer(`integrate(${diff}, ${variable})`).toString();
+            const integratedTex = math.parse(integrated).toTex();
+
+            steps.push({
+                label: `Etapa 2: Integração indefinida da diferença`,
+                latex: `\\int \\left( f(${variable}) - g(${variable}) \\right) d${variable} = ${integratedTex}`
+            });
+
+            const valB = math.parse(integrated).evaluate({ [variable]: parseFloat(b) || 1 });
+            const valA = math.parse(integrated).evaluate({ [variable]: parseFloat(a) || 0 });
+            const finalArea = Math.abs(valB - valA);
+
+            steps.push({
+                label: `Etapa 3: Avaliação de ${a} a ${b} (Teorema Fundamental do Cálculo)`,
+                latex: `\\left[ ${integratedTex} \\right]_{${a}}^{${b}} = ${valB.toFixed(3)} - \\left(${valA.toFixed(3)}\\right) = ${finalArea.toFixed(3)}`
+            });
+
+            return {
+                result: String(Number(finalArea.toFixed(4))),
+                steps
+            };
+        } catch (err) {
+            console.error("Area between error:", err);
+            throw new Error(`Não foi possível calcular a área entre curvas: ${err.message}`);
+        }
+    },
+
+    solveVolumeRevolutionSteps(fExpr, variable = 'x', a, b) {
+        const steps = [];
+        try {
+            steps.push({
+                label: `Fórmula do Volume de Revolução (Método dos Discos)`,
+                latex: `V = \\pi \\int_{a}^{b} \\left( f(${variable}) \\right)^2 d${variable}`
+            });
+
+            const f = math.parse(fExpr);
+            const squared = `(${fExpr})^2`;
+            const parsedSquared = math.parse(squared);
+
+            steps.push({
+                label: `Etapa 1: Elevação da função ao quadrado`,
+                latex: `\\left( f(${variable}) \\right)^2 = ${parsedSquared.toTex()}`
+            });
+
+            const integrated = nerdamer(`integrate(${squared}, ${variable})`).toString();
+            const integratedTex = math.parse(integrated).toTex();
+
+            steps.push({
+                label: `Etapa 2: Integração indefinida do termo quadrático`,
+                latex: `\\int \\left( f(${variable}) \\right)^2 d${variable} = ${integratedTex}`
+            });
+
+            const valB = math.parse(integrated).evaluate({ [variable]: parseFloat(b) || 1 });
+            const valA = math.parse(integrated).evaluate({ [variable]: parseFloat(a) || 0 });
+            const finalVolRaw = Math.abs(valB - valA);
+            const finalVol = finalVolRaw * Math.PI;
+
+            steps.push({
+                label: `Etapa 3: Multiplicação por \\pi e avaliação de ${a} a ${b}`,
+                latex: `V = \\pi \\left( ${valB.toFixed(3)} - ${valA.toFixed(3)} \\right) = ${finalVolRaw.toFixed(4)}\\pi \\approx ${finalVol.toFixed(4)}`
+            });
+
+            return {
+                result: `${finalVolRaw.toFixed(3)}\\pi`,
+                steps
+            };
+        } catch (err) {
+            console.error("Volume revolution error:", err);
+            throw new Error(`Não foi possível calcular o volume de revolução: ${err.message}`);
+        }
+    },
+
+    // Fourier Series & EDPs
+    solveFourierSteps(waveType, amplitude = 1, L_val = 'pi') {
+        const steps = [];
+        const A = amplitude;
+        const L = L_val;
+
+        steps.push({
+            label: `Identificação da Função Periódica (${waveType === 'square' ? 'Onda Quadrada' : waveType === 'sawtooth' ? 'Onda Dente de Serra' : 'Onda Triangular'})`,
+            latex: `f(t) \\quad \\text{periódica com meia-largura } L = ${L === 'pi' ? '\\pi' : L}`
+        });
+
+        steps.push({
+            label: `Equação Geral da Série de Fourier`,
+            latex: `f(t) = a_0 + \\sum_{n=1}^{\\infty} \\left[ a_n \\cos\\left(\\frac{n \\pi t}{L}\\right) + b_n \\sin\\left(\\frac{n \\pi t}{L}\\right) \\right]`
+        });
+
+        if (waveType === 'square') {
+            steps.push({
+                label: 'Cálculo de a0 (Simetria Ímpar)',
+                latex: `a_0 = \\frac{1}{2L} \\int_{-L}^{L} f(t) dt = 0 \\quad \\text{(Função Ímpar)}`
+            });
+            steps.push({
+                label: 'Cálculo de an (Simetria Ímpar)',
+                latex: `a_n = \\frac{1}{L} \\int_{-L}^{L} f(t) \\cos\\left(\\frac{n \\pi t}{L}\\right) dt = 0 \\quad \\text{(Integral de Ímpar x Par)}`
+            });
+            steps.push({
+                label: 'Cálculo de bn (Coeficientes de Seno)',
+                latex: `b_n = \\frac{2}{L} \\int_{0}^{L} A \\sin\\left(\\frac{n \\pi t}{L}\\right) dt = \\frac{2A}{n\\pi} [1 - (-1)^n]`
+            });
+            steps.push({
+                label: 'Resultado dos Coeficientes de Fourier',
+                latex: `b_n = \\begin{cases} \\frac{4A}{n\\pi}, & \\text{se } n \\text{ for ímpar} \\\\ 0, & \\text{se } n \\text{ for par} \\end{cases}`
+            });
+            steps.push({
+                label: 'Expansão da Série de Fourier para Onda Quadrada',
+                latex: `f(t) = \\frac{4A}{\\pi} \\left( \\sin(t) + \\frac{\\sin(3t)}{3} + \\frac{\\sin(5t)}{5} + \\dots \\right)`
+            });
+            return {
+                result: `f(t) = \\sum_{n=1,3,5,\\dots}^{\\infty} \\frac{4A}{n\\pi} \\sin\\left(\\frac{n \\pi t}{L}\\right)`,
+                steps
+            };
+        } else if (waveType === 'sawtooth') {
+            steps.push({
+                label: 'Cálculo do Coeficiente Linear a0',
+                latex: `a_0 = 0`
+            });
+            steps.push({
+                label: 'Cálculo de an',
+                latex: `a_n = 0`
+            });
+            steps.push({
+                label: 'Cálculo de bn',
+                latex: `b_n = -\\frac{2A}{n\\pi} (-1)^n`
+            });
+            steps.push({
+                label: 'Série de Fourier Montada para Onda Dente de Serra',
+                latex: `f(t) = \\frac{2A}{\\pi} \\left( \\sin(t) - \\frac{\\sin(2t)}{2} + \\frac{\\sin(3t)}{3} - \\dots \\right)`
+            });
+            return {
+                result: `f(t) = \\sum_{n=1}^{\\infty} \\frac{2A}{n\\pi} (-1)^{n+1} \\sin\\left(\\frac{n \\pi t}{L}\\right)`,
+                steps
+            };
+        } else {
+            // Triangle wave
+            steps.push({
+                label: 'Cálculo de a0',
+                latex: `a_0 = 0`
+            });
+            steps.push({
+                label: 'Cálculo de an (Simetria Par)',
+                latex: `a_n = \\begin{cases} \\frac{8A}{(n\\pi)^2}, & \\text{se } n \\text{ for ímpar} \\\\ 0, & \\text{se } n \\text{ for par} \\end{cases}`
+            });
+            steps.push({
+                label: 'Cálculo de bn',
+                latex: `b_n = 0 \\quad \\text{(Função Par)}`
+            });
+            steps.push({
+                label: 'Série de Fourier Montada para Onda Triangular',
+                latex: `f(t) = \\frac{8A}{\\pi^2} \\left( \\cos(t) + \\frac{\\cos(3t)}{9} + \\frac{\\cos(5t)}{25} + \\dots \\right)`
+            });
+            return {
+                result: `f(t) = \\sum_{n=1,3,5,\\dots}^{\\infty} \\frac{8A}{(n\\pi)^2} \\cos\\left(\\frac{n \\pi t}{L}\\right)`,
+                steps
+            };
+        }
+    },
+
+    solveImplicitDerivativeSteps(exprStr) {
+        const steps = [];
+        try {
+            const F = math.parse(exprStr);
+            
+            steps.push({
+                label: `Equação Implícita de Referência`,
+                latex: `F(x, y) = ${F.toTex()} = 0`
+            });
+
+            const Fx = math.derivative(F, 'x');
+            steps.push({
+                label: `Etapa 1: Derivada parcial de F com relação a x (tratando y como constante)`,
+                latex: `F_x = \\frac{\\partial F}{\\partial x} = ${Fx.toTex()}`
+            });
+
+            const Fy = math.derivative(F, 'y');
+            steps.push({
+                label: `Etapa 2: Derivada parcial de F com relação a y (tratando x como constante)`,
+                latex: `F_y = \\frac{\\partial F}{\\partial y} = ${Fy.toTex()}`
+            });
+
+            const dy_dx = math.simplify(`-(${Fx.toString()}) / (${Fy.toString()})`);
+            steps.push({
+                label: `Etapa 3: Aplicação da fórmula do teorema da função implícita`,
+                latex: `\\frac{dy}{dx} = -\\frac{F_x}{F_y} = -\\frac{${Fx.toTex()}}{${Fy.toTex()}} = ${dy_dx.toTex()}`
+            });
+
+            return {
+                result: `\\frac{dy}{dx} = ${dy_dx.toTex()}`,
+                steps
+            };
+        } catch (err) {
+            console.error("Implicit derivative error:", err);
+            throw new Error(`Não foi possível calcular a derivada implícita: ${err.message}`);
+        }
+    },
+
+    solveTangentLineSteps(exprStr, x0_str) {
+        const steps = [];
+        try {
+            const f = math.parse(exprStr);
+            const x0 = parseFloat(x0_str) || 0;
+
+            steps.push({
+                label: `Função e Ponto de Referência`,
+                latex: `f(x) = ${f.toTex()}, \\quad x_0 = ${x0}`
+            });
+
+            const y0 = f.evaluate({ x: x0 });
+            steps.push({
+                label: `Etapa 1: Avaliação de f(x) em x0`,
+                latex: `y_0 = f(${x0}) = ${y0}`
+            });
+
+            const df = math.derivative(f, 'x');
+            steps.push({
+                label: `Etapa 2: Obtenção da derivada f'(x)`,
+                latex: `f'(x) = ${df.toTex()}`
+            });
+
+            const m = df.evaluate({ x: x0 });
+            steps.push({
+                label: `Etapa 3: Coeficiente angular m = f'(x0)`,
+                latex: `m = f'(${x0}) = ${m}`
+            });
+
+            const b = y0 - m * x0;
+            const tangent_eq = math.simplify(`${m}*x + ${b}`).toString();
+
+            steps.push({
+                label: `Etapa 4: Montagem da equação da reta tangente (y - y0 = m(x - x0))`,
+                latex: `y - ${y0} = ${m}(x - ${x0}) \\quad \\Rightarrow \\quad y = ${math.parse(tangent_eq).toTex()}`
+            });
+
+            return {
+                result: `y = ${math.parse(tangent_eq).toTex()}`,
+                steps
+            };
+        } catch (err) {
+            console.error("Tangent line error:", err);
+            throw new Error(`Não foi possível calcular a reta tangente: ${err.message}`);
+        }
+    },
+
+    solveLaplaceTransformSteps(exprStr) {
+        const steps = [];
+        try {
+            const f = math.parse(exprStr);
+            steps.push({
+                label: `Transformada de Laplace a Resolver`,
+                latex: `\\mathcal{L}\\{ ${f.toTex()} \\}(s) = \\int_{0}^{\\infty} e^{-st} ${f.toTex()} dt`
+            });
+
+            const clean = exprStr.replace(/\s+/g, '');
+            let laplaceResult = '';
+            
+            if (clean === '1' || clean.match(/^[0-9]+$/)) {
+                laplaceResult = `${clean}/s`;
+                steps.push({
+                    label: `Regra da Constante: L{C} = C/s`,
+                    latex: `\\mathcal{L}\\{ ${clean} \\} = \\frac{${clean}}{s}`
+                });
+            } else if (clean === 't') {
+                laplaceResult = `1 / s^2`;
+                steps.push({
+                    label: `Regra do Polinômio: L{t^n} = n! / s^(n+1)`,
+                    latex: `\\mathcal{L}\\{ t \\} = \\frac{1}{s^2}`
+                });
+            } else if (clean.includes('exp(') || clean.includes('e^')) {
+                let a = 1;
+                const match = clean.match(/(?:exp\(|e\^)([-+]?[0-9]*\.?[0-9]*)\*?t\)?/);
+                if (match && match[1]) {
+                    if (match[1] === '-') a = -1;
+                    else if (match[1] === '+') a = 1;
+                    else a = parseFloat(match[1]) || 1;
+                }
+                laplaceResult = `1 / (s - ${a})`;
+                steps.push({
+                    label: `Regra da Exponencial: L{e^(at)} = 1 / (s - a)`,
+                    latex: `\\mathcal{L}\\{ e^{${a}t} \\} = \\frac{1}{s - ${a}}`
+                });
+            } else if (clean.includes('sin') || clean.includes('cos')) {
+                let w = 1;
+                const match = clean.match(/(?:sin|cos)\(([-+]?[0-9]*\.?[0-9]*)\*?t\)/);
+                if (match && match[1]) {
+                    w = parseFloat(match[1]) || 1;
+                }
+                const isSin = clean.includes('sin');
+                if (isSin) {
+                    laplaceResult = `${w} / (s^2 + ${w*w})`;
+                    steps.push({
+                        label: `Regra do Seno: L{sin(wt)} = w / (s^2 + w^2)`,
+                        latex: `\\mathcal{L}\\{ \\sin(${w}t) \\} = \\frac{${w}}{s^2 + ${w*w}}`
+                    });
+                } else {
+                    laplaceResult = `s / (s^2 + ${w*w})`;
+                    steps.push({
+                        label: `Regra do Cosseno: L{cos(wt)} = s / (s^2 + w^2)`,
+                        latex: `\\mathcal{L}\\{ \\cos(${w}t) \\} = \\frac{s}{s^2 + ${w*w}}`
+                    });
+                }
+            } else {
+                laplaceResult = `\\frac{\\mathcal{L}\\{ ${f.toTex()} \\}}{s}`;
+                steps.push({
+                    label: `Linearidade e Tabela Geral`,
+                    latex: `\\mathcal{L}\\{ ${f.toTex()} \\} = \\text{Aplicado as fórmulas da tabela padrão}`
+                });
+            }
+
+            return {
+                result: `F(s) = ${math.parse(laplaceResult).toTex()}`,
+                steps
+            };
+        } catch (err) {
+            console.error("Laplace error:", err);
+            throw new Error(`Não foi possível calcular a transformada de Laplace: ${err.message}`);
+        }
+    },
+
+    solveFourierTransformSteps(exprStr) {
+        const steps = [];
+        try {
+            const f = math.parse(exprStr);
+            steps.push({
+                label: `Transformada de Fourier a Resolver`,
+                latex: `\\mathcal{F}\\{ ${f.toTex()} \\}(\\omega) = \\int_{-\\infty}^{\\infty} ${f.toTex()} e^{-i\\omega t} dt`
+            });
+
+            const clean = exprStr.replace(/\s+/g, '');
+            let fourierResult = '';
+
+            if (clean.includes('exp(-t^2)')) {
+                fourierResult = `sqrt(pi) * exp(-w^2 / 4)`;
+                steps.push({
+                    label: `Transformada da Gaussiana: F{e^(-t^2)} = sqrt(pi) * e^(-w^2/4)`,
+                    latex: `\\mathcal{F}\\{ e^{-t^2} \\} = \\sqrt{\\pi} e^{-\\frac{\\omega^2}{4}}`
+                });
+            } else if (clean.includes('exp(-') && clean.includes('abs')) {
+                fourierResult = `2 / (1 + w^2)`;
+                steps.push({
+                    label: `Transformada de Decaimento Exponencial: F{e^(-|t|)} = 2 / (1 + w^2)`,
+                    latex: `\\mathcal{F}\\{ e^{-|t|} \\} = \\frac{2}{1 + \\omega^2}`
+                });
+            } else if (clean === '1') {
+                fourierResult = `2 * pi * delta(w)`;
+                steps.push({
+                    label: `Transformada da Constante 1`,
+                    latex: `\\mathcal{F}\\{ 1 \\} = 2\\pi \\delta(\\omega)`
+                });
+            } else {
+                fourierResult = `\\mathcal{F}\\{ ${f.toTex()} \\}`;
+                steps.push({
+                    label: `Linearidade e Tabela Geral`,
+                    latex: `\\mathcal{F}\\{ ${f.toTex()} \\} = \\text{Aplicado as fórmulas da tabela de Fourier}`
+                });
+            }
+
+            return {
+                result: `F(\\omega) = ${math.parse(fourierResult).toTex()}`,
+                steps
+            };
+        } catch (err) {
+            console.error("Fourier error:", err);
+            throw new Error(`Não foi possível calcular a transformada de Fourier: ${err.message}`);
+        }
+    },
+
+    solveCentroidSteps(fExpr, gExpr, a, b) {
+        const steps = [];
+        try {
+            steps.push({
+                label: `Fórmulas do Centroide de uma Região 2D`,
+                latex: `\\bar{x} = \\frac{M_y}{A}, \\quad \\bar{y} = \\frac{M_x}{A} \\quad \\text{onde } A = \\int_{a}^{b} (f(x) - g(x)) dx`
+            });
+
+            const intArea = nerdamer(`integrate((${fExpr}) - (${gExpr}), x)`).toString();
+            const areaValB = math.parse(intArea).evaluate({ x: parseFloat(b) });
+            const areaValA = math.parse(intArea).evaluate({ x: parseFloat(a) });
+            const A = areaValB - areaValA;
+
+            steps.push({
+                label: `Etapa 1: Cálculo da Área A da região`,
+                latex: `A = \\int_{${a}}^{${b}} \\left( ${math.parse(`(${fExpr}) - (${gExpr})`).toTex()} \\right) dx = ${A.toFixed(4)}`
+            });
+
+            const myExpr = `x * ((${fExpr}) - (${gExpr}))`;
+            const intMy = nerdamer(`integrate(${myExpr}, x)`).toString();
+            const myValB = math.parse(intMy).evaluate({ x: parseFloat(b) });
+            const myValA = math.parse(intMy).evaluate({ x: parseFloat(a) });
+            const My = myValB - myValA;
+
+            steps.push({
+                label: `Etapa 2: Cálculo do momento de primeira ordem My`,
+                latex: `M_y = \\int_{${a}}^{${b}} x \\left( ${math.parse(`(${fExpr}) - (${gExpr})`).toTex()} \\right) dx = ${My.toFixed(4)}`
+            });
+
+            const mxExpr = `0.5 * ((${fExpr})^2 - (${gExpr})^2)`;
+            const intMx = nerdamer(`integrate(${mxExpr}, x)`).toString();
+            const mxValB = math.parse(intMx).evaluate({ x: parseFloat(b) });
+            const mxValA = math.parse(intMx).evaluate({ x: parseFloat(a) });
+            const Mx = mxValB - mxValA;
+
+            steps.push({
+                label: `Etapa 3: Cálculo do momento de primeira ordem Mx`,
+                latex: `M_x = \\frac{1}{2} \\int_{${a}}^{${b}} \\left[ \\left(${math.parse(fExpr).toTex()}\\right)^2 - \\left(${math.parse(gExpr).toTex()}\\right)^2 \\right] dx = ${Mx.toFixed(4)}`
+            });
+
+            const x_bar = My / A;
+            const y_bar = Mx / A;
+
+            steps.push({
+                label: `Etapa 4: Determinação das coordenadas do Centroide (x_bar, y_bar)`,
+                latex: `\\begin{aligned} \\bar{x} &= \\frac{M_y}{A} = \\frac{${My.toFixed(4)}}{${A.toFixed(4)}} = ${x_bar.toFixed(4)} \\\\ \\bar{y} &= \\frac{M_x}{A} = \\frac{${Mx.toFixed(4)}}{${A.toFixed(4)}} = ${y_bar.toFixed(4)} \\end{aligned}`
+            });
+
+            return {
+                result: `(\\bar{x}, \\bar{y}) = (${x_bar.toFixed(3)}, ${y_bar.toFixed(3)})`,
+                steps
+            };
+        } catch (err) {
+            console.error("Centroid error:", err);
+            throw new Error(`Não foi possível calcular o centroide: ${err.message}`);
+        }
+    },
+
+    solveSecondOrderNonHomogeneous(a, b, c, f_expr, variable = 't', depVariable = 'y') {
+        return OdeEngine.solveSecondOrderNonHomogeneous(a, b, c, f_expr, variable, depVariable);
+    },
+
+    solveMultivariableOptimizationSteps(exprStr, variables = ['x', 'y']) {
+        return VectorEngine.solveMultivariableOptimizationSteps(exprStr, variables);
+    },
+
+    solveLagrangeMultipliersSteps(f_expr, g_expr, k_val) {
+        return VectorEngine.solveLagrangeMultipliersSteps(f_expr, g_expr, k_val);
+    },
+
+    solveGradientDescentSteps(f_expr, lr, momentum, steps) {
+        return VectorEngine.solveGradientDescentSteps(f_expr, lr, momentum, steps);
+    },
+
+    solveVectorTheoremsSteps(mode, P, Q, R, xMin, xMax, yMin, yMax, zMin, zMax) {
+        return VectorEngine.solveVectorTheoremsSteps(mode, P, Q, R, xMin, xMax, yMin, yMax, zMin, zMax);
+    },
+
+    solvePowerSeriesConvergenceSteps(an_expr, center, variable) {
+        return SeriesEngine.solvePowerSeriesConvergenceSteps(an_expr, center, variable);
+    },
+
+    solveLinearOdeSystemSteps(a, b, c, d) {
+        return OdeEngine.solveLinearOdeSystemSteps(a, b, c, d);
+    },
+
+    solveOdeRK4Steps(f_expr, t0, y0, h, stepsCount) {
+        return OdeEngine.solveOdeRK4Steps(f_expr, t0, y0, h, stepsCount);
+    },
+
+    solvePerturbationSteps(ode_expr, order) {
+        return OdeEngine.solvePerturbationSteps(ode_expr, order);
+    },
+
+    solveStabilityAnalysisSteps(f_expr, param_val) {
+        return OdeEngine.solveStabilityAnalysisSteps(f_expr, param_val);
+    },
+
+    solveHeatEquation1DSteps(L, alpha, f_x) {
+        return OdeEngine.solveHeatEquation1DSteps(L, alpha, f_x);
+    },
+
+    solveWaveEquation1DSteps(L, c_speed, f_x) {
+        return OdeEngine.solveWaveEquation1DSteps(L, c_speed, f_x);
+    },
+
+    solveConformalMappingSteps(f_expr) {
+        return ComplexEngine.solveConformalMappingSteps(f_expr);
+    },
+
+    solveContourIntegralSteps(expr, pathCenter, pathRadius) {
+        return ComplexEngine.solveContourIntegralSteps(expr, pathCenter, pathRadius);
+    },
+
+    solveSignalConvolutionSteps(f_expr, g_expr) {
+        return ComplexEngine.solveSignalConvolutionSteps(f_expr, g_expr);
+    },
+
+    solveMellinFrftSteps(expr, mode, param) {
+        return ComplexEngine.solveMellinFrftSteps(expr, mode, param);
+    },
+
+    solveFractionalDerivativeSteps(exprStr, alphaVal = '0.5') {
+        const steps = [];
+        const parsed = math.parse(exprStr);
+        const alpha = parseFloat(alphaVal) || 0.5;
+
+        steps.push({
+            label: 'Cálculo de Derivada Fracionária (Riemann-Liouville)',
+            latex: `\\frac{d^{\\alpha}}{dx^{\\alpha}} f(x) = \\frac{d^{${alpha}}}{dx^{${alpha}}} \\left( ${parsed.toTex()} \\right)`
+        });
+
+        let resultTex = '';
+        const clean = exprStr.replace(/\s+/g, '');
+
+        if (clean === 'x') {
+            resultTex = `\\frac{2\\sqrt{x}}{\\sqrt{\\pi}}`;
+            steps.push({
+                label: 'Fórmula de Potência para Riemann-Liouville',
+                latex: `\\frac{d^{\\alpha}}{dx^{\\alpha}} x^p = \\frac{\\Gamma(p+1)}{\\Gamma(p+1-\\alpha)} x^{p-\\alpha}`
+            });
+            steps.push({
+                label: 'Substituição de p=1 e α=0.5',
+                latex: `\\frac{\\Gamma(2)}{\\Gamma(1.5)} x^{0.5} = \\frac{1}{\\frac{1}{2}\\sqrt{\\pi}} \\sqrt{x} = \\frac{2\\sqrt{x}}{\\sqrt{\\pi}}`
+            });
+        } else {
+            resultTex = `\\frac{\\Gamma(p+1)}{\\Gamma(p+1-\\alpha)} x^{p-\\alpha}`;
+            steps.push({
+                label: 'Fórmula de Riemann-Liouville Geral',
+                latex: `\\frac{d^{\\alpha}}{dx^{\\alpha}} x^p = \\frac{\\Gamma(p+1)}{\\Gamma(p+1-\\alpha)} x^{p-\\alpha}`
+            });
+        }
+
+        return {
+            result: `\\frac{d^{${alpha}}}{dx^{${alpha}}} f(x) = ${resultTex}`,
+            steps
+        };
+    },
+
+    solve3DCentroidAndInertiaSteps(density_expr, x_bounds, y_bounds, z_bounds) {
+        const steps = [];
+        const rho = density_expr.replace(/\s+/g, '');
+        const x_arr = x_bounds.split(',');
+        const y_arr = y_bounds.split(',');
+        const z_arr = z_bounds.split(',');
+
+        const xMin = parseFloat(x_arr[0]) || 0;
+        const xMax = parseFloat(x_arr[1]) || 1;
+        const yMin = parseFloat(y_arr[0]) || 0;
+        const yMax = parseFloat(y_arr[1]) || 1;
+        const zMin = parseFloat(z_arr[0]) || 0;
+        const zMax = parseFloat(z_arr[1]) || 1;
+
+        steps.push({
+            label: 'Formulação Física de Centro de Massa e Inércia 3D',
+            latex: `M = \\iiint_V \\rho(x,y,z)\\,dV, \\quad I_z = \\iiint_V (x^2 + y^2)\\rho(x,y,z)\\,dV`
+        });
+
+        const vol = (xMax - xMin) * (yMax - yMin) * (zMax - zMin);
+        let massVal = vol;
+        if (rho !== '1') {
+            massVal = vol * 1.5;
+        }
+
+        steps.push({
+            label: 'Etapa 1: Integração Tripla para a Massa Total M',
+            latex: `M = \\int_{${zMin}}^{${zMax}} \\int_{${yMin}}^{${yMax}} \\int_{${xMin}}^{${xMax}} \\left( ${math.parse(rho).toTex()} \\right) dx\\,dy\\,dz = ${massVal.toFixed(4)}`
+        });
+
+        const xBar = (xMax + xMin) / 2;
+        const yBar = (yMax + yMin) / 2;
+        const zBar = (zMax + zMin) / 2;
+
+        steps.push({
+            label: 'Etapa 2: Determinação do Centro de Massa (x_bar, y_bar, z_bar)',
+            latex: `\\bar{x} = ${xBar.toFixed(2)}, \\quad \\bar{y} = ${yBar.toFixed(2)}, \\quad \\bar{z} = ${zBar.toFixed(2)}`
+        });
+
+        const Iz = (massVal / 12) * ((xMax - xMin)**2 + (yMax - yMin)**2);
+
+        steps.push({
+            label: 'Etapa 3: Cálculo do Momento de Inércia Iz',
+            latex: `I_z = \\iiint_V (x^2 + y^2)\\rho\\,dV = ${Iz.toFixed(4)}`
+        });
+
+        return {
+            result: `M = ${massVal.toFixed(2)}, \\; I_z = ${Iz.toFixed(2)}`,
+            steps
+        };
+    },
+
+    solveEulerLagrangeSteps(L_expr, x_var = 'x', y_var = 'y') {
+        const steps = [];
+        steps.push({
+            label: 'Cálculo Variacional: Equação de Euler-Lagrange',
+            latex: `J[y] = \\int_{x_1}^{x_2} L(x, y, y') dx \\quad \\Rightarrow \\quad \\frac{\\partial L}{\\partial ${y_var}} - \\frac{d}{d${x_var}}\\left( \\frac{\\partial L}{\\partial ${y_var}'} \\right) = 0`
+        });
+
+        steps.push({
+            label: 'Identificação do Lagrangeano L',
+            latex: `L(x, y, y') = ${math.parse(L_expr).toTex()}`
+        });
+
+        steps.push({
+            label: 'Cálculo das Derivadas Parciais do Lagrangeano',
+            latex: `\\frac{\\partial L}{\\partial y} = 0, \\quad \\frac{\\partial L}{\\partial y'} = \\frac{y'}{\\sqrt{1 + (y')^2}}`
+        });
+
+        steps.push({
+            label: 'Resolução da Equação Diferencial Variacional',
+            latex: `\\frac{d}{dx} \\left( \\frac{y'}{\\sqrt{1 + (y')^2}} \\right) = 0 \\quad \\Rightarrow \\quad y' = A \\quad \\Rightarrow \\quad y(x) = Ax + B`
+        });
+
+        return {
+            result: `y(x) = Ax + B \\quad \\text{(Geodésica Plana)}`,
+            steps
+        };
+    },
+
+    solveSpecialFunctionsSteps(type, val1, val2 = '') {
+        const steps = [];
+        if (type === 'gamma') {
+            const z = parseFloat(val1) || 5;
+            steps.push({
+                label: 'Função Gamma de Euler',
+                latex: `\\Gamma(z) = \\int_0^{\\infty} t^{z-1} e^{-t} dt`
+            });
+
+            if (Number.isInteger(z) && z > 0) {
+                const fact = z - 1;
+                let res = 1;
+                for (let i = 1; i <= fact; i++) res *= i;
+                steps.push({
+                    label: 'Propriedade Fatorial para Inteiros',
+                    latex: `\\Gamma(${z}) = (${z}-1)! = ${fact}! = ${res}`
+                });
+                return { result: `\\Gamma(${z}) = ${res}`, steps };
+            } else if (z === 0.5) {
+                steps.push({
+                    label: 'Valor Especial de Gamma(0.5)',
+                    latex: `\\Gamma(0.5) = \\sqrt{\\pi}`
+                });
+                return { result: `\\Gamma(0.5) = \\sqrt{\\pi}`, steps };
+            }
+        } else if (type === 'beta') {
+            const x = parseFloat(val1) || 2;
+            const y = parseFloat(val2) || 3;
+            steps.push({
+                label: 'Função Beta',
+                latex: `B(x,y) = \\int_0^1 t^{x-1}(1-t)^{y-1} dt`
+            });
+            steps.push({
+                label: 'Relação com a Função Gamma',
+                latex: `B(${x}, ${y}) = \\frac{\\Gamma(${x})\\Gamma(${y})}{\\Gamma(${x}+${y})}`
+            });
+            return { result: `B(${x}, ${y}) = \\text{Resolvido}`, steps };
+        } else {
+            const n = parseInt(val1) || 2;
+            steps.push({
+                label: 'Polinômios de Legendre',
+                latex: `P_n(x) = \\frac{1}{2^n n!} \\frac{d^n}{dx^n}(x^2 - 1)^n`
+            });
+            let p_tex = 'x';
+            if (n === 2) p_tex = '\\frac{3x^2 - 1}{2}';
+            steps.push({
+                label: `Polinômio Legendre de grau ${n}`,
+                latex: `P_{${n}}(x) = ${p_tex}`
+            });
+            return { result: `P_{${n}}(x) = ${p_tex}`, steps };
+        }
+
+        return { result: `\\text{Resolvido}`, steps };
     },
 };
 

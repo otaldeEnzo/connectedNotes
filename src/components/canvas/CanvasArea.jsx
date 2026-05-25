@@ -15,6 +15,11 @@ import ImageBlock from './ImageBlock';
 import CodeBlock from './CodeBlock';
 import MathBlock from './MathBlock';
 import LinearTransformBlock from './LinearTransformBlock';
+import TaylorVisualizer from './visualizers/TaylorVisualizer';
+import VectorFieldVisualizer from './visualizers/VectorFieldVisualizer';
+import PhasePortraitVisualizer from './visualizers/PhasePortraitVisualizer';
+import ConformalVisualizer from './visualizers/ConformalVisualizer';
+import FourierVisualizer from './visualizers/FourierVisualizer';
 import GGBBlock from './GGBBlock';
 import MermaidBlock from './MermaidBlock';
 import MindmapBlock from './MindmapBlock';
@@ -2262,20 +2267,95 @@ const CanvasArea = forwardRef(({
         {imageBlocks.map(b => <ImageBlock key={b.id} block={b} activeTool={activeTool} updateBlock={(id, d) => updateAnyBlock('image', id, d)} onInteract={handleBlockInteract} removeBlock={removeAnyBlock} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {codeBlocks.map(b => <CodeBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('code', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {textBlocks.map(b => <TextBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('text', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
-        {mathBlocks.map(b => b.type === 'linear_transform' ? (
-          <LinearTransformBlock
-            key={b.id}
-            block={b}
-            updateBlock={(id, d) => updateAnyBlock('math', id, d)}
-            isDarkMode={isDarkMode}
-            onInteract={handleBlockInteract}
-            isDragging={selectedIds.includes(b.id) && isDraggingSelection}
-            canvasScale={scale}
-            canvasPan={position}
-          />
-        ) : (
-          <MathBlock key={b.id} block={b} apiKey={apiKey} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('math', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} onPlot={e => handleMathPlot(b, e)} onSolve={r => handleMathSolve(b, r)} onSteps={s => handleMathSteps(b, s)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />
-        ))}
+        {mathBlocks.map(b => {
+          if (b.type === 'linear_transform') {
+            return (
+              <LinearTransformBlock
+                key={b.id}
+                block={b}
+                updateBlock={(id, d) => updateAnyBlock('math', id, d)}
+                isDarkMode={isDarkMode}
+                onInteract={handleBlockInteract}
+                isDragging={selectedIds.includes(b.id) && isDraggingSelection}
+                canvasScale={scale}
+                canvasPan={position}
+              />
+            );
+          }
+          if (b.type === 'taylor_plot') {
+            return (
+              <TaylorVisualizer
+                key={b.id}
+                block={b}
+                updateBlock={(id, d) => updateAnyBlock('math', id, d)}
+                isDarkMode={isDarkMode}
+                onInteract={handleBlockInteract}
+                isDragging={selectedIds.includes(b.id) && isDraggingSelection}
+                canvasScale={scale}
+                canvasPan={position}
+              />
+            );
+          }
+          if (b.type === 'vector_field') {
+            return (
+              <VectorFieldVisualizer
+                key={b.id}
+                block={b}
+                updateBlock={(id, d) => updateAnyBlock('math', id, d)}
+                isDarkMode={isDarkMode}
+                onInteract={handleBlockInteract}
+                isDragging={selectedIds.includes(b.id) && isDraggingSelection}
+                canvasScale={scale}
+                canvasPan={position}
+              />
+            );
+          }
+          if (b.type === 'phase_portrait') {
+            return (
+              <PhasePortraitVisualizer
+                key={b.id}
+                block={b}
+                updateBlock={(id, d) => updateAnyBlock('math', id, d)}
+                isDarkMode={isDarkMode}
+                onInteract={handleBlockInteract}
+                isDragging={selectedIds.includes(b.id) && isDraggingSelection}
+                canvasScale={scale}
+                canvasPan={position}
+              />
+            );
+          }
+          if (b.type === 'conformal_map') {
+            return (
+              <ConformalVisualizer
+                key={b.id}
+                block={b}
+                updateBlock={(id, d) => updateAnyBlock('math', id, d)}
+                isDarkMode={isDarkMode}
+                onInteract={handleBlockInteract}
+                isDragging={selectedIds.includes(b.id) && isDraggingSelection}
+                canvasScale={scale}
+                canvasPan={position}
+              />
+            );
+          }
+          if (b.type === 'fourier_synthesis') {
+            return (
+              <FourierVisualizer
+                key={b.id}
+                block={b}
+                updateBlock={(id, d) => updateAnyBlock('math', id, d)}
+                isDarkMode={isDarkMode}
+                onInteract={handleBlockInteract}
+                isDragging={selectedIds.includes(b.id) && isDraggingSelection}
+                canvasScale={scale}
+                canvasPan={position}
+              />
+            );
+          }
+          return (
+            <MathBlock key={b.id} block={b} apiKey={apiKey} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('math', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} onPlot={e => handleMathPlot(b, e)} onSolve={r => handleMathSolve(b, r)} onSteps={s => handleMathSteps(b, s)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />
+          );
+        })}
         {mermaidBlocks.map(b => <MermaidBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('mermaid', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} isShadow={isShadow} />)}
         {mindmapBlocks.map(b => <MindmapBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('mindmap', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} isShadow={isShadow} />)}
         {pdfBlocks.map(b => <PDFBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('pdf', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
@@ -2284,7 +2364,7 @@ const CanvasArea = forwardRef(({
           <BlockHandles
             key={b.id}
             block={b}
-            type={b.type === 'linear_transform' ? 'math' : b.type === 'pdf' ? 'pdf' : (b.src ? 'image' : (b.expression ? 'ggb' : (b.code ? 'mermaid' : (b.content?.root ? 'mindmap' : (typeof b.content === 'string' && b.content.includes('\\') ? 'math' : 'text')))))}
+            type={['linear_transform', 'taylor_plot', 'vector_field', 'phase_portrait', 'conformal_map', 'fourier_synthesis'].includes(b.type) ? 'math' : b.type === 'pdf' ? 'pdf' : (b.src ? 'image' : (b.expression ? 'ggb' : (b.code ? 'mermaid' : (b.content?.root ? 'mindmap' : (typeof b.content === 'string' && b.content.includes('\\') ? 'math' : 'text')))))}
             scale={scale}
             // Separate connection handles and resizing logic:
             // Connection dots are suppressed if block is selected to avoid overlap with groups selection
