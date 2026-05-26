@@ -478,7 +478,7 @@ const TagPopoverContent = ({ onClose, position }) => {
 };
 
 
-const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShowTagPopover, isSidebarOpen, onToggleSidebar }) => {
+const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShowTagPopover, isSidebarOpen, onToggleSidebar, onOpenSettings }) => {
     const {
         notes, openTabs, activeNoteId, selectNote, closeTab, addNote,
         reorderTabs, updateNoteTitle, closeOtherTabs, closeTabsToRight
@@ -703,7 +703,7 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
 
     return (
         <div className={`tab-bar glass-extreme ${!isSidebarOpen ? 'sidebar-closed' : ''}`}>
-            {/* Sidebar Toggle & Breadcrumbs */}
+            {/* Sidebar Toggle & Settings Button */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
                 <button
                     onClick={onToggleSidebar}
@@ -729,57 +729,29 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                     </svg>
                 </button>
 
-                {breadcrumbs.length > 0 && <div className="tab-bar-divider" style={{ background: 'var(--border-color)', width: '1px', height: '20px', opacity: 0.5 }} />}
-
-                {/* Breadcrumbs Container - Mostra apenas o caminho das pastas */}
-                {breadcrumbs.length > 0 && (
-                    <div style={{
+                <button
+                    onClick={onOpenSettings}
+                    className="liquid-button"
+                    style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-secondary)',
+                        opacity: 0.6,
+                        cursor: 'pointer',
+                        padding: '6px',
+                        borderRadius: '8px',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '2px',
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        color: 'var(--text-secondary)',
-                        opacity: 0.7,
-                        padding: '0 8px',
-                        maxWidth: isSidebarOpen ? '150px' : '300px',
-                        overflow: 'hidden',
-                        whiteSpace: 'nowrap',
-                        flexShrink: 0
-                    }}>
-                        {breadcrumbs.map((crumb, idx) => (
-                            <React.Fragment key={crumb.id}>
-                                <button
-                                    onClick={() => selectNote(crumb.id, true)}
-                                    className="liquid-item"
-                                    style={{
-                                        padding: '4px 6px',
-                                        borderRadius: '6px',
-                                        background: 'transparent',
-                                        color: 'inherit',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px'
-                                    }}
-                                >
-                                    {idx === 0 ? (
-                                        <span style={{ fontSize: '14px' }}>🏠</span>
-                                    ) : (
-                                        <span style={{ opacity: 0.7, display: 'flex' }}>
-                                            {TypeIcons[crumb.type] || TypeIcons.text}
-                                        </span>
-                                    )}
-                                </button>
-                                {idx < breadcrumbs.length - 1 && (
-                                    <span style={{ opacity: 0.2, margin: '0 1px', fontSize: '10px' }}>/</span>
-                                )}
-                            </React.Fragment>
-                        ))}
-                    </div>
-                )}
+                        justifyContent: 'center',
+                        transition: 'all 0.2s ease',
+                    }}
+                    title="Configurações"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                </button>
             </div>
 
             <div className="tab-bar-divider" style={{ background: 'var(--border-color)', width: '1px', height: '24px', opacity: 0.5 }} />

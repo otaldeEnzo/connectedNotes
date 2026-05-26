@@ -1,5 +1,8 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { generateId } from '../utils/id';
+import { StorageService } from '../services/StorageService';
+import { auth } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 // Dados Iniciais (Reset de Fábrica)
 const INITIAL_DATA = {
@@ -32,54 +35,118 @@ const INITIAL_DATA = {
 const NotesContext = createContext({});
 
 export const NotesProvider = ({ children }) => {
-  // 1. Inicialização Segura com Validação de Schema
-  const [notes, setNotes] = useState(() => {
-    try {
-      const saved = localStorage.getItem('connected-notes-data');
-      if (!saved) return INITIAL_DATA;
+  const [notes, setNotes] = useState(INITIAL_DATA);
+  const [activeNoteId, setActiveNoteId] = useState('root');
+  const [openTabs, setOpenTabs] = useState(['root']);
+  const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [activeAuth, setActiveAuth] = useState(auth);
 
-      const parsed = JSON.parse(saved);
+  // Escuta as mudanças globais de configuração do Firebase
+  useEffect(() => {
+    const handleConfigChange = (e) => {
+      setActiveAuth(e.detail.auth);
+    };
+    window.addEventListener('firebase-config-changed', handleConfigChange);
+    return () => window.removeEventListener('firebase-config-changed', handleConfigChange);
+  }, []);
 
-      // Validação: Se não for objeto ou não tiver a raiz, considera corrompido
-      if (!parsed || typeof parsed !== 'object' || !parsed['root']) {
-        console.warn("Dados corrompidos detectados. Restaurando padrão.");
-        return INITIAL_DATA;
+  // Escuta as mudanças de autenticação do Firebase
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(activeAuth, (user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribe();
+  }, [activeAuth]);
+
+  // 1. Inicialização Híbrida Assíncrona via StorageService
+  useEffect(() => {
+    const initAndLoad = async () => {
+      try {
+        await StorageService.initialize();
+        const wsData = await StorageService.loadWorkspace();
+        
+        if (wsData && typeof wsData === 'object' && wsData['root']) {
+          // Filtro de conectividade (reachable set) para limpar notas órfãs
+          const reachableIds = new Set(['root']);
+          const traverse = (id) => {
+            const note = wsData[id];
+            if (note && note.children) {
+              note.children.forEach(childId => {
+                if (!reachableIds.has(childId) && wsData[childId]) {
+                  reachableIds.add(childId);
+                  traverse(childId);
+                }
+              });
+            }
+          };
+          traverse('root');
+
+          // Limpa do workspace carregado qualquer nota não alcançável a partir do 'root'
+          const cleanedWsData = {};
+          Object.keys(wsData).forEach(key => {
+            if (reachableIds.has(key)) {
+              cleanedWsData[key] = wsData[key];
+            } else {
+              console.warn(`Nota órfã detectada e limpa no carregamento: ${wsData[key]?.title || key}`);
+            }
+          });
+
+          // Garante que apenas filhos que realmente existem continuem referenciados
+          Object.keys(cleanedWsData).forEach(key => {
+            if (cleanedWsData[key].children) {
+              cleanedWsData[key].children = cleanedWsData[key].children.filter(childId => cleanedWsData[childId]);
+            }
+          });
+
+          setNotes(cleanedWsData);
+          
+          // Restaurar nota ativa segura
+          const savedActive = localStorage.getItem('connected-notes-active-note');
+          if (savedActive && cleanedWsData[savedActive]) {
+            setActiveNoteId(savedActive);
+          } else {
+            setActiveNoteId(cleanedWsData['note-1'] ? 'note-1' : 'root');
+          }
+
+          // Restaurar abas abertas seguras
+          const savedTabs = localStorage.getItem('connected-notes-tabs');
+          if (savedTabs) {
+            try {
+              const parsed = JSON.parse(savedTabs);
+              const validTabs = parsed.filter(id => cleanedWsData[id]);
+              if (validTabs.length > 0) {
+                setOpenTabs(validTabs);
+              } else {
+                setOpenTabs(cleanedWsData['note-1'] ? ['note-1'] : ['root']);
+              }
+            } catch (e) {
+              setOpenTabs(cleanedWsData['note-1'] ? ['note-1'] : ['root']);
+            }
+          } else {
+            setOpenTabs(cleanedWsData['note-1'] ? ['note-1'] : ['root']);
+          }
+        } else {
+          // Se não houver dados, mantém INITIAL_DATA e persiste
+          if (StorageService.getActiveProviders().indexeddb) {
+            localStorage.setItem('connected-notes-data', JSON.stringify(INITIAL_DATA));
+          }
+          setActiveNoteId('note-1');
+          setOpenTabs(['note-1']);
+        }
+      } catch (err) {
+        console.error("Erro na inicialização híbrida do armazenamento:", err);
+      } finally {
+        setLoading(false);
       }
-      return parsed;
-    } catch (e) {
-      console.error("Erro fatal ao carregar notas:", e);
-      return INITIAL_DATA;
-    }
-  });
-
-  // Garante que iniciamos com uma nota válida
-  const [activeNoteId, setActiveNoteId] = useState(() => {
-    const saved = localStorage.getItem('connected-notes-active-note');
-    if (saved && notes[saved]) return saved;
-    // Se tivermos a note-1 (padrão), usamos ela, senão a raiz
-    return notes['note-1'] ? 'note-1' : 'root';
-  });
+    };
+    initAndLoad();
+  }, [currentUser]);
 
   // Persistir nota ativa
   useEffect(() => {
     localStorage.setItem('connected-notes-active-note', activeNoteId);
   }, [activeNoteId]);
-
-  // Estado de abas abertas
-  const [openTabs, setOpenTabs] = useState(() => {
-    try {
-      const saved = localStorage.getItem('connected-notes-tabs');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Filtra abas de notas que ainda existem
-        return parsed.filter(id => notes[id]);
-      }
-    } catch (e) {
-      console.error('Erro ao carregar abas:', e);
-    }
-    // Default: aba inicial com a nota ativa
-    return notes['note-1'] ? ['note-1'] : ['root'];
-  });
 
   // Persistir abas no localStorage
   useEffect(() => {
@@ -171,43 +238,97 @@ export const NotesProvider = ({ children }) => {
 
   // Persistência
   useEffect(() => {
+    if (loading || !StorageService.getActiveProviders().indexeddb) return;
     try {
       localStorage.setItem('connected-notes-data', JSON.stringify(notes));
     } catch (e) {
       console.error("Erro ao salvar no LocalStorage", e);
     }
-  }, [notes]);
+  }, [notes, loading]);
+
+  // Sincronização em tempo real de notas individuais do Firebase
+  useEffect(() => {
+    if (loading || !activeNoteId || !StorageService.getActiveProviders().firebase || !currentUser) return;
+
+    const unsubscribe = StorageService.onNoteSync(activeNoteId, (remoteNote) => {
+      setNotes(prev => {
+        const localNote = prev[activeNoteId];
+        if (!localNote) return prev;
+        
+        // Evita loop se for igual
+        if (JSON.stringify(localNote.content) === JSON.stringify(remoteNote.content) &&
+            localNote.title === remoteNote.title &&
+            JSON.stringify(localNote.tags) === JSON.stringify(remoteNote.tags)) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          [activeNoteId]: {
+            ...localNote,
+            ...remoteNote
+          }
+        };
+      });
+    });
+
+    return () => unsubscribe();
+  }, [activeNoteId, loading, currentUser]);
+
+  // Sincronização em tempo real da árvore de notas (workspace) do Firebase
+  useEffect(() => {
+    if (loading || !StorageService.getActiveProviders().firebase || !currentUser) return;
+
+    const unsubscribe = StorageService.onWorkspaceSync((remoteWorkspace) => {
+      setNotes(prev => {
+        // Evita loop se for igual
+        if (JSON.stringify(Object.keys(prev)) === JSON.stringify(Object.keys(remoteWorkspace))) {
+          // Também compara os filhos da raiz e collapseds
+          let identical = true;
+          for (const key of Object.keys(prev)) {
+            if (JSON.stringify(prev[key]?.children) !== JSON.stringify(remoteWorkspace[key]?.children) ||
+                prev[key]?.collapsed !== remoteWorkspace[key]?.collapsed ||
+                prev[key]?.title !== remoteWorkspace[key]?.title) {
+              identical = false;
+              break;
+            }
+          }
+          if (identical) return prev;
+        }
+
+        // Faz o merge das notas remotas preservando conteúdos locais não salvos ainda se houver
+        const merged = { ...prev };
+        for (const key of Object.keys(remoteWorkspace)) {
+          merged[key] = {
+            ...(prev[key] || {}),
+            ...remoteWorkspace[key]
+          };
+        }
+        
+        // Remove notas locais que foram excluídas na nuvem
+        for (const key of Object.keys(prev)) {
+          if (!remoteWorkspace[key]) {
+            delete merged[key];
+          }
+        }
+
+        return merged;
+      });
+    });
+
+    return () => unsubscribe();
+  }, [loading, currentUser]);
 
   const selectNote = useCallback((id, openInNewTab = false) => {
     if (!notes || !notes[id]) return;
 
-    if (openInNewTab) {
-      // Ctrl+click: Abrir em nova aba se não existir
-      setOpenTabs(prev => {
-        if (prev.includes(id)) return prev;
-        return [...prev, id];
-      });
-      setActiveNoteId(id);
-    } else {
-      // Clique normal: Ativar se já estiver aberta ou substituir a aba atual
-      setOpenTabs(prev => {
-        if (prev.includes(id)) return prev;
-        
-        // Se não está aberta, substituímos a aba que estava ativa pela nova
-        const activeIndex = prev.indexOf(activeNoteId);
-        const newTabs = [...prev];
-        if (activeIndex !== -1) {
-          newTabs[activeIndex] = id;
-        } else {
-          newTabs.push(id);
-        }
-        return newTabs;
-      });
-      
-      // Sempre ativamos o ID, independente da aba já estar lá ou não
-      setActiveNoteId(id);
-    }
-  }, [notes, activeNoteId]);
+    // Standard tab functionality: Always add to tabs if not already open (acting like a browser)
+    setOpenTabs(prev => {
+      if (prev.includes(id)) return prev;
+      return [...prev, id];
+    });
+    setActiveNoteId(id);
+  }, [notes]);
 
   // Funções de gerenciamento de abas
   const openTab = (noteId) => {
@@ -299,6 +420,19 @@ export const NotesProvider = ({ children }) => {
     });
   }, []);
 
+  // Helper para salvar pasta e seus filhos recursivamente (necessário para Local Vault renames/moves)
+  const saveNoteRecursively = useCallback(async (noteId, noteData, notesState) => {
+    await StorageService.saveNote(noteId, noteData, notesState);
+    if (noteData.type === 'folder' && noteData.children) {
+      for (const childId of noteData.children) {
+        const childData = notesState[childId];
+        if (childData) {
+          await saveNoteRecursively(childId, childData, notesState);
+        }
+      }
+    }
+  }, []);
+
   // --- FUNÇÃO BLINDADA (CORREÇÃO DE CRASH) ---
   const updateNoteContent = useCallback((id, newContent) => {
     if (!id) return;
@@ -309,15 +443,20 @@ export const NotesProvider = ({ children }) => {
       try {
         const currentNote = prev[id];
         const currentContent = currentNote.content || {};
-
-        return {
-          ...prev,
-          [id]: {
-            ...currentNote,
-            content: { ...currentContent, ...newContent },
-            updatedAt: Date.now()
-          }
+        const updatedNote = {
+          ...currentNote,
+          content: { ...currentContent, ...newContent },
+          updatedAt: Date.now()
         };
+        const newState = {
+          ...prev,
+          [id]: updatedNote
+        };
+
+        // Salva nota no StorageService
+        StorageService.saveNote(id, updatedNote, newState);
+
+        return newState;
       } catch (err) {
         console.error("Erro ao atualizar nota:", err);
         return prev;
@@ -355,7 +494,7 @@ export const NotesProvider = ({ children }) => {
 
     setNotes(prev => {
       if (!prev?.[parentId]) return prev;
-      return {
+      const newState = {
         ...prev,
         [newId]: newNote,
         [parentId]: {
@@ -364,6 +503,12 @@ export const NotesProvider = ({ children }) => {
           collapsed: false
         }
       };
+
+      // Salva nota nova e atualiza o pai no armazenamento
+      StorageService.saveNote(newId, newNote, newState);
+      StorageService.saveNote(parentId, newState[parentId], newState);
+
+      return newState;
     });
     if (type !== 'folder') {
       setOpenTabs(prev => [...prev, newId]);
@@ -373,6 +518,8 @@ export const NotesProvider = ({ children }) => {
 
   const deleteNote = useCallback((noteId) => {
     if (noteId === 'root') return;
+
+    let idsToDelete = [];
 
     setNotes(prev => {
       if (!prev) return prev;
@@ -385,15 +532,48 @@ export const NotesProvider = ({ children }) => {
       if (parentId && newState[parentId]) {
         newState[parentId] = {
           ...newState[parentId],
-          children: newState[parentId].children.filter(id => id !== noteId)
+          children: (newState[parentId].children || []).filter(id => id !== noteId)
         };
       }
 
-      delete newState[noteId];
+      // Função recursiva para coletar descendentes
+      const getDescendantIds = (id) => {
+        const ids = [];
+        const note = newState[id];
+        if (note && note.children) {
+          for (const childId of note.children) {
+            ids.push(childId);
+            ids.push(...getDescendantIds(childId));
+          }
+        }
+        return ids;
+      };
+
+      idsToDelete = [noteId, ...getDescendantIds(noteId)];
+
+      // Sincroniza exclusão de cada item fisicamente e deleta do estado
+      idsToDelete.forEach(id => {
+        const targetNote = newState[id];
+        if (targetNote) {
+          StorageService.deleteNote(id, targetNote, newState);
+        }
+        delete newState[id];
+      });
+
+      if (parentId && newState[parentId]) {
+        StorageService.saveNote(parentId, newState[parentId], newState);
+      }
+
       return newState;
     });
 
-    setActiveNoteId(prev => (prev === noteId ? 'root' : prev));
+    // Filtra abas abertas e atualiza nota ativa
+    setOpenTabs(prev => {
+      const nextTabs = prev.filter(tabId => !idsToDelete.includes(tabId));
+      return nextTabs.length > 0 ? nextTabs : ['root'];
+    });
+
+    setActiveNoteId(prev => idsToDelete.includes(prev) ? 'root' : prev);
   }, []);
 
   // --- Move (Drag & Drop) ---
@@ -431,7 +611,9 @@ export const NotesProvider = ({ children }) => {
         children: (newState[oldParentId].children || []).filter(id => id !== movedId)
       };
 
+      let newParentId;
       if (position === 'inside') {
+        newParentId = targetId;
         if (newState[targetId]) {
           newState[targetId] = {
             ...newState[targetId],
@@ -440,7 +622,7 @@ export const NotesProvider = ({ children }) => {
           };
         }
       } else {
-        const newParentId = findParent(targetId, newState);
+        newParentId = findParent(targetId, newState);
         if (newParentId) {
           const siblings = [...(newState[newParentId].children || [])];
           const targetIndex = siblings.indexOf(targetId);
@@ -449,29 +631,68 @@ export const NotesProvider = ({ children }) => {
           newState[newParentId] = { ...newState[newParentId], children: siblings };
         }
       }
+
+      // Sincroniza movimentação de pasta/arquivo físico no StorageService
+      const handleMoveSync = async () => {
+        if (StorageService.getActiveProviders().local_vault) {
+          // Deleta caminho antigo fisicamente
+          await StorageService.deleteNote(movedId, prev[movedId], prev);
+          // Recria no caminho novo com filhos recursivamente
+          await saveNoteRecursively(movedId, newState[movedId], newState);
+        }
+        
+        // Salva as estruturas de diretórios atualizadas em todos os provedores ativos (nuvem, indexeddb, disk)
+        await StorageService.saveNote(oldParentId, newState[oldParentId], newState);
+        if (newParentId) {
+          await StorageService.saveNote(newParentId, newState[newParentId], newState);
+        }
+      };
+      handleMoveSync();
+
+      return newState;
+    });
+  }, [saveNoteRecursively]);
+
+  const updateNoteTitle = useCallback((id, newTitle) => {
+    if (!id) return;
+    setNotes(prev => {
+      if (!prev?.[id]) return prev;
+      
+      const oldNote = prev[id];
+      const updatedNote = { ...oldNote, title: newTitle, updatedAt: Date.now() };
+      const newState = { ...prev, [id]: updatedNote };
+
+      const handleRenameSync = async () => {
+        if (StorageService.getActiveProviders().local_vault) {
+          // Exclui caminho antigo fisicamente
+          await StorageService.deleteNote(id, oldNote, prev);
+          // Salva no caminho novo recursivamente
+          await saveNoteRecursively(id, updatedNote, newState);
+        } else {
+          await StorageService.saveNote(id, updatedNote, newState);
+        }
+      };
+      handleRenameSync();
+
+      return newState;
+    });
+  }, [saveNoteRecursively]);
+
+  const updateNoteTags = useCallback((id, newTags) => {
+    if (!id) return;
+    setNotes(prev => {
+      if (!prev?.[id]) return prev;
+      const updatedNote = { ...prev[id], tags: Array.isArray(newTags) ? newTags : [], updatedAt: Date.now() };
+      const newState = {
+        ...prev,
+        [id]: updatedNote
+      };
+
+      StorageService.saveNote(id, updatedNote, newState);
+
       return newState;
     });
   }, []);
-
-  const updateNoteTitle = (id, newTitle) => {
-    setNotes(prev => {
-      if (!prev?.[id]) return prev;
-      return {
-        ...prev,
-        [id]: { ...prev[id], title: newTitle, updatedAt: Date.now() }
-      };
-    });
-  };
-
-  const updateNoteTags = (id, newTags) => {
-    setNotes(prev => {
-      if (!prev?.[id]) return prev;
-      return {
-        ...prev,
-        [id]: { ...prev[id], tags: Array.isArray(newTags) ? newTags : [], updatedAt: Date.now() }
-      };
-    });
-  };
 
   const deleteTagGlobally = (tagToDelete) => {
     setNotes(prev => {
@@ -551,6 +772,52 @@ export const NotesProvider = ({ children }) => {
     openTabs, openTab, closeTab, closeOtherTabs, closeTabsToRight,
     reorderTabs, restoreTab, deleteTagGlobally
   ]);
+
+  if (loading) {
+    return (
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        background: 'var(--bg-color)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: '24px', zIndex: 9999,
+        color: 'var(--text-primary)'
+      }}>
+        <div className="dynamic-bg" style={{ pointerEvents: 'none' }}>
+          <div className="blob blob-violet" />
+          <div className="blob blob-cyan" />
+          <div className="blob blob-fuchsia" />
+          <div className="noise-overlay" />
+        </div>
+        <div className="glass-extreme" style={{
+          padding: '40px 60px', borderRadius: '24px',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px',
+          border: '1px solid rgba(255,255,255,0.15)',
+          background: 'var(--glass-bg-floating)',
+          boxShadow: 'var(--glass-shadow), 0 20px 50px rgba(0,0,0,0.3)',
+          textAlign: 'center'
+        }}>
+          <div className="loading-spinner" style={{
+            width: '50px', height: '50px', borderRadius: '50%',
+            border: '4px solid rgba(255,255,255,0.1)',
+            borderTop: '4px solid var(--accent-color)',
+            animation: 'spin 1s linear infinite',
+            boxShadow: '0 0 15px var(--accent-glow)',
+            boxSizing: 'border-box'
+          }} />
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>Iniciando ConnectedNotes</h3>
+            <p style={{ margin: '6px 0 0', fontSize: '0.85rem', opacity: 0.6 }}>Carregando seu espaço de trabalho híbrido...</p>
+          </div>
+        </div>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   return (
     <NotesContext.Provider value={contextValue}>

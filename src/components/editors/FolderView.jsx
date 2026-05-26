@@ -6,9 +6,11 @@ const FolderView = ({ note: folder, notes = {}, onOpenNote, setAiPanel, activeTo
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     // 1. Hierarquia de notas
-    const childNotes = (folder.children || [])
-        .map(id => notes[id])
-        .filter(n => n !== undefined);
+    const childNotes = folder.id === 'root'
+        ? Object.values(notes).filter(n => n.id !== 'root')
+        : (folder.children || [])
+            .map(id => notes[id])
+            .filter(n => n !== undefined);
 
     const handleExportFolder = (format) => {
         setIsMenuOpen(false);

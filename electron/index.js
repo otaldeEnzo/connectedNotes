@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 
 function createWindow () {
@@ -17,6 +17,15 @@ function createWindow () {
       win.loadFile(path.join(__dirname, 'app/index.html'));
   });
 }
+
+// Handler para seleção nativa de pastas
+ipcMain.handle('select-directory', async (event) => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(win, {
+    properties: ['openDirectory', 'createDirectory']
+  });
+  return result.filePaths[0]; // Retorna o caminho da pasta ou undefined
+});
 
 app.whenReady().then(createWindow);
 

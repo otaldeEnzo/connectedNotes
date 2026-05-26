@@ -2,10 +2,22 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { validateKey } from '../services/AIService';
 import { useNotes } from '../contexts/NotesContext';
+import { StorageService } from '../services/StorageService';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db, updateFirebaseConfig, getFirebaseConfig, isCustomFirebaseActive } from '../firebase';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup
+} from 'firebase/auth';
 
 const TABS = [
   { id: 'appearance', label: '🎨 Aparência' },
   { id: 'editor', label: '✏️ Editor' },
+  { id: 'storage', label: '📦 Armazenamento' },
   { id: 'data', label: '💾 Dados' },
   { id: 'about', label: 'ℹ️ Sobre' },
 ];
@@ -16,6 +28,13 @@ const NOTE_TYPES = [
   { id: 'code', label: 'Código' },
   { id: 'mermaid', label: 'Mermaid' },
   { id: 'mindmap', label: 'Mindmap' },
+];
+
+const CLOUD_PROVIDERS = [
+  { id: 'firebase', label: '🔥 Firebase Cloud (Ativo)' },
+  { id: 'custom_server', label: '🖥️ Servidor Próprio (Self-Hosted)' },
+  { id: 'supabase', label: '⚡ Supabase (Planejado)' },
+  { id: 'couchdb', label: ' CouchDB (Planejado)' },
 ];
 
 const SettingsIcons = {
@@ -83,11 +102,11 @@ const GlassToggle = ({ checked, onChange, label, sublabel }) => (
       onClick={() => onChange(!checked)}
       style={{
         width: '42px', height: '22px', borderRadius: '11px',
-        background: checked ? 'var(--accent-color)' : 'rgba(255,255,255,0.05)',
+        background: checked ? 'var(--accent-color, #ec4899)' : 'rgba(255,255,255,0.1)',
         border: '1px solid rgba(255,255,255,0.1)',
         position: 'relative', cursor: 'pointer',
         transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
-        boxShadow: checked ? '0 0 12px var(--accent-glow)' : 'inset 0 2px 4px rgba(0,0,0,0.2)'
+        boxShadow: checked ? '0 0 12px var(--accent-glow, rgba(139, 92, 246, 0.4))' : 'inset 0 2px 4px rgba(0,0,0,0.2)'
       }}
     >
       <div style={{
@@ -138,10 +157,15 @@ const GlassSlider = ({ value, min, max, onChange, label, unit }) => (
 const GlassSelect = ({ value, options, onChange, label }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
+  const dropdownRef = useRef(null);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target) &&
+        (!dropdownRef.current || !dropdownRef.current.contains(event.target))
+      ) {
         setIsOpen(false);
       }
     };
@@ -174,6 +198,7 @@ const GlassSelect = ({ value, options, onChange, label }) => {
   // Usando um portal "simulado" com position fixed para garantir que o blur funcione (separado do stacking context do modal)
   const dropdown = isOpen && rect && (
     <div
+      ref={dropdownRef}
       className="glass-extreme"
       style={{
         position: 'fixed', 
@@ -243,10 +268,20 @@ const GlassSelect = ({ value, options, onChange, label }) => {
         <span style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s', opacity: 0.5 }}>▼</span>
       </div>
 
-      {/* Renderizado no body via Portal para ser imune ao transform do Modal e resolver Scroll Offset */}
-      {isOpen && rect && createPortal(dropdown, document.body)}
+      {/* Portal render */}
+      {typeof document !== 'undefined' && createPortal(dropdown, document.body)}
     </div>
   );
+};
+
+const withTimeout = (promise, ms, errorMsg) => {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(errorMsg)), ms);
+    promise.then(
+      (res) => { clearTimeout(timer); resolve(res); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
 };
 
 const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTheme, customThemes, setCustomThemes, appearance, setAppearance }) => {
@@ -258,6 +293,75 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
   const [isCreating, setIsCreating] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef(null);
+
+  const [storageProviders, setStorageProviders] = useState({ indexeddb: true, local_vault: false, firebase: false });
+  const [selectedCloudProvider, setSelectedCloudProvider] = useState(() => {
+    return localStorage.getItem('selected-cloud-provider') || 'firebase';
+  });
+  const [customServerUrl, setCustomServerUrl] = useState(() => {
+    return localStorage.getItem('connected-notes-server-url') || '';
+  });
+  const [customServerToken, setCustomServerToken] = useState(() => {
+    return localStorage.getItem('connected-notes-server-token') || '';
+  });
+  const [vaultPath, setVaultPath] = useState(null);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authUser, setAuthUser] = useState(null);
+  const [authStatus, setAuthStatus] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [migrationStatus, setMigrationStatus] = useState('');
+  const [showGoogleHelp, setShowGoogleHelp] = useState(false);
+  const [showConfigForm, setShowConfigForm] = useState(false);
+  const [isEditingConfig, setIsEditingConfig] = useState(false);
+  const [customFirebaseConfigText, setCustomFirebaseConfigText] = useState(() => {
+    return localStorage.getItem('connected-notes-custom-firebase-config') || '';
+  });
+
+  const [activeAuth, setActiveAuth] = useState(auth);
+
+  // Escuta as mudanças globais de configuração do Firebase
+  useEffect(() => {
+    const handleConfigChange = (e) => {
+      setActiveAuth(e.detail.auth);
+    };
+    window.addEventListener('firebase-config-changed', handleConfigChange);
+    return () => window.removeEventListener('firebase-config-changed', handleConfigChange);
+  }, []);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(activeAuth, async (user) => {
+      setAuthUser(user);
+
+      // Se estiver conectado em um Firebase personalizado, puxa e aplica as preferências automaticamente
+      if (user && isCustomFirebaseActive()) {
+        try {
+          const prefRef = doc(db, 'users', user.uid, 'config', 'preferences');
+          const prefSnap = await getDoc(prefRef);
+          if (prefSnap.exists()) {
+            const data = prefSnap.data();
+            if (data.appearance) {
+              localStorage.setItem('connected-notes-appearance-settings', JSON.stringify(data.appearance));
+              setTempAppearance(data.appearance);
+              if (setAppearance) setAppearance(data.appearance);
+              applySettings(data.appearance);
+            }
+            if (data.editor) {
+              localStorage.setItem('connected-notes-editor-settings', JSON.stringify(data.editor));
+              setTempEditor(data.editor);
+            }
+            if (data.theme) {
+              setTheme(data.theme);
+              setTempTheme(data.theme);
+            }
+          }
+        } catch (err) {
+          console.warn("Aviso ao puxar preferências da nuvem:", err);
+        }
+      }
+    });
+    return () => unsub();
+  }, [activeAuth]);
 
   const getSavedAppearance = () => {
     const saved = localStorage.getItem('connected-notes-appearance-settings');
@@ -310,6 +414,14 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
       setEditingTheme(null);
       setIsCreating(false);
       setShowClearConfirm(false);
+      setShowGoogleHelp(false);
+      setCustomFirebaseConfigText(localStorage.getItem('connected-notes-custom-firebase-config') || '');
+      
+      // Carrega configurações de armazenamento
+      setStorageProviders(StorageService.getActiveProviders());
+      setVaultPath(StorageService.getVaultPath());
+      setAuthStatus('');
+      setMigrationStatus('');
     }
   }, [isOpen, apiKey, currentTheme]);
 
@@ -356,8 +468,23 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
     setTheme(tempTheme);
     setAppearance(tempAppearance);
     localStorage.setItem('connected-notes-appearance-settings', JSON.stringify(tempAppearance));
-    applySettings(tempAppearance);
     localStorage.setItem('connected-notes-editor-settings', JSON.stringify(tempEditor));
+    applySettings(tempAppearance);
+    
+    // Sincroniza preferências na nuvem do usuário se estiver logado
+    if (auth.currentUser && isCustomFirebaseActive()) {
+      try {
+        const prefRef = doc(db, 'users', auth.currentUser.uid, 'config', 'preferences');
+        setDoc(prefRef, {
+          appearance: tempAppearance,
+          editor: tempEditor,
+          theme: tempTheme
+        });
+      } catch (err) {
+        console.warn("Aviso ao salvar preferências na nuvem:", err);
+      }
+    }
+
     onClose();
   };
 
@@ -469,6 +596,837 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleToggleProvider = async (providerName, currentIsActive) => {
+    const newIsActive = !currentIsActive;
+
+    // Garante que pelo menos um local de armazenamento deve estar ativo
+    const activeCount = Object.values(storageProviders).filter(Boolean).length;
+    if (!newIsActive && activeCount <= 1) {
+      setAuthStatus('⚠️ Pelo menos um local de armazenamento deve estar ativo.');
+      return;
+    }
+
+
+
+    try {
+      setAuthStatus('Alterando armazenamento...');
+      const success = await StorageService.setProviderActive(providerName, newIsActive);
+      if (success) {
+        const updatedProviders = { ...storageProviders, [providerName]: newIsActive };
+        setStorageProviders(updatedProviders);
+        setVaultPath(StorageService.getVaultPath());
+        setAuthStatus('');
+      } else {
+        setAuthStatus('❌ Seleção de pasta cancelada ou não suportada pelo navegador.');
+      }
+    } catch (err) {
+      setAuthStatus('❌ Erro: ' + err.message);
+    }
+  };
+
+  const handleFirebaseLogin = async (e) => {
+    e.preventDefault();
+    setAuthStatus('Conectando...');
+    try {
+      await signInWithEmailAndPassword(auth, authEmail, authPassword);
+      setAuthStatus('✅ Conectado com sucesso!');
+      await StorageService.setProviderActive('firebase', true);
+      setStorageProviders(prev => ({ ...prev, firebase: true }));
+    } catch (err) {
+      setAuthStatus('❌ Erro no login: ' + err.message);
+    }
+  };
+
+  const handleFirebaseSignup = async (e) => {
+    e.preventDefault();
+    setAuthStatus('Criando conta...');
+    try {
+      await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+      setAuthStatus('✅ Conta criada com sucesso!');
+      await StorageService.setProviderActive('firebase', true);
+      setStorageProviders(prev => ({ ...prev, firebase: true }));
+    } catch (err) {
+      setAuthStatus('❌ Erro no cadastro: ' + err.message);
+    }
+  };
+
+  const handleFirebaseLogout = async () => {
+    setAuthStatus('Desconectando...');
+    try {
+      await signOut(auth);
+      // Redefine para o Auth Router central ao deslogar
+      updateFirebaseConfig(null);
+      setCustomFirebaseConfigText('');
+      setAuthStatus('Desconectado. Retornado ao Roteador de Autenticação padrão.');
+      await StorageService.setProviderActive('firebase', false);
+      setStorageProviders(StorageService.getActiveProviders());
+    } catch (err) {
+      setAuthStatus('❌ Erro ao desconectar: ' + err.message);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setAuthStatus('Conectando ao Google...');
+    try {
+      const provider = new GoogleAuthProvider();
+      const userCredential = await signInWithPopup(auth, provider);
+      const user = userCredential.user;
+
+      // Se o Firebase ativo no momento for o ROTEADOR padrão (ou seja, isCustomFirebaseActive() é falso)
+      if (!isCustomFirebaseActive()) {
+        setAuthStatus('Buscando servidor privado do usuário...');
+        const docRef = doc(db, 'user_routers', user.uid);
+        const docSnap = await withTimeout(
+          getDoc(docRef),
+          8000,
+          'Tempo limite esgotado ao buscar do banco do Roteador Central. Certifique-se de que o "Firestore Database" foi criado e ativado no console do seu Firebase central (.env)!'
+        );
+
+        if (docSnap.exists()) {
+          const config = docSnap.data();
+          setAuthStatus('Servidor privado encontrado! Conectando...');
+          
+          // Desloga do Roteador Central com segurança ANTES de alterar a config
+          await signOut(auth);
+
+          // Desconecta do Roteador central e inicializa o Firebase Privado do usuário (Dispara o evento in-memory)
+          updateFirebaseConfig(config);
+          
+          // Preenche a caixa de texto
+          setCustomFirebaseConfigText(JSON.stringify(config, null, 2));
+          
+          // Como o clique inicial do usuário ainda está na pilha de execução,
+          // podemos chamar a autenticação do servidor privado imediatamente sem que o popup seja bloqueado!
+          setAuthStatus('Autenticando no seu servidor privado...');
+          const privateCredential = await signInWithPopup(auth, provider);
+          setAuthUser(privateCredential.user);
+
+          setAuthStatus('✅ Conectado com sucesso ao seu servidor privado!');
+          await StorageService.setProviderActive('firebase', true);
+          setStorageProviders(prev => ({ ...prev, firebase: true }));
+          return;
+        } else {
+          // Não tem configuração ainda! É uma conta nova.
+          setAuthStatus('Conectado com sucesso! Nenhuma chave do seu servidor privado foi detectada. Por favor, cole a configuração do seu Firebase abaixo para concluir o registro.');
+          setShowConfigForm(true);
+          return;
+        }
+      }
+
+      setAuthStatus('✅ Conectado com o Google com sucesso! Sincronizando notas...');
+      await StorageService.setProviderActive('firebase', true);
+      setStorageProviders(prev => ({ ...prev, firebase: true }));
+    } catch (err) {
+      setAuthStatus('❌ Erro no login com Google: ' + err.message);
+    }
+  };
+
+  const handleSaveCustomFirebaseConfig = async (e) => {
+    if (e) e.preventDefault();
+    setAuthStatus('Atualizando chaves do Firebase...');
+    try {
+      if (!customFirebaseConfigText.trim()) {
+        // Redefinir para o padrão
+        updateFirebaseConfig(null);
+        setAuthStatus('✅ Firebase redefinido para as chaves padrão do sistema!');
+        return;
+      }
+
+      // Analisa o texto colado
+      let cleanText = customFirebaseConfigText.trim();
+      
+      // Limpeza de declarações como "const firebaseConfig = " ou semelhantes
+      cleanText = cleanText.replace(/^(const|let|var)\s+\w+\s*=\s*/, '');
+      if (cleanText.endsWith(';')) {
+        cleanText = cleanText.slice(0, -1);
+      }
+      
+      if (!cleanText.startsWith('{')) {
+        throw new Error('O formato deve ser um objeto iniciando com { e terminando com }.');
+      }
+      
+      let parsed;
+      try {
+        parsed = JSON.parse(cleanText);
+      } catch (jsonErr) {
+        // Fallback de objeto JS para JSON
+        const jsToJson = cleanText
+          .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')
+          .replace(/'/g, '"')
+          .replace(/,\s*([\]}])/g, '$1');
+        parsed = JSON.parse(jsToJson);
+      }
+
+      if (!parsed.apiKey || !parsed.authDomain || !parsed.projectId) {
+        throw new Error('A configuração deve conter pelo menos "apiKey", "authDomain" e "projectId".');
+      }
+
+      // Se já houver uma configuração salva e for idêntica, apenas fecha o modo edição
+      const currentConfigStr = localStorage.getItem('connected-notes-custom-firebase-config');
+      if (currentConfigStr) {
+        try {
+          const parsedCurrent = JSON.parse(currentConfigStr);
+          if (parsedCurrent.apiKey === parsed.apiKey && parsedCurrent.projectId === parsed.projectId) {
+            setAuthStatus('✅ Servidor mantido (sem alterações).');
+            setIsEditingConfig(false);
+            setShowConfigForm(false);
+            return;
+          }
+        } catch (e) {
+          // ignorar erro de parse antigo
+        }
+      }
+
+      const wasLoggedInOnRouter = !isCustomFirebaseActive() && auth.currentUser;
+
+      // Se o usuário estiver logado no Roteador Central, grava as chaves no banco do roteador primeiro
+      if (wasLoggedInOnRouter) {
+        setAuthStatus('Gravando chaves no seu perfil do Roteador de Autenticação...');
+        const docRef = doc(db, 'user_routers', auth.currentUser.uid);
+        await withTimeout(
+          setDoc(docRef, parsed),
+          8000,
+          'Tempo limite esgotado ao salvar chaves no Roteador Central. Certifique-se de que o "Firestore Database" foi criado e ativado no console do seu Firebase central (.env)!'
+        );
+      }
+
+      // Se estivesse logado no Roteador, desloga para forçar autenticação no novo Firebase
+      if (auth.currentUser) {
+        await signOut(auth);
+      }
+
+      // Atualiza a conexão para o novo Firebase in-memory
+      updateFirebaseConfig(parsed);
+
+      // Se estava logado anteriormente, oferece login silencioso/imediato no novo Firebase aproveitando o clique
+      if (wasLoggedInOnRouter) {
+        setAuthStatus('Autenticando no seu novo servidor privado...');
+        const provider = new GoogleAuthProvider();
+        const privateCredential = await signInWithPopup(auth, provider);
+        setAuthUser(privateCredential.user);
+        await StorageService.setProviderActive('firebase', true);
+        setStorageProviders(prev => ({ ...prev, firebase: true }));
+        setAuthStatus('✅ Servidor personalizado registrado e conectado com sucesso!');
+      } else {
+        setAuthStatus('✅ Servidor personalizado conectado localmente!');
+      }
+      setIsEditingConfig(false);
+      setShowConfigForm(false);
+    } catch (err) {
+      setAuthStatus('❌ Erro na configuração do Firebase: ' + err.message);
+    }
+  };
+
+  const handleSaveCustomServer = async (e) => {
+    e.preventDefault();
+    setAuthStatus('Salvando configuração do servidor...');
+    try {
+      localStorage.setItem('connected-notes-server-url', customServerUrl);
+      localStorage.setItem('connected-notes-server-token', customServerToken);
+      
+      // Simula a ativação da sincronização em nuvem
+      await StorageService.setProviderActive('firebase', true);
+      setStorageProviders(prev => ({ ...prev, firebase: true }));
+      setAuthStatus('✅ Configurações do servidor próprio salvas e sincronização ativada!');
+    } catch (err) {
+      setAuthStatus('❌ Erro ao salvar configurações: ' + err.message);
+    }
+  };
+
+  const handleMigrateNotes = async () => {
+    setMigrationStatus('Sincronizando notas...');
+    try {
+      const noteCount = Object.keys(notes).length;
+      if (noteCount === 0) {
+        setMigrationStatus('⚠️ Nenhuma nota encontrada para migrar.');
+        return;
+      }
+
+      // Calcula a lista de notas alcançáveis por ordem hierárquica (BFS a partir de root)
+      const orderedIds = [];
+      const queue = ['root'];
+      const visited = new Set(['root']);
+
+      while (queue.length > 0) {
+        const currentId = queue.shift();
+        orderedIds.push(currentId);
+
+        const currentNote = notes[currentId];
+        if (currentNote && currentNote.children) {
+          currentNote.children.forEach(childId => {
+            if (!visited.has(childId) && notes[childId]) {
+              visited.add(childId);
+              queue.push(childId);
+            }
+          });
+        }
+      }
+
+      const activeList = Object.keys(storageProviders)
+        .filter(k => storageProviders[k])
+        .map(k => k === 'local_vault' ? 'Pasta Local' : k === 'firebase' ? 'Nuvem' : 'Navegador')
+        .join(', ');
+
+      // Grava em lote seguindo a ordem de hierarquia top-down
+      for (const noteId of orderedIds) {
+        const noteData = notes[noteId];
+        if (noteData) {
+          await StorageService.saveNote(noteId, noteData, notes);
+        }
+      }
+
+      setMigrationStatus(`✅ Sincronização concluída! ${orderedIds.length} notas organizadas em: ${activeList}.`);
+    } catch (err) {
+      setMigrationStatus('❌ Falha na sincronização: ' + err.message);
+    }
+  };
+
+  const renderStorage = () => {
+    const isLocalVault = storageProviders.local_vault;
+    const isFirebase = storageProviders.firebase;
+    const isIndexedDB = storageProviders.indexeddb;
+
+    const activeListText = Object.keys(storageProviders)
+      .filter(k => storageProviders[k])
+      .map(k => k === 'local_vault' ? 'Pasta Local' : k === 'firebase' ? 'Nuvem' : 'Navegador')
+      .join(' e ');
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {/* Escolha do Provedor */}
+        <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', background: 'var(--glass-bg)' }}>
+          <label style={{ display: 'block', marginBottom: '16px', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>
+            LOCAIS DE ARMAZENAMENTO DAS NOTAS
+          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* Provedor 1: IndexedDB */}
+            <div
+              style={{
+                width: '100%', padding: '14px 20px',
+                background: 'rgba(255,255,255,0.03)',
+                color: 'var(--text-primary)',
+                border: isIndexedDB ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '14px',
+                boxShadow: isIndexedDB ? '0 4px 15px rgba(139, 92, 246, 0.05)' : 'none',
+                boxSizing: 'border-box',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              <div style={{
+                width: '42px', height: '42px', borderRadius: '12px',
+                background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px',
+                boxShadow: '0 4px 10px rgba(139, 92, 246, 0.3)',
+                flexShrink: 0
+              }}>
+                💾
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>Navegador</div>
+                <div style={{ fontSize: '0.75rem', opacity: 0.6, marginTop: '2px' }}>Notas salvas localmente na memória do navegador.</div>
+              </div>
+              <div style={{ pointerEvents: 'auto', flexShrink: 0 }}>
+                <GlassToggle
+                  checked={isIndexedDB}
+                  onChange={() => handleToggleProvider('indexeddb', isIndexedDB)}
+                />
+              </div>
+            </div>
+
+            {/* Provedor 2: Local Vault */}
+            <div
+              style={{
+                width: '100%', padding: '14px 20px',
+                background: 'rgba(255,255,255,0.03)',
+                color: 'var(--text-primary)',
+                border: isLocalVault ? '1px solid rgba(6, 182, 212, 0.4)' : '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '14px',
+                boxShadow: isLocalVault ? '0 4px 15px rgba(6, 182, 212, 0.05)' : 'none',
+                boxSizing: 'border-box',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', width: '100%' }}>
+                <div style={{
+                  width: '42px', height: '42px', borderRadius: '12px',
+                  background: 'linear-gradient(135deg, #67e8f9 0%, #06b6d4 100%)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px',
+                  boxShadow: '0 4px 10px rgba(6, 182, 212, 0.3)',
+                  flexShrink: 0
+                }}>
+                  📂
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>Pasta Local</div>
+                  <div style={{ fontSize: '0.75rem', opacity: 0.6, marginTop: '2px' }}>Salva notas como arquivos reais (.md, .canvas) na pasta que escolher.</div>
+                </div>
+                <div style={{ pointerEvents: 'auto', flexShrink: 0 }}>
+                  <GlassToggle
+                    checked={isLocalVault}
+                    onChange={() => handleToggleProvider('local_vault', isLocalVault)}
+                  />
+                </div>
+              </div>
+
+              {/* Bloco de Configuração da Pasta Local aninhado */}
+              {isLocalVault && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '12px', marginTop: '4px', width: '100%', boxSizing: 'border-box', animation: 'fadeIn 0.3s ease' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.5px', opacity: 0.8 }}>
+                    CONFIGURAÇÃO DA PASTA LOCAL
+                  </label>
+                  <div style={{ padding: '12px 16px', borderRadius: '12px', background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.08)', fontSize: '0.85rem' }}>
+                    <div style={{ opacity: 0.6, marginBottom: '4px' }}>Caminho do Vault Ativo:</div>
+                    <div style={{ fontWeight: 600, wordBreak: 'break-all', color: 'var(--accent-color)' }}>
+                      {vaultPath || 'Nenhuma pasta selecionada'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleToggleProvider('local_vault', false)}
+                    className="liquid-button"
+                    style={{
+                      width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.15)',
+                      background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
+                      color: 'white', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600,
+                      boxShadow: '0 4px 15px rgba(6, 182, 212, 0.4)'
+                    }}
+                  >
+                    Escolher outra pasta
+                  </button>
+                  <p style={{ fontSize: '0.7rem', opacity: 0.5, margin: 0 }}>
+                    💡 Suas notas serão criadas e sincronizadas nesta pasta física. Use a sincronização abaixo para enviar suas notas existentes.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Provedor 3: Nuvem */}
+            <div
+              style={{
+                width: '100%', padding: '14px 20px',
+                background: 'rgba(255,255,255,0.03)',
+                color: 'var(--text-primary)',
+                border: isFirebase ? '1px solid rgba(236, 72, 153, 0.4)' : '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '14px',
+                boxShadow: isFirebase ? '0 4px 15px rgba(236, 72, 153, 0.05)' : 'none',
+                boxSizing: 'border-box',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', width: '100%' }}>
+                <div style={{
+                  width: '42px', height: '42px', borderRadius: '12px',
+                  background: 'linear-gradient(135deg, #f472b6 0%, #ec4899 100%)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px',
+                  boxShadow: '0 4px 10px rgba(236, 72, 153, 0.3)',
+                  flexShrink: 0
+                }}>
+                  ☁️
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>Nuvem</div>
+                  <div style={{ fontSize: '0.75rem', opacity: 0.6, marginTop: '2px' }}>Sincronização em tempo real entre múltiplos dispositivos.</div>
+                </div>
+                <div style={{ pointerEvents: 'auto', flexShrink: 0 }}>
+                  <GlassToggle
+                    checked={isFirebase}
+                    onChange={() => handleToggleProvider('firebase', isFirebase)}
+                  />
+                </div>
+              </div>
+
+              {/* Permite escolher o provedor de nuvem de forma permanente com GlassSelect */}
+              {isFirebase && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '12px', marginTop: '4px', width: '100%', boxSizing: 'border-box' }}>
+                    <GlassSelect
+                      label="PROVEDOR DE NUVEM"
+                      options={CLOUD_PROVIDERS}
+                      value={selectedCloudProvider}
+                      onChange={(v) => {
+                        setSelectedCloudProvider(v);
+                        localStorage.setItem('selected-cloud-provider', v);
+                      }}
+                    />
+                  </div>
+
+                  {/* Detalhes do Provedor de Nuvem Ativo (Firebase) */}
+                  {selectedCloudProvider === 'firebase' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', boxSizing: 'border-box', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '12px', animation: 'fadeIn 0.3s ease' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.5px', opacity: 0.8, margin: 0 }}>
+                          AUTENTICAÇÃO FIREBASE CLOUD
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowGoogleHelp(true)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            color: 'var(--accent-color, #ec4899)',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '4px 10px',
+                            borderRadius: '8px',
+                            transition: 'all 0.2s ease',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = 'var(--accent-color, #ec4899)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+                        >
+                          ❓ Ajuda com Google
+                        </button>
+                      </div>
+
+                      {/* Traga seu próprio Firebase Collapsible Card */}
+                      {(!authUser && showConfigForm) && (
+                        <div 
+                          className="glass-extreme" 
+                          style={{ 
+                            padding: '14px 16px', 
+                            borderRadius: '16px', 
+                            background: 'rgba(255, 255, 255, 0.02)', 
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-color, #ec4899)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              🔧 Configuração do Servidor Privado
+                            </span>
+                            <span style={{ fontSize: '0.7rem', opacity: 0.7, color: 'var(--accent-color, #ec4899)', fontWeight: 600 }}>
+                              {localStorage.getItem('connected-notes-custom-firebase-config') ? '🟢 Conectado' : '⚪ Padrão'}
+                            </span>
+                          </div>
+                          
+                          <p style={{ margin: 0, fontSize: '0.72rem', opacity: 0.6, lineHeight: 1.4 }}>
+                            Cole abaixo o objeto de configuração Web do seu console Firebase para usar seu próprio banco de dados descentralizado gratuitamente.
+                          </p>
+
+                          <form onSubmit={handleSaveCustomFirebaseConfig} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <textarea
+                              value={customFirebaseConfigText}
+                              onChange={(e) => setCustomFirebaseConfigText(e.target.value)}
+                              placeholder={`const firebaseConfig = {\n  apiKey: "AIzaSy...",\n  authDomain: "connectednotes-f7f35.firebaseapp.com",\n  projectId: "connectednotes-f7f35"\n};`}
+                              style={{
+                                width: '100%',
+                                height: '80px',
+                                padding: '10px 12px',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                background: 'rgba(0, 0, 0, 0.2)',
+                                color: '#a78bfa',
+                                fontFamily: 'monospace',
+                                fontSize: '0.75rem',
+                                resize: 'none',
+                                outline: 'none',
+                                boxSizing: 'border-box'
+                              }}
+                            />
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                type="submit"
+                                className="liquid-button"
+                                style={{
+                                  flex: 1,
+                                  height: '36px',
+                                  background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%)',
+                                  border: 'none',
+                                  color: 'white',
+                                  borderRadius: '8px',
+                                  fontSize: '0.78rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  boxShadow: '0 4px 10px rgba(139, 92, 246, 0.2)'
+                                }}
+                              >
+                                Conectar Servidor
+                              </button>
+                              {showConfigForm && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowConfigForm(false)}
+                                  className="liquid-button"
+                                  style={{
+                                    padding: '0 12px',
+                                    height: '36px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                                    color: 'white',
+                                    borderRadius: '8px',
+                                    fontSize: '0.78rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Cancelar
+                                </button>
+                              )}
+                            </div>
+                          </form>
+                        </div>
+                      )}
+
+                      {authUser ? (
+                        // Logged In
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px', background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--accent-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', color: 'white', fontWeight: 'bold' }}>
+                              {authUser.email?.substring(0, 1).toUpperCase()}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{authUser.email}</div>
+                              <div style={{ fontSize: '0.7rem', color: '#22c55e', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} /> Conectado e Sincronizando
+                              </div>
+                            </div>
+                          </div>
+
+                          {isCustomFirebaseActive() && (
+                            <div className="glass-extreme" style={{ padding: '12px 14px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                              <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>
+                                🔧 <strong>Status:</strong> Utilizando servidor privado descentralizado.
+                              </div>
+                              
+                              {isEditingConfig ? (
+                                <form onSubmit={handleSaveCustomFirebaseConfig} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  <textarea
+                                    value={customFirebaseConfigText}
+                                    onChange={(e) => setCustomFirebaseConfigText(e.target.value)}
+                                    placeholder="Configuração do Firebase..."
+                                    style={{
+                                      width: '100%', height: '80px', padding: '8px', borderRadius: '8px',
+                                      border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)',
+                                      color: '#a78bfa', fontFamily: 'monospace', fontSize: '0.7rem', resize: 'none', outline: 'none'
+                                    }}
+                                  />
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button type="submit" className="liquid-button" style={{ flex: 1, padding: '8px', borderRadius: '8px', background: 'var(--accent-color)', color: 'white', border: 'none', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>
+                                      Atualizar Credenciais
+                                    </button>
+                                    <button type="button" onClick={() => setIsEditingConfig(false)} className="liquid-button" style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', fontSize: '0.75rem', cursor: 'pointer' }}>
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                </form>
+                              ) : (
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button
+                                    onClick={() => setIsEditingConfig(true)}
+                                    className="liquid-button"
+                                    style={{
+                                      flex: 1, padding: '8px', borderRadius: '8px', background: 'rgba(255, 255, 255, 0.05)',
+                                      border: '1px solid rgba(255, 255, 255, 0.1)', color: '#c084fc', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600
+                                    }}
+                                  >
+                                    Alterar Servidor
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      updateFirebaseConfig(null);
+                                      setCustomFirebaseConfigText('');
+                                      setAuthStatus('✅ Redefinido para o servidor padrão!');
+                                      setTimeout(() => window.location.reload(), 1000);
+                                    }}
+                                    className="liquid-button"
+                                    style={{
+                                      padding: '8px 12px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.1)',
+                                      border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600
+                                    }}
+                                  >
+                                    Voltar ao Padrão
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <button
+                            onClick={handleFirebaseLogout}
+                            className="liquid-button"
+                            style={{
+                              width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.3)',
+                              background: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5', cursor: 'pointer', fontSize: '0.85rem',
+                              fontWeight: 600, transition: 'all 0.3s ease'
+                            }}
+                          >
+                            Desconectar Conta
+                          </button>
+                        </div>
+                      ) : (
+                        // Logged Out Form (Simplified with Google login only)
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                          <div style={{
+                            padding: '12px 14px', borderRadius: '12px',
+                            background: 'rgba(139, 92, 246, 0.08)',
+                            border: '1px solid rgba(139, 92, 246, 0.2)',
+                            fontSize: '0.78rem', lineHeight: 1.4, opacity: 0.9,
+                            color: '#c084fc'
+                          }}>
+                            💡 <strong>Sincronização Descentralizada Privada:</strong><br />
+                            Conecte-se com sua conta Google para sincronizar suas notas automaticamente. Se for seu primeiro uso, você poderá vincular seu Firebase privado à sua conta de forma totalmente gratuita!
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleGoogleSignIn}
+                            className="liquid-button"
+                            style={{
+                              width: '100%', padding: '14px', borderRadius: '12px',
+                              border: '1px solid rgba(255,255,255,0.15)',
+                              background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)', color: 'white',
+                              cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+                              transition: 'all 0.3s ease',
+                              boxShadow: '0 4px 15px rgba(109, 40, 217, 0.3)'
+                            }}
+                            onMouseEnter={(e) => { e.target.style.background = 'linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%)'; }}
+                            onMouseLeave={(e) => { e.target.style.background = 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)'; }}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24">
+                              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
+                              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                            </svg>
+                            Entrar com o Google
+                          </button>
+
+                          {!showConfigForm && (
+                            <div style={{ textAlign: 'center', marginTop: '6px' }}>
+                              <button
+                                type="button"
+                                onClick={() => setShowConfigForm(true)}
+                                style={{ background: 'none', border: 'none', color: '#c084fc', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, textDecoration: 'underline' }}
+                              >
+                                Configurar chaves do Firebase manualmente (Avançado)
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Servidor Próprio (Self-Hosted) */}
+                  {selectedCloudProvider === 'custom_server' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', boxSizing: 'border-box', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '12px', animation: 'fadeIn 0.3s ease' }}>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.5px', opacity: 0.8 }}>
+                        CONFIGURAÇÃO DO SERVIDOR PRÓPRIO
+                      </label>
+                      <div style={{
+                        padding: '12px 14px', borderRadius: '12px',
+                        background: 'rgba(139, 92, 246, 0.08)',
+                        border: '1px solid rgba(139, 92, 246, 0.2)',
+                        fontSize: '0.78rem', lineHeight: 1.4, opacity: 0.9,
+                        color: '#c084fc'
+                      }}>
+                        🖥️ <strong>Sincronização Customizada (Self-Hosted):</strong><br />
+                        Insira a URL do seu servidor self-hosted e o Token de API (JWT) para sincronização e controle absoluto dos seus dados!
+                      </div>
+
+                      <form onSubmit={handleSaveCustomServer} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600, opacity: 0.7 }}>URL DO SERVIDOR</span>
+                          <GlassInput
+                            type="url"
+                            required
+                            value={customServerUrl}
+                            onChange={(e) => setCustomServerUrl(e.target.value)}
+                            placeholder="https://seu-servidor-connected-notes.com"
+                          />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600, opacity: 0.7 }}>TOKEN DE API (JWT)</span>
+                          <GlassInput
+                            type="text"
+                            required
+                            value={customServerToken}
+                            onChange={(e) => setCustomServerToken(e.target.value)}
+                            placeholder="Seu token de autenticação..."
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          className="liquid-button"
+                          style={{
+                            width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
+                            background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%)',
+                            color: 'white', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600,
+                            boxShadow: '0 4px 15px rgba(139, 92, 246, 0.4)', marginTop: '6px'
+                          }}
+                        >
+                          Salvar e Sincronizar
+                        </button>
+                      </form>
+                    </div>
+                  )}
+
+                  {/* Provedores Planejados */}
+                  {['supabase', 'couchdb'].includes(selectedCloudProvider) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '12px', animation: 'fadeIn 0.3s ease' }}>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.5px', opacity: 0.8 }}>
+                        CONFIGURAÇÃO DE NUVEM: {selectedCloudProvider.toUpperCase()}
+                      </label>
+                      <div style={{
+                        padding: '16px', borderRadius: '12px',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        fontSize: '0.8rem', lineHeight: 1.5, opacity: 0.8,
+                        textAlign: 'center'
+                      }}>
+                        🚀 O suporte para o provedor <strong>{selectedCloudProvider === 'supabase' ? 'Supabase' : 'CouchDB'}</strong> estará disponível nas próximas atualizações.<br />Por enquanto, utilize o Firebase Cloud ou Servidor Próprio para sincronização em nuvem active.
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Feedback de Status Geral de Armazenamento */}
+        {authStatus && (
+          <div className="glass-extreme" style={{ padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', fontSize: '0.82rem', textAlign: 'center', animation: 'fadeIn 0.3s ease' }}>
+            {authStatus}
+          </div>
+        )}
+
+        {/* Ferramenta de Sincronização */}
+        <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', background: 'var(--glass-bg)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>
+            SINCRONIZAÇÃO E MIGRAÇÃO MULTI-DESTINO
+          </label>
+          <p style={{ fontSize: '0.78rem', opacity: 0.7, margin: '0 0 6px 0', lineHeight: 1.4 }}>
+            Esta ferramenta grava todas as suas notas abertas em <strong>todos os locais de salvamento atualmente ativados</strong> ({activeListText}). Ideal para evitar perda de dados ao ativar novos destinos de backup.
+          </p>
+          {migrationStatus && (
+            <div style={{ fontSize: '0.8rem', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', textAlign: 'center', margin: '4px 0' }}>
+              {migrationStatus}
+            </div>
+          )}
+          <button
+            onClick={handleMigrateNotes}
+            className="liquid-button"
+            style={{
+              width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.15)',
+              background: 'rgba(255,255,255,0.05)', color: 'white', cursor: 'pointer', fontSize: '0.85rem',
+              fontWeight: 600, transition: 'all 0.3s ease'
+            }}
+            onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.08)'; e.target.style.borderColor = 'var(--accent-color)'; }}
+            onMouseLeave={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.borderColor = 'rgba(255,255,255,0.15)'; }}
+          >
+            Sincronizar Notas nos locais ativos
+          </button>
+        </div>
+      </div>
+    );
   };
 
   const handleClearData = () => {
@@ -863,6 +1821,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
         <div style={{ padding: '28px', overflowY: 'auto', flex: 1 }} className="custom-scrollbar">
           {activeTab === 'appearance' && renderAppearance()}
           {activeTab === 'editor' && renderEditor()}
+          {activeTab === 'storage' && renderStorage()}
           {activeTab === 'data' && renderData()}
           {activeTab === 'about' && renderAbout()}
         </div>
@@ -905,6 +1864,127 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
             </button>
           </div>
         </div>
+        {/* Google Login Guide Overlay */}
+        {showGoogleHelp && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 1000,
+              background: 'var(--bg-color, #0f172a)', // Solid opaque background matching current theme
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '28px',
+              animation: 'fadeIn 0.2s ease',
+              boxSizing: 'border-box',
+              borderRadius: '32px'
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '20px' }}>🔥</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, letterSpacing: '-0.3px', color: 'var(--text-primary)' }}>Ativar Login com Google</h3>
+                  <p style={{ margin: '2px 0 0', fontSize: '0.75rem', opacity: 0.5, color: 'var(--text-primary)' }}>Guia passo a passo para o Firebase Console</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowGoogleHelp(false)}
+                className="liquid-button"
+                style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.6)', width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Steps Scrollable Container */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', paddingRight: '4px' }} className="custom-scrollbar">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{
+                  padding: '12px 14px', borderRadius: '12px',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  fontSize: '0.8rem', lineHeight: 1.4, color: '#fecaca'
+                }}>
+                  ⚠️ <strong>auth/operation-not-allowed:</strong> O provedor Google está desativado no Firebase. Siga os passos 1 a 5 abaixo.
+                </div>
+                
+                <div style={{
+                  padding: '12px 14px', borderRadius: '12px',
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid rgba(245, 158, 11, 0.2)',
+                  fontSize: '0.8rem', lineHeight: 1.4, color: '#fef3c7'
+                }}>
+                  🌐 <strong>auth/unauthorized-domain:</strong> O domínio/IP atual não está autorizado. No console Firebase, acesse <strong>Authentication</strong> &rarr; <strong>Settings</strong> &rarr; <strong>Authorized domains</strong> e adicione o endereço de execução do seu app.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--accent-color, #ec4899)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold', flexShrink: 0 }}>1</div>
+                  <div style={{ fontSize: '0.82rem', lineHeight: 1.4, color: 'var(--text-primary)' }}>
+                    Acesse o <strong><a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-color, #ec4899)', textDecoration: 'none', fontWeight: 600 }}>Console do Firebase ↗</a></strong> e selecione o seu projeto na lista.
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--accent-color, #ec4899)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold', flexShrink: 0 }}>2</div>
+                  <div style={{ fontSize: '0.82rem', lineHeight: 1.4, color: 'var(--text-primary)' }}>
+                    No menu lateral esquerdo, clique em <strong>Authentication</strong> (Autenticação).
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--accent-color, #ec4899)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold', flexShrink: 0 }}>3</div>
+                  <div style={{ fontSize: '0.82rem', lineHeight: 1.4, color: 'var(--text-primary)' }}>
+                    Clique na aba superior chamada <strong>Sign-in method</strong> (Método de login).
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--accent-color, #ec4899)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold', flexShrink: 0 }}>4</div>
+                  <div style={{ fontSize: '0.82rem', lineHeight: 1.4, color: 'var(--text-primary)' }}>
+                    Sob <strong>Sign-in providers</strong>, clique em <strong>Adicionar novo provedor</strong> e selecione o <strong>Google</strong>.
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--accent-color, #ec4899)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold', flexShrink: 0 }}>5</div>
+                  <div style={{ fontSize: '0.82rem', lineHeight: 1.4, color: 'var(--text-primary)' }}>
+                    Ative a opção <strong>Habilitar / Enable</strong>, escolha o <strong>e-mail de suporte do projeto</strong> e clique em <strong>Salvar</strong>.
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--accent-color, #ec4899)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold', flexShrink: 0 }}>6</div>
+                  <div style={{ fontSize: '0.82rem', lineHeight: 1.4, color: 'var(--text-primary)' }}>
+                    <strong>Para obter suas chaves privadas</strong>: Clique no ícone de engrenagem ⚙️ (Configurações do Projeto), role até <strong>Seus aplicativos</strong> na aba <em>Geral</em>, e copie o objeto de configuração JavaScript para colar na caixa "Servidor Firebase Privado".
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Footer */}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '16px', marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowGoogleHelp(false)}
+                className="liquid-button"
+                style={{
+                  height: '44px', padding: '0 28px', borderRadius: '12px', border: 'none',
+                  background: 'linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%)',
+                  color: 'white', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem',
+                  boxShadow: '0 6px 15px rgba(139, 92, 246, 0.3)'
+                }}
+              >
+                Entendi, vou configurar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

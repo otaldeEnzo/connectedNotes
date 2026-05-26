@@ -16,7 +16,16 @@ const MermaidEditor = ({ note, updateContent, setAiPanel }) => {
     }, [note.content.code]);
 
     return (
-        <div style={{ display: 'flex', height: '100%', gap: '1px', background: 'var(--glass-border)' }}>
+        <div className="glass-panel" style={{
+            margin: '24px',
+            height: 'calc(100% - 48px)',
+            display: 'flex',
+            gap: '1px',
+            background: 'var(--glass-border)',
+            borderRadius: '24px',
+            overflow: 'hidden',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.3)'
+        }}>
             <div style={{ flex: 1, background: 'var(--bg-color)', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border-color)', fontSize: '0.8rem', fontWeight: 600 }}>
                     Editor Mermaid

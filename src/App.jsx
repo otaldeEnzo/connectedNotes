@@ -556,6 +556,7 @@ function AppContent() {
           setShowTagPopover={setShowTagPopover}
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={toggleSidebar}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
 
         {/* Floating Toolbar Pill — only on canvas notes */}

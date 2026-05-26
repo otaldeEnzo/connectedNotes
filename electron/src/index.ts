@@ -1,7 +1,7 @@
 import type { CapacitorElectronConfig } from '@capacitor-community/electron';
 import { getCapacitorElectronConfig, setupElectronDeepLinking } from '@capacitor-community/electron';
 import type { MenuItemConstructorOptions } from 'electron';
-import { app, MenuItem } from 'electron';
+import { app, MenuItem, ipcMain, dialog, BrowserWindow } from 'electron';
 import electronIsDev from 'electron-is-dev';
 import unhandled from 'electron-unhandled';
 import { autoUpdater } from 'electron-updater';
@@ -68,3 +68,10 @@ app.on('activate', async function () {
 });
 
 // Place all ipc or other electron api calls and custom functionality under this line
+ipcMain.handle('select-directory', async (event) => {
+  const win = myCapacitorApp.getMainWindow() || BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(win, {
+    properties: ['openDirectory', 'createDirectory']
+  });
+  return result.filePaths[0]; // Retorna o caminho da pasta ou undefined
+});

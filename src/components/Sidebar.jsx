@@ -44,6 +44,7 @@ const TreeNode = ({ nodeId, level = 0 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
 
   const note = notes[nodeId];
 
@@ -184,33 +185,58 @@ const TreeNode = ({ nodeId, level = 0 }) => {
             <button
               title="Novo item"
               className={`liquid-button p-0.5 bg-transparent border-none cursor-pointer ${showAddMenu ? 'text-[var(--accent-color)]' : 'text-[var(--text-primary)] opacity-40 hover:opacity-100'}`}
-              onClick={(e) => { e.stopPropagation(); setShowAddMenu(!showAddMenu); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                const rect = e.currentTarget.getBoundingClientRect();
+                setMenuPos({ top: rect.bottom + 4, left: rect.right - 160 });
+                setShowAddMenu(!showAddMenu);
+              }}
             >
               <SidebarIcons.Plus />
             </button>
 
-            {showAddMenu && (
-              <div
-                className="glass-panel absolute top-[calc(100%+4px)] right-0 w-[160px] p-1.5 z-[1000] rounded-[10px] border border-[var(--glass-border)] shadow-glass flex flex-col gap-0.5"
-                onMouseLeave={() => setShowAddMenu(false)}
-              >
-                {[
-                  { type: 'text', label: 'Texto', icon: SidebarIcons.Text },
-                  { type: 'code', label: 'Código', icon: SidebarIcons.Code },
-                  { type: 'canvas', label: 'Canvas', icon: SidebarIcons.Canvas },
-                  { type: 'mermaid', label: 'Diagrama', icon: SidebarIcons.Mermaid },
-                  { type: 'mindmap', label: 'Mapa Mental', icon: SidebarIcons.Mindmap },
-                  { type: 'folder', label: 'Pasta', icon: SidebarIcons.Folder },
-                ].map(opt => (
-                  <button
-                    key={opt.type}
-                    className="liquid-item py-1.5 px-2.5 border-none bg-transparent hover:bg-white/10 text-[var(--text-primary)] text-[0.8rem] cursor-pointer flex items-center gap-2 rounded-md text-left transition-colors"
-                    onClick={(e) => { e.stopPropagation(); addNote(nodeId, opt.type); setShowAddMenu(false); }}
-                  >
-                    <span className="opacity-70"><opt.icon /></span> {opt.label}
-                  </button>
-                ))}
-              </div>
+            {showAddMenu && createPortal(
+              <>
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowAddMenu(false);
+                  }}
+                  style={{ position: 'fixed', inset: 0, zIndex: 999998 }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                />
+                <div
+                  className="glass-panel w-[160px] p-1.5 rounded-[10px] shadow-glass flex flex-col gap-0.5"
+                  style={{
+                    position: 'fixed',
+                    top: menuPos.top,
+                    left: menuPos.left,
+                    background: 'var(--glass-bg-floating, rgba(15, 23, 42, 0.98))',
+                    backdropFilter: 'blur(32px) saturate(180%) brightness(1.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    zIndex: 999999
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  {[
+                    { type: 'text', label: 'Texto', icon: SidebarIcons.Text },
+                    { type: 'code', label: 'Código', icon: SidebarIcons.Code },
+                    { type: 'canvas', label: 'Canvas', icon: SidebarIcons.Canvas },
+                    { type: 'mermaid', label: 'Diagrama', icon: SidebarIcons.Mermaid },
+                    { type: 'mindmap', label: 'Mapa Mental', icon: SidebarIcons.Mindmap },
+                    { type: 'folder', label: 'Pasta', icon: SidebarIcons.Folder },
+                  ].map(opt => (
+                    <button
+                      key={opt.type}
+                      className="liquid-item py-1.5 px-2.5 border-none bg-transparent hover:bg-white/10 text-[var(--text-primary)] text-[0.8rem] cursor-pointer flex items-center gap-2 rounded-md text-left transition-colors"
+                      onClick={(e) => { e.stopPropagation(); addNote(nodeId, opt.type); setShowAddMenu(false); }}
+                    >
+                      <span className="opacity-70"><opt.icon /></span> {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </>,
+              document.body
             )}
 
             {nodeId !== 'root' && (
@@ -461,13 +487,6 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
             onClick={onToggleTheme}
           >
             {isDarkMode ? <SidebarIcons.Sun /> : <SidebarIcons.Moon />}
-          </button>
-          <button
-            title="Configurações"
-            className="liquid-button flex-1 p-2 rounded-[10px] bg-transparent border border-[var(--border-color)] text-[var(--text-primary)] opacity-60 hover:opacity-100 flex items-center justify-center cursor-pointer hover:bg-[var(--glass-surface-focus)] transition-all"
-            onClick={onOpenSettings}
-          >
-            <SidebarIcons.Settings />
           </button>
         </div>
 
