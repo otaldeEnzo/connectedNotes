@@ -1566,6 +1566,28 @@ const CanvasArea = forwardRef(({
     }
   };
 
+  const getBlockEffectiveZIndex = (b) => {
+    if (selectedIds.includes(b.id) && isDraggingSelection) return 1001;
+    if (editingBlockId === b.id) return 1000;
+    return b.zIndex || 50;
+  };
+
+  const findTopBlockAtPoint = (blocksList, pt, padding = 0) => {
+    const matchingBlocks = blocksList.filter(b => isPointInBlock(b, pt, padding));
+    if (matchingBlocks.length === 0) return null;
+    if (matchingBlocks.length === 1) return matchingBlocks[0];
+
+    return [...matchingBlocks].sort((a, b) => {
+      const zA = getBlockEffectiveZIndex(a);
+      const zB = getBlockEffectiveZIndex(b);
+      if (zA !== zB) return zB - zA;
+      
+      const idxA = blocksList.indexOf(a);
+      const idxB = blocksList.indexOf(b);
+      return idxB - idxA;
+    })[0];
+  };
+
   const handlePointerDown = (e) => {
     // --- Event Delegation for Blocks ---
     const dragHandle = e.target.closest('[data-drag-handle="true"]');
@@ -1597,7 +1619,7 @@ const CanvasArea = forwardRef(({
     if (['text', 'code', 'math', 'ggb', 'mermaid', 'mindmap', 'pdf'].includes(activeTool)) {
       const allBlocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks];
       const pt = screenToCanvas(e.clientX, e.clientY);
-      const clickedBlock = allBlocks.find(b => isPointInBlock(b, pt));
+      const clickedBlock = findTopBlockAtPoint(allBlocks, pt);
 
       if (clickedBlock) {
         handleBlockInteract(clickedBlock.id, e);
@@ -1618,7 +1640,7 @@ const CanvasArea = forwardRef(({
     if (activeTool === 'cursor' || activeTool === 'ai-lasso') {
       const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks];
       const pt = screenToCanvas(e.clientX, e.clientY);
-      const clickedBlock = allB.find(b => isPointInBlock(b, pt));
+      const clickedBlock = findTopBlockAtPoint(allB, pt);
       if (clickedBlock && activeTool === 'cursor') {
         const newSel = selectedIds.includes(clickedBlock.id) ? selectedIds : [clickedBlock.id];
         if (!selectedIds.includes(clickedBlock.id)) {
@@ -1726,8 +1748,8 @@ const CanvasArea = forwardRef(({
 
     // [PRO CONNECTORS] Hover detection for handles
     if (activeTool === 'cursor' && !isDrawing && !isDraggingSelection && !selectionRectRef.current) {
-      const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks];
-      const hBlock = allB.find(b => isPointInBlock(b, pt, 20)); // Padding de 20px para manter as alças ativas
+      const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks];
+      const hBlock = findTopBlockAtPoint(allB, pt, 20); // Padding de 20px para manter as alças ativas
       if (hBlock?.id !== hoveredBlockId) setHoveredBlockId(hBlock?.id || null);
     } else if (hoveredBlockId) {
       setHoveredBlockId(null);
@@ -1735,7 +1757,7 @@ const CanvasArea = forwardRef(({
 
     if (activeTool === 'eraser') { setEraserCursorPos(pt); } else if (eraserCursorPos) { setEraserCursorPos(null); }
     if (connectingState) {
-      const blocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks];
+      const blocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks];
       let snap = null;
       let minDist = 30; // Snap threshold
       for (const b of blocks) {
@@ -2187,7 +2209,7 @@ const CanvasArea = forwardRef(({
             ))}
           </Group>
 
-          <ConnectionLayer connections={connections} allBlocks={[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks]} tempConnection={connectingState} selectedIds={selectedConnectionIds} scale={scale} isDarkMode={isDarkMode} onSelect={(id, shift) => setSelectedConnectionIds(prev => shift ? (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]) : [id])} />
+          <ConnectionLayer connections={connections} allBlocks={[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks]} tempConnection={connectingState} selectedIds={selectedConnectionIds} scale={scale} isDarkMode={isDarkMode} hoveredId={hoveredBlockId} onSelect={(id, shift) => setSelectedConnectionIds(prev => shift ? (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]) : [id])} />
         </Layer>
         <Layer ref={el => { konvaLayerRefs.current[2] = el; }} x={position.x} y={position.y} scaleX={scale} scaleY={scale} listening={false}>
           {currentStroke && (
@@ -2229,8 +2251,7 @@ const CanvasArea = forwardRef(({
       <div ref={infiniteCanvasRef} className="infinite-canvas" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transformOrigin: '0 0', position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 2 }}>
         <div style={{ position: 'absolute', top: 0, left: 0, width: 50000, height: 50000, pointerEvents: 'none', ...getBackgroundStyle() }} />
 
-        {/* GGBBlock stays here (no backdrop-filter needed, has iframe) */}
-        {ggbBlocks.map(b => <GGBBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('ggb', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} isShadow={isShadow} />)}
+        {/* GGBBlock moved to glass-blocks-layer for correct viewport culling */}
 
         {/* SVG Overlay Stage for Top-Layer Strokes (zIndex >= 100) */}
         <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible', zIndex: 90 }}>
@@ -2265,6 +2286,7 @@ const CanvasArea = forwardRef(({
       {/* ====== LAYER 2b: Glass blocks (NO parent transform — backdrop-filter works!) ====== */}
       <div ref={glassBlocksLayerRef} className="glass-blocks-layer" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10000, isolation: 'isolate', transform: 'translateZ(0)', transformOrigin: '0 0' }}>
         {imageBlocks.map(b => <ImageBlock key={b.id} block={b} activeTool={activeTool} updateBlock={(id, d) => updateAnyBlock('image', id, d)} onInteract={handleBlockInteract} removeBlock={removeAnyBlock} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
+        {ggbBlocks.map(b => <GGBBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('ggb', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} isShadow={isShadow} />)}
         {codeBlocks.map(b => <CodeBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('code', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {textBlocks.map(b => <TextBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('text', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {mathBlocks.map(b => {

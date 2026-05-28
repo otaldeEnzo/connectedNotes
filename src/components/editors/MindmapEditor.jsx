@@ -519,6 +519,7 @@ const MindmapEditor = forwardRef(({ note, updateContent, scale, panOffset, conta
 
     const handleDragStart = (id, e) => {
         if (e.button !== 0) return;
+        if (activeTool === 'hand') return; // Prevent conflict with Hand tool
         e.stopPropagation();
 
         const isSelected = selectedNodeIds.includes(id);
@@ -547,6 +548,7 @@ const MindmapEditor = forwardRef(({ note, updateContent, scale, panOffset, conta
     const handleContainerDown = (e) => {
         if (activeMenu) setActiveMenu(null);
         if (e.button !== 0 || draggingNodeId) return;
+        if (activeTool === 'hand') return; // PREVENT CONFLICT WITH CANVAS HAND TOOL
 
         // Allow blur if an input is currently focused
         const isInputFocused = document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName);

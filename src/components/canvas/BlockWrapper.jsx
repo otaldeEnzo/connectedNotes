@@ -140,7 +140,7 @@ const BlockWrapper = forwardRef(
         style={{
           transform: `translate3d(${screenX}px, ${screenY}px, 0) scale(${s * (isDragging ? 1.02 : 1)})`,
           transformOrigin: '0 0',
-          width: useFixed && block.width ? `${block.width}px` : "auto",
+          width: block.width ? `${block.width}px` : "auto",
           height: useFixed && block.height ? `${block.height}px` : "auto",
           zIndex: isEditing ? 1000 : isDragging ? 1001 : block.zIndex || 50,
         }}
@@ -210,6 +210,12 @@ const BlockWrapper = forwardRef(
           <div
             className="block-header flex items-center justify-between px-6 py-4 cursor-grab active:cursor-grabbing"
             data-drag-handle="true"
+            onDoubleClick={(e) => {
+              if (block.type === 'text' || block.content !== undefined) {
+                e.stopPropagation();
+                if (onDoubleClick) onDoubleClick(e);
+              }
+            }}
           >
             <div className="flex items-center gap-3">
               <div

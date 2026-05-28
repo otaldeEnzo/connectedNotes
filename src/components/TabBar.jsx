@@ -871,6 +871,69 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                     )}
                 </div>
 
+                {/* Open Local File Button */}
+                <button
+                    className="liquid-button"
+                    onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                            if (!window.showOpenFilePicker) throw new Error("API não suportada no navegador atual.");
+                            const [fileHandle] = await window.showOpenFilePicker({
+                                types: [
+                                    { description: 'Arquivos de Nota', accept: { 'text/plain': ['.md', '.canvas', '.mindmap', '.mermaid', '.code', '.json'] } }
+                                ],
+                                multiple: false
+                            });
+                            const file = await fileHandle.getFile();
+                            const content = await file.text();
+                            
+                            const name = file.name;
+                            let type = 'text';
+                            if (name.endsWith('.canvas')) type = 'canvas';
+                            else if (name.endsWith('.mindmap')) type = 'mindmap';
+                            else if (name.endsWith('.mermaid')) type = 'mermaid';
+                            else if (name.endsWith('.code')) type = 'code';
+                            
+                            const newId = 'imported-' + Date.now();
+                            let parsedContent = { root: content };
+                            try {
+                                if (content.startsWith('{')) {
+                                    parsedContent = JSON.parse(content);
+                                }
+                            } catch (e) {}
+
+                            addNote(newId, name.split('.')[0] || 'Importado', type, 'root', parsedContent);
+                            selectNote(newId, true);
+                            
+                        } catch (err) {
+                            if (err.name !== 'AbortError') {
+                                alert('Erro ao abrir arquivo: ' + err.message);
+                            }
+                        }
+                    }}
+                    style={{
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid var(--glass-border)',
+                        borderRadius: '10px',
+                        width: '36px',
+                        height: '36px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        color: 'var(--text-secondary)',
+                        transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                    }}
+                    title="Abrir arquivo físico..."
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <path d="M2 15h10" />
+                        <path d="m9 18 3-3-3-3" />
+                    </svg>
+                </button>
+
                 {/* Minimap Toggle Button */}
                 <button
                     className="liquid-button"

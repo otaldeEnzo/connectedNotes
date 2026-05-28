@@ -69,77 +69,98 @@ const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool,
         }
     }, [blockWidth, graphHeight, isLoaded, isCentered]);
 
-    // Initialize GeoGebra
-    useEffect(() => {
-        let mounted = true;
+    // Initialize GeoGebra via a ref callback to handle viewport culling remounts
+    const initGGB = useCallback((el) => {
+        containerRef.current = el;
+        
+        // If element is unmounted (e.g. scrolled out of view), clean up
+        if (!el) {
+            if (appletRef.current) {
+                // optional: cleanup GeoGebra if needed
+                appletRef.current = null;
+            }
+            ggbApiRef.current = null;
+            setIsLoaded(false);
+            return;
+        }
 
+        // When element is mounted, clear it and inject
+        el.innerHTML = '';
+        
         loadGGBScript().then(() => {
-            if (!mounted || appletRef.current || !containerRef.current) return;
+            // Wait a frame to ensure the element is fully painted and laid out by the browser.
+            // GeoGebra's inject mechanism relies on accurate offsetWidth/offsetHeight.
+            requestAnimationFrame(() => {
+                // Check if this is still the active container element after the frame
+                if (containerRef.current !== el) return;
 
-            const parameters = {
-                "id": appletId.current,
-                "appName": "graphing",
-                "width": blockWidth,
-                "height": graphHeight,
-                "showToolBar": false,
-                "showAlgebraInput": false,
-                "showMenuBar": false,
-                "allowStyleBar": false,
-                "showZoomButtons": false,
-                "enableLabelDrags": false,
-                "enableShiftDragZoom": true,
-                "enableRightClick": false,
-                "errorDialogsActive": false,
-                "showFullscreenButton": false,
-                "showAlgebraView": false,
-                "algebraInputPosition": "algebra",
-                "perspective": "G",
-                "autoHeight": false,
-                "language": "pt",
-                "borderColor": "transparent",
-                "backgroundColor": "transparent",
-                "enableKeyboard": false,
-                "showKeyboardOnFocus": false,
-                "preventFocus": false,
-                "appletOnLoad": (api) => {
-                    if (!mounted) return;
-                    ggbApiRef.current = api;
-                    setIsLoaded(true);
-                    console.log("[GGB] Applet loaded. API keys:", Object.keys(api || {}));
-
-                    try {
-                        api.setPerspective("G");
-                        api.setMode(0); // Move tool
-                        api.setGridVisible(true);
-                        api.setAxesVisible(true, true);
-                    } catch (e) {
-                        // Fail silently for perspective errors
-                    }
-
-                    setTimeout(() => {
-                        if (mounted && ggbApiRef.current) {
-                            try { ggbApiRef.current.setSize(Math.round(blockWidth), Math.round(graphHeight)); } catch(e) {}
-                        }
+                const parameters = {
+                    "id": appletId.current,
+                    "appName": "graphing",
+                    "width": blockWidth,
+                    "height": graphHeight,
+                    "showToolBar": false,
+                    "showAlgebraInput": false,
+                    "showMenuBar": false,
+                    "allowStyleBar": false,
+                    "showZoomButtons": false,
+                    "enableLabelDrags": false,
+                    "enableShiftDragZoom": true,
+                    "enableRightClick": false,
+                    "errorDialogsActive": false,
+                    "showFullscreenButton": false,
+                    "showAlgebraView": false,
+                    "algebraInputPosition": "algebra",
+                    "perspective": "G",
+                    "autoHeight": false,
+                    "language": "pt",
+                    "borderColor": "transparent",
+                    "backgroundColor": "transparent",
+                    "enableKeyboard": false,
+                    "showKeyboardOnFocus": false,
+                    "preventFocus": false,
+                    "appletOnLoad": (api) => {
+                        // Check if still mounted to the same element
+                        if (containerRef.current !== el) return;
                         
-                        if (block.commands) {
-                            block.commands.forEach(cmd => {
-                                try { api.evalCommand(cmd); } catch (e) { }
-                            });
-                        } else if (block.expression) {
-                            try { api.evalCommand(block.expression); } catch (e) { }
-                        }
-                    }, 100);
-                },
-                ...block.ggbParameters
-            };
+                        ggbApiRef.current = api;
+                        setIsLoaded(true);
+                        console.log("[GGB] Applet loaded.");
 
-            const applet = new window.GGBApplet(parameters, true);
-            applet.inject(containerRef.current);
-            appletRef.current = applet;
+                        try {
+                            api.setPerspective("G");
+                            api.setMode(0);
+                            api.setGridVisible(true);
+                            api.setAxesVisible(true, true);
+                        } catch (e) { }
+
+                        setTimeout(() => {
+                            if (containerRef.current !== el || !ggbApiRef.current) return;
+                            
+                            try { ggbApiRef.current.setSize(Math.round(blockWidth), Math.round(graphHeight)); } catch(e) {}
+
+                            if (block.commands) {
+                                block.commands.forEach(cmd => {
+                                    try { api.evalCommand(cmd); } catch (e) { }
+                                });
+                            } else if (block.expression) {
+                                try { api.evalCommand(block.expression); } catch (e) { }
+                            }
+                        }, 200);
+                    },
+                    ...block.ggbParameters
+                };
+
+                try {
+                    const localApplet = new window.GGBApplet(parameters, true);
+                    localApplet.inject(el); // Inject directly into the DOM node
+                    appletRef.current = localApplet;
+                } catch (e) {
+                    console.error("GGB Injection Error:", e);
+                }
+            });
         });
-
-        return () => { mounted = false; };
-    }, [block.id]);
+    }, [block.id, blockWidth, graphHeight, block.commands, block.expression, block.ggbParameters]);
 
     // External changes sync
     useEffect(() => {
@@ -280,16 +301,20 @@ const GGBBlock = memo(({ block, updateBlock, isDarkMode, onInteract, activeTool,
             )}
 
             <div
-                ref={containerRef}
+                ref={initGGB}
+                id={appletId.current}
                 className="ggb-container block-interactivity-isolation"
                 onContextMenuCapture={e => e.stopPropagation()}
                 style={{
                     width: `${blockWidth}px`,
                     height: `${graphHeight}px`,
+                    minWidth: `${blockWidth}px`,
+                    minHeight: `${graphHeight}px`,
                     pointerEvents: 'auto',
                     overflow: 'hidden',
                     position: 'relative',
-                    cursor: 'grab'
+                    cursor: 'grab',
+                    display: 'block'
                 }}
             />
 

@@ -101,13 +101,16 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
             isDarkMode={isDarkMode}
             onClose={removeBlock}
             onInteract={(id, e) => {
-                if (e.target.closest('.block-header')) {
-                    onInteract && onInteract(id, e);
+                if (e && !e.target.closest('.block-header')) {
+                    e.stopPropagation();
+                    if (setEditing) setEditing(true);
                 } else {
-                    handleSingleClick(e);
+                    onInteract && onInteract(id, e);
                 }
             }}
-            onDoubleClick={handleSingleClick}
+            onDoubleClick={(e) => {
+                if (setEditing) setEditing(true);
+            }}
             onRename={(id, name) => updateBlock(id, { customTitle: name })}
             updateBlock={updateBlock}
             canvasScale={canvasScale}
@@ -118,7 +121,7 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
                 editor && isEditing && (
                     <div
                         ref={toolbarRef}
-                        className="rich-text-toolbar absolute -top-4 left-1/2 -translate-x-1/2 -translate-y-full glass-extreme flex items-center gap-4 px-6 py-4 rounded-[2.5rem] z-[15000] animate-in fade-in slide-in-from-bottom-4 duration-500 whitespace-nowrap"
+                        className="rich-text-toolbar absolute -top-4 left-1/2 -translate-x-1/2 -translate-y-full glass-extreme flex items-center gap-4 px-6 py-4 rounded-[2.5rem] z-[15000] animate-in fade-in slide-in-from-bottom-4 duration-500 whitespace-nowrap w-max"
                         style={{
                             pointerEvents: 'auto',
                             background: 'var(--glass-bg-floating)',

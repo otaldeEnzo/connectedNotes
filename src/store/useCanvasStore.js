@@ -205,14 +205,14 @@ export const useCanvasStore = create((set, get) => ({
   },
 
   // Ações de Estado de Interação
-  setSelectedIds: (ids) => set({ selectedIds: ids }),
-  setSelectedStrokeIds: (ids) => set({ selectedStrokeIds: ids }),
-  setSelectedConnectionIds: (ids) => set({ selectedConnectionIds: ids }),
+  setSelectedIds: (arg) => set(state => ({ selectedIds: typeof arg === 'function' ? arg(state.selectedIds) : arg })),
+  setSelectedStrokeIds: (arg) => set(state => ({ selectedStrokeIds: typeof arg === 'function' ? arg(state.selectedStrokeIds) : arg })),
+  setSelectedConnectionIds: (arg) => set(state => ({ selectedConnectionIds: typeof arg === 'function' ? arg(state.selectedConnectionIds) : arg })),
   setIsDrawing: (isDrawing) => set({ isDrawing }),
   setIsErasing: (isErasing) => set({ isErasing }),
   setIsDraggingSelection: (isDragging) => set({ isDraggingSelection: isDragging }),
   setEditingBlockId: (id) => set({ editingBlockId: id }),
   setHoveredBlockId: (id) => set({ hoveredBlockId: id }),
-  setConnectingState: (state) => set({ connectingState: state }),
-  setEraserCursorPos: (pos) => set({ eraserCursorPos: pos })
+  setConnectingState: (arg) => set(state => ({ connectingState: typeof arg === 'function' ? arg(state.connectingState) : arg })),
+  setEraserCursorPos: (arg) => set(state => ({ eraserCursorPos: typeof arg === 'function' ? arg(state.eraserCursorPos) : arg }))
 }));

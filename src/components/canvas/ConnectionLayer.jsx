@@ -2,7 +2,7 @@ import React from 'react';
 import { Group, Path, Circle } from 'react-konva';
 import { resolveColor, getAnchorPointById } from './CanvasUtils';
 
-const ConnectionLayer = ({ connections, allBlocks, tempConnection, scale, onSelect, selectedIds = [], hoveredId }) => {
+const ConnectionLayer = ({ connections, allBlocks, tempConnection, scale, onSelect, selectedIds = [], hoveredId, isDarkMode }) => {
 
     const getAnchorPoint = (blockId, side) => {
         return getAnchorPointById(blockId, side, allBlocks, hoveredId);
@@ -70,7 +70,7 @@ const ConnectionLayer = ({ connections, allBlocks, tempConnection, scale, onSele
         const angleEnd = Math.atan2(end.y - cp2.y, end.x - cp2.x);
 
         const isSelected = selectedIds.includes(conn.id);
-        const baseColor = resolveColor(conn.color || 'var(--text-primary)', document.body.dataset.theme === 'dark');
+        const baseColor = resolveColor(conn.color || 'var(--text-primary)', isDarkMode);
         const color = baseColor;
         const width = 2; // Base Width
 

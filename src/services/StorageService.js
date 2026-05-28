@@ -460,22 +460,65 @@ export const StorageService = {
   /**
    * Salva metadados globais adicionais (como abas abertas e notas ativas)
    */
-  async saveGlobalState(workspaceMeta) {
+  async saveSession(sessionData) {
     if (activeProviders.local_vault) {
       const target = FileSystemBridge.isElectron ? activeVaultPath : activeVaultHandle;
-      if (!target) return;
-      
-      try {
-        const metaStr = await FileSystemBridge.readFile(target, '.workspace.json');
-        if (metaStr) {
-          const parsed = JSON.parse(metaStr);
-          parsed.openTabs = workspaceMeta.openTabs;
-          parsed.activeNoteId = workspaceMeta.activeNoteId;
-          await FileSystemBridge.writeFile(target, '.workspace.json', parsed);
+      if (target) {
+        try {
+          await FileSystemBridge.writeFile(target, '.connected-notes/session.json', sessionData);
+        } catch (e) {
+          console.error("Falha ao salvar sessão no Vault:", e);
         }
-      } catch (e) {
-        console.error("Falha ao salvar metadados globais no Vault:", e);
       }
     }
+    
+    if (activeProviders.firebase) {
+      const user = auth.currentUser;
+      if (user) {
+        try {
+          await setDoc(doc(db, 'users', user.uid, 'settings', 'session'), sanitize(sessionData));
+        } catch (e) {
+          console.error("Falha ao salvar sessão no Firebase:", e);
+        }
+      }
+    }
+    
+    if (activeProviders.indexeddb) {
+      localStorage.setItem('connected-notes-session', JSON.stringify(sessionData));
+    }
+  },
+
+  async loadSession() {
+    let session = null;
+    
+    if (activeProviders.local_vault) {
+      const target = FileSystemBridge.isElectron ? activeVaultPath : activeVaultHandle;
+      if (target) {
+        try {
+          const data = await FileSystemBridge.readFile(target, '.connected-notes/session.json');
+          if (data) session = JSON.parse(data);
+        } catch (e) {}
+      }
+    }
+    
+    if (!session && activeProviders.firebase) {
+      const user = auth.currentUser;
+      if (user) {
+        try {
+          const snap = await getDoc(doc(db, 'users', user.uid, 'settings', 'session'));
+          if (snap.exists()) session = snap.data();
+        } catch (e) {}
+      }
+    }
+    
+    if (!session && activeProviders.indexeddb) {
+      try {
+        const data = localStorage.getItem('connected-notes-session');
+        if (data) session = JSON.parse(data);
+      } catch (e) {}
+    }
+    
+    return session;
   }
 };
+

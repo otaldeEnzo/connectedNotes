@@ -561,6 +561,11 @@ body.gradient-enabled {
 }
 
 /* Force GeoGebra iframe and internal containers to respect border-radius and fill container */
+.block-content .ggb-container,
+.block-content .applet_scaler,
+.block-content .ggbBase,
+.block-content .ggb-applet,
+.block-content iframe,
 .glass-card-content .ggb-container,
 .glass-card-content .applet_scaler,
 .glass-card-content .ggbBase,

@@ -101,29 +101,19 @@ export const NotesProvider = ({ children }) => {
 
           setNotes(cleanedWsData);
           
-          // Restaurar nota ativa segura
-          const savedActive = localStorage.getItem('connected-notes-active-note');
-          if (savedActive && cleanedWsData[savedActive]) {
-            setActiveNoteId(savedActive);
-          } else {
-            setActiveNoteId(cleanedWsData['note-1'] ? 'note-1' : 'root');
-          }
-
-          // Restaurar abas abertas seguras
-          const savedTabs = localStorage.getItem('connected-notes-tabs');
-          if (savedTabs) {
-            try {
-              const parsed = JSON.parse(savedTabs);
-              const validTabs = parsed.filter(id => cleanedWsData[id]);
-              if (validTabs.length > 0) {
-                setOpenTabs(validTabs);
-              } else {
-                setOpenTabs(cleanedWsData['note-1'] ? ['note-1'] : ['root']);
-              }
-            } catch (e) {
+          // Restaurar sessão
+          const sessionData = await StorageService.loadSession();
+          if (sessionData && sessionData.activeNoteId && sessionData.openTabs) {
+            const validTabs = sessionData.openTabs.filter(id => cleanedWsData[id]);
+            if (validTabs.length > 0) {
+              setOpenTabs(validTabs);
+              setActiveNoteId(cleanedWsData[sessionData.activeNoteId] ? sessionData.activeNoteId : validTabs[0]);
+            } else {
               setOpenTabs(cleanedWsData['note-1'] ? ['note-1'] : ['root']);
+              setActiveNoteId(cleanedWsData['note-1'] ? 'note-1' : 'root');
             }
           } else {
+            setActiveNoteId(cleanedWsData['note-1'] ? 'note-1' : 'root');
             setOpenTabs(cleanedWsData['note-1'] ? ['note-1'] : ['root']);
           }
         } else {
@@ -143,19 +133,15 @@ export const NotesProvider = ({ children }) => {
     initAndLoad();
   }, [currentUser]);
 
-  // Persistir nota ativa
+  // Persistir sessão quando houver mudanças na nota ativa ou nas abas
   useEffect(() => {
-    localStorage.setItem('connected-notes-active-note', activeNoteId);
-  }, [activeNoteId]);
-
-  // Persistir abas no localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('connected-notes-tabs', JSON.stringify(openTabs));
-    } catch (e) {
-      console.error('Erro ao salvar abas:', e);
+    if (activeNoteId && openTabs && openTabs.length > 0) {
+      StorageService.saveSession({
+        activeNoteId,
+        openTabs
+      });
     }
-  }, [openTabs]);
+  }, [activeNoteId, openTabs]);
 
   // Histórico de abas fechadas (para Ctrl+Shift+T)
   const [closedTabsHistory, setClosedTabsHistory] = useState([]);

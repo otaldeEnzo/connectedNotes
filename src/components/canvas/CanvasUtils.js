@@ -384,12 +384,12 @@ export const isConnectionInRect = (connection, start, end, rect) => {
 };
 
 export const getAnchorPointById = (id, side, allBlocks, hoveredId) => {
-    const b = allBlocks.find(x => x.id === id);
+    const b = allBlocks.find(x => String(x.id) === String(id));
     if (!b) return null;
 
     // Use common logic for all blocks - this now includes measured dimensions
     const isMath = b.type === 'math' || (typeof b.content === 'string' && b.content.includes('\\'));
-    const { width, height, xOffset, yOffset } = getEffectiveMathDimensions(b, isMath && (id === hoveredId));
+    const { width, height, xOffset, yOffset } = getEffectiveMathDimensions(b, isMath && (String(id) === String(hoveredId)));
 
     const x = (b.x || 0) - xOffset;
     const y = (b.y || 0) - yOffset;

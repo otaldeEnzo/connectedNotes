@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { MathService } from '../../services/MathService';
 import { quickMathAction } from '../../services/AIService';
 import BlockWrapper from './BlockWrapper';
@@ -12,25 +12,45 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
     const [isProcessing, setIsProcessing] = useState(false);
     const [isPaletteOpen, setIsPaletteOpen] = useState(false);
 
+    // Use a ref callback to render KaTeX every time the DOM element is (re-)attached.
+    // BlockWrapper's viewport culling unmounts children when off-screen and creates
+    // a brand-new DOM node when the block scrolls back into view. A useEffect with
+    // [block.content, isEditing] misses this because those deps haven't changed.
+    // The ref callback fires every time React attaches a new DOM node.
+    const latexContentRef = useRef(block.content);
+    latexContentRef.current = block.content;
+
+    const renderKatex = useCallback((el) => {
+        containerRef.current = el;
+        if (!el || !window.katex) return;
+        try {
+            const cleanContent = (latexContentRef.current || '\\dots').replace(/\$\$/g, '').trim();
+            window.katex.render(cleanContent, el, {
+                throwOnError: false,
+                displayMode: false,
+                output: 'html'
+            });
+        } catch (e) {
+            console.error("Katex Error:", e);
+            el.innerText = "Erro LaTeX";
+        }
+    }, []);
+
+    // Re-render KaTeX when content changes while already visible
     useEffect(() => {
-        const renderMath = () => {
-            if (!isEditing && containerRef.current && window.katex) {
-                try {
-                    const cleanContent = (block.content || '\\dots').replace(/\$\$/g, '').trim();
-                    window.katex.render(cleanContent, containerRef.current, {
-                        throwOnError: false,
-                        displayMode: false,
-                        output: 'html'
-                    });
-                } catch (e) {
-                    console.error("Katex Error:", e);
-                    containerRef.current.innerText = "Erro LaTeX";
-                }
+        if (!isEditing && containerRef.current && window.katex) {
+            try {
+                const cleanContent = (block.content || '\\dots').replace(/\$\$/g, '').trim();
+                window.katex.render(cleanContent, containerRef.current, {
+                    throwOnError: false,
+                    displayMode: false,
+                    output: 'html'
+                });
+            } catch (e) {
+                console.error("Katex Error:", e);
+                containerRef.current.innerText = "Erro LaTeX";
             }
-        };
-        renderMath();
-        const timer = setTimeout(renderMath, 50);
-        return () => clearTimeout(timer);
+        }
     }, [block.content, isEditing]);
 
 
@@ -183,7 +203,7 @@ const MathBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
                     />
                     :
                     <div
-                        ref={containerRef}
+                        ref={renderKatex}
                         onClick={handleContentClick}
                         className="text-[var(--text-primary)] text-3xl font-light text-center w-full animate-in fade-in zoom-in-95 duration-300 cursor-text hover:scale-[1.02] transition-transform"
                     />

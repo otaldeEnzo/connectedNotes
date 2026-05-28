@@ -15,13 +15,18 @@ const MindmapBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
     });
 
     const isPanning = useRef(false);
+    const [isPanningState, setIsPanningState] = useState(false);
     const lastPos = useRef({ x: 0, y: 0 });
+    // Keep a ref to the latest transform for use in event handlers (avoids stale closures)
+    const transformRef = useRef(transform);
+    transformRef.current = transform;
 
 
     const onPointerDown = (e) => {
         if (isEditing) return;
         e.stopPropagation(); e.preventDefault();
         isPanning.current = true;
+        setIsPanningState(true);
         lastPos.current = { x: e.clientX, y: e.clientY };
         e.currentTarget.setPointerCapture(e.pointerId);
     };
@@ -37,8 +42,10 @@ const MindmapBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
     const onPointerUp = (e) => {
         if (isPanning.current) {
             isPanning.current = false;
+            setIsPanningState(false);
             try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) { }
-            updateBlock(block.id, { transform });
+            // Use ref to get the LATEST transform value, not the stale closure
+            updateBlock(block.id, { transform: transformRef.current });
         }
     };
 
@@ -51,7 +58,7 @@ const MindmapBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
         setTransform(prev => ({ ...prev, scale: newScale }));
         clearTimeout(window.mindmapZoomTimer);
         window.mindmapZoomTimer = setTimeout(() => {
-            updateBlock(block.id, { transform: { ...transform, scale: newScale } });
+            updateBlock(block.id, { transform: { ...transformRef.current, scale: newScale } });
         }, 500);
     };
 
@@ -114,7 +121,7 @@ const MindmapBlock = memo(({ block, activeTool, isDarkMode, updateBlock, removeB
                 }}
             >
                 <div 
-                    className="transition-transform duration-300 ease-out"
+                    className={isPanningState ? '' : 'transition-transform duration-300 ease-out'}
                     style={{
                         transform: isEditing ? 'none' : `scale(${transform.scale})`,
                         transformOrigin: 'center center',
