@@ -17,9 +17,9 @@ const SelectionToolbar = ({ bounds, scale = 1, position = { x: 0, y: 0 }, viewpo
     const screenW = bounds.width * scale;
     const screenH = bounds.height * scale;
 
-    // Se estiver muito perto do topo (y < 60), joga a barra para baixo do objeto
-    const isNearTop = screenY < 60;
-    const topPos = isNearTop ? (screenY + screenH + 10) : (screenY - 45);
+    // Se estiver muito perto do topo (y < 80), joga a barra para baixo do objeto com boa margem
+    const isNearTop = screenY < 80;
+    const topPos = isNearTop ? (screenY + screenH + 20) : (screenY - 75);
 
     // [POLISH] Constrain to viewport so it doesn't clip off-screen
     const constrainedX = Math.max(180, Math.min(viewportWidth - 180, screenX + (screenW / 2)));
@@ -97,6 +97,25 @@ const SelectionToolbar = ({ bounds, scale = 1, position = { x: 0, y: 0 }, viewpo
                                 title={c}
                             />
                         ))}
+                        {/* Native Palette Opener with Gradient Indicator */}
+                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', position: 'relative' }}>
+                            <input 
+                                type="color" 
+                                onChange={(e) => onColorChange(e.target.value)} 
+                                onPointerDown={(e) => e.stopPropagation()} 
+                                onMouseDown={(e) => e.stopPropagation()} 
+                                style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                            />
+                            <div 
+                                style={{
+                                    width: 16, height: 16, borderRadius: '50%',
+                                    background: 'linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #8b00ff)',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    boxShadow: '0 0 5px rgba(0,0,0,0.2)',
+                                }}
+                                title="Mais Cores..."
+                            />
+                        </label>
                     </div>
                 </>
             )}
@@ -106,7 +125,7 @@ const SelectionToolbar = ({ bounds, scale = 1, position = { x: 0, y: 0 }, viewpo
                 <>
                     <div style={{ width: '1px', background: 'var(--border-color)', margin: '0 2px', opacity: 0.5 }} />
 
-                    {/* Line Style: Solid / Dashed / Dotted */}
+                    {/* Line Style: Solid / Dashed */}
                     <button className="liquid-item" style={btnStyle} onClick={() => onStyleChange({ lineStyle: 'solid' })} title="Linha Sólida">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="2" y1="12" x2="22" y2="12" /></svg>
                     </button>
@@ -114,18 +133,21 @@ const SelectionToolbar = ({ bounds, scale = 1, position = { x: 0, y: 0 }, viewpo
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="2" y1="12" x2="6" y2="12" /><line x1="10" y1="12" x2="14" y2="12" /><line x1="18" y1="12" x2="22" y2="12" /></svg>
                     </button>
 
-                    <div style={{ width: '1px', background: 'var(--border-color)', margin: '0 2px', opacity: 0.2 }} />
-
-                    {/* End Marker: None / Arrow / Circle / Diamond */}
-                    <button className="liquid-item" style={btnStyle} onClick={() => onStyleChange({ endMarker: 'none' })} title="Sem Ponta">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" y1="12" x2="20" y2="12" /></svg>
-                    </button>
-                    <button className="liquid-item" style={btnStyle} onClick={() => onStyleChange({ endMarker: 'arrow' })} title="Seta">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14" /><path d="M15 8l4 4-4 4" /></svg>
-                    </button>
-                    <button className="liquid-item" style={btnStyle} onClick={() => onStyleChange({ endMarker: 'circle' })} title="Círculo">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" y1="12" x2="16" y2="12" /><circle cx="19" cy="12" r="3" /></svg>
-                    </button>
+                    {/* End Marker: None / Arrow / Circle (ONLY for connection lines, never for hand-drawn strokes) */}
+                    {hasConnection && (
+                        <>
+                            <div style={{ width: '1px', background: 'var(--border-color)', margin: '0 2px', opacity: 0.2 }} />
+                            <button className="liquid-item" style={btnStyle} onClick={() => onStyleChange({ endMarker: 'none' })} title="Sem Ponta">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" y1="12" x2="20" y2="12" /></svg>
+                            </button>
+                            <button className="liquid-item" style={btnStyle} onClick={() => onStyleChange({ endMarker: 'arrow' })} title="Seta">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14" /><path d="M15 8l4 4-4 4" /></svg>
+                            </button>
+                            <button className="liquid-item" style={btnStyle} onClick={() => onStyleChange({ endMarker: 'circle' })} title="Círculo">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="4" y1="12" x2="16" y2="12" /><circle cx="19" cy="12" r="3" /></svg>
+                            </button>
+                        </>
+                    )}
                 </>
             )}
 

@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { useNotes } from '../contexts/NotesContext';
 import ColorPicker from './ColorPicker';
+import { useCanvasStore } from '../store/useCanvasStore';
 
 // --- Ícones SVG ---
 const Icons = {
@@ -166,15 +167,24 @@ const FloatingToolbar = ({
   const plusBtnRef = useRef(null);
   const [plusMenuPos, setPlusMenuPos] = useState(null);
 
+  const eraserType = useCanvasStore(state => state.eraserType);
+  const setEraserType = useCanvasStore(state => state.setEraserType);
+  const eraserSize = useCanvasStore(state => state.eraserSize);
+  const setEraserSize = useCanvasStore(state => state.setEraserSize);
+  const strokeSmoothing = useCanvasStore(state => state.strokeSmoothing);
+  const setStrokeSmoothing = useCanvasStore(state => state.setStrokeSmoothing);
+
   const [showPaperMenu, setShowPaperMenu] = useState(false);
   const [showShapeMenu, setShowShapeMenu] = useState(false);
   const [showAddInMenu, setShowAddInMenu] = useState(false);
+  const [showEraserMenu, setShowEraserMenu] = useState(false);
   const [showDiscovery, setShowDiscovery] = useState(null); // 'pen' | 'highlighter' | null
 
   const closeAllSubMenus = () => {
     setShowPaperMenu(false);
     setShowShapeMenu(false);
     setShowAddInMenu(false);
+    setShowEraserMenu(false);
   };
 
   const toggleSubMenu = (menu) => {
@@ -190,6 +200,10 @@ const FloatingToolbar = ({
       const target = !showAddInMenu;
       closeAllSubMenus();
       setShowAddInMenu(target);
+    } else if (menu === 'eraser') {
+      const target = !showEraserMenu;
+      closeAllSubMenus();
+      setShowEraserMenu(target);
     }
   };
 
@@ -305,6 +319,7 @@ const FloatingToolbar = ({
         // Close everything EXCEPT the shapes menu and discovery
         setShowPaperMenu(false);
         setShowAddInMenu(false);
+        setShowEraserMenu(false);
         setShowDiscovery(null);
       }
     };
@@ -656,10 +671,10 @@ const FloatingToolbar = ({
       {/* Menu de Caneta (Exclusivo) */}
       {!isDragging && (activeTool === 'pen' || activeTool === 'highlighter') && !showPaperMenu && !showShapeMenu && !showAddInMenu && (
         <div className="glass-extreme" style={{
-          padding: '8px 14px', borderRadius: '18px',
+          padding: orientation === 'horizontal' ? '6px 12px' : '10px 6px', borderRadius: '18px',
           display: 'flex',
           flexDirection: orientation === 'horizontal' ? 'row' : 'column',
-          alignItems: 'center', gap: '12px',
+          alignItems: 'center', gap: '8px',
           whiteSpace: 'nowrap',
           pointerEvents: 'auto',
           position: 'absolute',
@@ -777,9 +792,9 @@ const FloatingToolbar = ({
       {/* Menu de Marca-Texto (Exclusivo) */}
       {!isDragging && activeTool === 'highlighter' && !showPaperMenu && !showShapeMenu && !showAddInMenu && (
         <div className="glass-extreme" style={{
-          padding: '6px 12px', borderRadius: '16px',
+          padding: orientation === 'horizontal' ? '6px 12px' : '10px 6px', borderRadius: '16px',
           display: 'flex',
-          alignItems: 'center', gap: '12px',
+          alignItems: 'center', gap: '8px',
           whiteSpace: 'nowrap',
           pointerEvents: 'auto',
           position: 'absolute',
@@ -883,6 +898,78 @@ const FloatingToolbar = ({
               }}
             />
           </div>
+        </div>
+      )}
+
+      {/* Menu de Borracha (Exclusivo) */}
+      {!isDragging && showEraserMenu && !showPaperMenu && !showShapeMenu && !showAddInMenu && (
+        <div className="glass-extreme" style={{
+          padding: orientation === 'horizontal' ? '6px 12px' : '10px 6px', borderRadius: '18px',
+          display: 'flex',
+          flexDirection: orientation === 'horizontal' ? 'row' : 'column',
+          alignItems: 'center', gap: '8px',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'auto',
+          position: 'absolute',
+          opacity: isDragging ? 0.4 : 1,
+          ...(orientation === 'horizontal'
+            ? {
+              left: '50%', transform: 'translateX(-50%)',
+              ...(isTopSide ? { top: 'calc(100% + 16px)', animation: 'moscaro-in-up 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' } : { bottom: 'calc(100% + 16px)', animation: 'moscaro-in-down 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' })
+            }
+            : {
+              top: '50%', transform: 'translateY(-50%)',
+              ...(isLeftSide ? { left: 'calc(100% + 16px)', animation: 'moscaro-in-right 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' } : { right: 'calc(100% + 16px)', animation: 'moscaro-in-left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' })
+            }
+          ),
+          zIndex: 6100,
+          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.4)'
+        }}>
+          <div style={{ display: 'flex', flexDirection: orientation === 'horizontal' ? 'row' : 'column', gap: '6px' }}>
+            <button
+              onClick={() => setEraserType('stroke')}
+              style={{
+                background: eraserType === 'stroke' ? 'var(--accent-gradient)' : 'transparent',
+                color: eraserType === 'stroke' ? 'white' : 'var(--text-primary)',
+                border: 'none', borderRadius: '10px',
+                padding: '6px 10px', fontSize: '0.75rem', cursor: 'pointer',
+                transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                fontWeight: '600'
+              }}
+              title="Apagar Traço Inteiro"
+            >
+              Traço
+            </button>
+            <button
+              onClick={() => setEraserType('vector')}
+              style={{
+                background: eraserType === 'vector' ? 'var(--accent-gradient)' : 'transparent',
+                color: eraserType === 'vector' ? 'white' : 'var(--text-primary)',
+                border: 'none', borderRadius: '10px',
+                padding: '6px 10px', fontSize: '0.75rem', cursor: 'pointer',
+                transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                fontWeight: '600'
+              }}
+              title="Apagar Parcial (Fatiamento Vetorial)"
+            >
+              Parcial
+            </button>
+          </div>
+
+          <div style={{ width: orientation === 'horizontal' ? '1px' : '20px', height: orientation === 'horizontal' ? '20px' : '1px', background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
+          <span style={{ fontSize: '0.7rem', opacity: 0.7, color: 'var(--text-primary)' }} title="Tamanho da Borracha">Tamanho:</span>
+          <input
+            type="range" min="5" max="60" step="1"
+            value={eraserSize}
+            onChange={(e) => setEraserSize(Number(e.target.value))}
+            style={{
+              width: orientation === 'horizontal' ? '80px' : '15px',
+              height: orientation === 'horizontal' ? '15px' : '80px',
+              WebkitAppearance: orientation === 'vertical' ? 'slider-vertical' : 'auto',
+              accentColor: 'var(--accent-color)',
+              cursor: 'pointer'
+            }}
+          />
         </div>
       )}
       {/* Discovery Menus (ColorPicker) - Rendered outside nested glass for backdrop-filter issues */}
@@ -993,7 +1080,7 @@ const FloatingToolbar = ({
 
             <ToolbarButton toolId="pen" icon={Icons.Pen} label="Caneta" isActive={activeTool === 'pen'} onClick={() => { setActiveTool('pen'); setPenType('pen'); closeAllSubMenus(); }} />
             <ToolbarButton toolId="highlighter" icon={Icons.Highlighter} label="Marca-texto" isActive={activeTool === 'highlighter'} onClick={() => { setActiveTool('highlighter'); setPenType('highlighter'); closeAllSubMenus(); }} />
-            <ToolbarButton toolId="eraser" icon={Icons.Eraser} label="Borracha" isActive={activeTool === 'eraser'} onClick={() => { setActiveTool('eraser'); closeAllSubMenus(); }} />
+            <ToolbarButton toolId="eraser" icon={Icons.Eraser} label="Borracha" isActive={activeTool === 'eraser'} onClick={() => { if (activeTool !== 'eraser') { setActiveTool('eraser'); closeAllSubMenus(); setShowEraserMenu(true); } else { toggleSubMenu('eraser'); } }} />
 
             <div style={{ width: orientation === 'horizontal' ? '1px' : '12px', height: orientation === 'horizontal' ? '12px' : '1px', background: 'rgba(255,255,255,0.15)', margin: '0 4px' }} />
 

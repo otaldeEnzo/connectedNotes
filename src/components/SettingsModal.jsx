@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { validateKey } from '../services/AIService';
 import { useNotes } from '../contexts/NotesContext';
 import { StorageService } from '../services/StorageService';
+import { useCanvasStore } from '../store/useCanvasStore';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db, updateFirebaseConfig, getFirebaseConfig, isCustomFirebaseActive } from '../firebase';
 import { 
@@ -287,6 +288,11 @@ const withTimeout = (promise, ms, errorMsg) => {
 const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTheme, customThemes, setCustomThemes, appearance, setAppearance }) => {
   const { notes } = useNotes();
 
+  const strokeSmoothing = useCanvasStore(state => state.strokeSmoothing);
+  const setStrokeSmoothing = useCanvasStore(state => state.setStrokeSmoothing);
+  const strokeSmoothingEnabled = useCanvasStore(state => state.strokeSmoothingEnabled);
+  const setStrokeSmoothingEnabled = useCanvasStore(state => state.setStrokeSmoothingEnabled);
+
   const [activeTab, setActiveTab] = useState('appearance');
   const [status, setStatus] = useState('');
   const [editingTheme, setEditingTheme] = useState(null);
@@ -375,13 +381,19 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
   };
 
   const getSavedEditor = () => {
-    const saved = localStorage.getItem('connected-notes-editor-settings');
-    return saved ? JSON.parse(saved) : {
-      defaultNoteType: 'text',
-      spellCheck: true,
-      showLineNumbers: true,
-      tabSize: 2,
-    };
+    const defaultSettings = { defaultNoteType: 'canvas', spellCheck: true, showLineNumbers: true, tabSize: 2 };
+    try {
+      const saved = localStorage.getItem('connected-notes-editor-settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return { ...defaultSettings, ...parsed };
+        }
+      }
+      return defaultSettings;
+    } catch (e) {
+      return defaultSettings;
+    }
   };
 
   const [tempKey, setTempKey] = useState(apiKey);
@@ -1600,45 +1612,76 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
     </div>
   );
 
-  const renderEditor = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--glass-bg)' }}>
-        <GlassSelect
-          label="TIPO DE NOTA PADRÃO"
-          options={NOTE_TYPES}
-          value={tempEditor.defaultNoteType}
-          onChange={(v) => updateTempEditor('defaultNoteType', v)}
-        />
+  const renderEditor = () => {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--glass-bg)' }}>
+          <GlassSelect
+            label="TIPO DE NOTA PADRÃO"
+            options={NOTE_TYPES}
+            value={tempEditor.defaultNoteType}
+            onChange={(v) => updateTempEditor('defaultNoteType', v)}
+          />
 
-        <GlassToggle
-          label="Corretor Ortográfico" sublabel="Verificação em tempo real"
-          checked={tempEditor.spellCheck}
-          onChange={(v) => updateTempEditor('spellCheck', v)}
-        />
-      </div>
+          <GlassToggle
+            label="Corretor Ortográfico" sublabel="Verificação em tempo real"
+            checked={tempEditor.spellCheck}
+            onChange={(v) => updateTempEditor('spellCheck', v)}
+          />
+        </div>
 
-      <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--glass-bg)' }}>
-        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>EDITOR DE CÓDIGO</label>
+        <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--glass-bg)' }}>
+          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>CANVAS & ESCRITA DIGITAL</label>
 
-        <GlassToggle
-          label="Números de Linha"
-          checked={tempEditor.showLineNumbers}
-          onChange={(v) => updateTempEditor('showLineNumbers', v)}
-        />
+          <GlassToggle
+            label="Suavizar Traço (Estabilizador)" sublabel="Evita traçados trêmulos e caligrafia irregular"
+            checked={strokeSmoothingEnabled}
+            onChange={(v) => setStrokeSmoothingEnabled(v)}
+          />
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>Tamanho do Tab</span>
-          <div style={{ width: '130px' }}>
-            <GlassSelect
-              options={[{ id: 2, label: '2 espaços' }, { id: 4, label: '4 espaços' }]}
-              value={tempEditor.tabSize}
-              onChange={(v) => updateTempEditor('tabSize', v)}
-            />
+          {strokeSmoothingEnabled && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>Intensidade da Suavização</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent-color)' }}>{Math.round(strokeSmoothing * 100)}%</span>
+              </div>
+              <input
+                type="range" min="0" max="1" step="0.1"
+                value={strokeSmoothing}
+                onChange={(e) => setStrokeSmoothing(Number(e.target.value))}
+                style={{
+                  width: '100%',
+                  accentColor: 'var(--accent-color)',
+                  cursor: 'pointer'
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--glass-bg)' }}>
+          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>EDITOR DE CÓDIGO</label>
+
+          <GlassToggle
+            label="Números de Linha"
+            checked={tempEditor.showLineNumbers}
+            onChange={(v) => updateTempEditor('showLineNumbers', v)}
+          />
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>Tamanho do Tab</span>
+            <div style={{ width: '130px' }}>
+              <GlassSelect
+                options={[{ id: 2, label: '2 espaços' }, { id: 4, label: '4 espaços' }]}
+                value={tempEditor.tabSize}
+                onChange={(v) => updateTempEditor('tabSize', v)}
+              />
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderData = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>

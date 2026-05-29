@@ -77,12 +77,150 @@ const extractCanvasContent = (content) => {
     mermaidBlocks: content.mermaidBlocks || [],
     mindmapBlocks: content.mindmapBlocks || [],
     pdfBlocks: content.pdfBlocks || [],
-    connections: content.connections || []
+    connections: content.connections || [],
   };
+};
+
+// Helper to calculate intersections (t in [0, 1]) between segment p1->p2 and a circle at C with radius R
+const getSegmentCircleIntersections = (p1, p2, C, R) => {
+  const vx = p2.x - p1.x;
+  const vy = p2.y - p1.y;
+  const dx = p1.x - C.x;
+  const dy = p1.y - C.y;
+
+  const a = vx * vx + vy * vy;
+  if (a === 0) return [];
+
+  const b = 2 * (vx * dx + vy * dy);
+  const c = dx * dx + dy * dy - R * R;
+
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant < 0) return [];
+
+  const tVals = [];
+  const sqrtDisc = Math.sqrt(discriminant);
+  
+  const t1 = (-b - sqrtDisc) / (2 * a);
+  if (t1 >= 0 && t1 <= 1) tVals.push(t1);
+
+  const t2 = (-b + sqrtDisc) / (2 * a);
+  if (t2 >= 0 && t2 <= 1) tVals.push(t2);
+
+  return tVals.sort((x, y) => x - y);
+};
+
+const sliceStroke = (stroke, eraserPt, eraserRadius) => {
+  const points = stroke.points;
+  if (!points || points.length === 0) return [];
+  if (points.length === 1) {
+    const dist = Math.hypot(points[0].x - eraserPt.x, points[0].y - eraserPt.y);
+    return dist > eraserRadius ? [stroke] : [];
+  }
+
+  const segments = [];
+  let currentSegment = [];
+
+  const addPoint = (pt) => {
+    if (currentSegment.length > 0) {
+      const last = currentSegment[currentSegment.length - 1];
+      if (Math.hypot(last.x - pt.x, last.y - pt.y) < 0.01) return;
+    }
+    currentSegment.push(pt);
+  };
+
+  const closeSegment = () => {
+    if (currentSegment.length >= 2) {
+      segments.push(currentSegment);
+    }
+    currentSegment = [];
+  };
+
+  let p1 = points[0];
+  let p1Inside = Math.hypot(p1.x - eraserPt.x, p1.y - eraserPt.y) <= eraserRadius;
+
+  if (!p1Inside) {
+    addPoint(p1);
+  }
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    
+    const d1 = Math.hypot(p1.x - eraserPt.x, p1.y - eraserPt.y);
+    const d2 = Math.hypot(p2.x - eraserPt.x, p2.y - eraserPt.y);
+    
+    const p1In = d1 <= eraserRadius;
+    const p2In = d2 <= eraserRadius;
+
+    const intersections = getSegmentCircleIntersections(p1, p2, eraserPt, eraserRadius);
+
+    if (p1In && p2In) {
+      // Both inside: do nothing
+    } else if (!p1In && !p2In) {
+      if (intersections.length === 2) {
+        const t1 = intersections[0];
+        const t2 = intersections[1];
+        
+        const pt1 = {
+          x: p1.x + t1 * (p2.x - p1.x),
+          y: p1.y + t1 * (p2.y - p1.y),
+          pressure: p1.pressure !== undefined ? p1.pressure : 0.5
+        };
+        const pt2 = {
+          x: p1.x + t2 * (p2.x - p1.x),
+          y: p1.y + t2 * (p2.y - p1.y),
+          pressure: p2.pressure !== undefined ? p2.pressure : 0.5
+        };
+
+        addPoint(pt1);
+        closeSegment();
+        addPoint(pt2);
+        addPoint(p2);
+      } else {
+        addPoint(p2);
+      }
+    } else if (!p1In && p2In) {
+      const t = intersections[0];
+      if (t !== undefined) {
+        const pt = {
+          x: p1.x + t * (p2.x - p1.x),
+          y: p1.y + t * (p2.y - p1.y),
+          pressure: p1.pressure !== undefined ? p1.pressure : 0.5
+        };
+        addPoint(pt);
+      }
+      closeSegment();
+    } else if (p1In && !p2In) {
+      const t = intersections[0];
+      if (t !== undefined) {
+        const pt = {
+          x: p1.x + t * (p2.x - p1.x),
+          y: p1.y + t * (p2.y - p1.y),
+          pressure: p2.pressure !== undefined ? p2.pressure : 0.5
+        };
+        addPoint(pt);
+      }
+      addPoint(p2);
+    }
+  }
+
+  if (currentSegment.length >= 2) {
+    segments.push(currentSegment);
+  }
+
+  return segments.map(seg => ({
+    ...stroke,
+    id: generateId(),
+    points: seg,
+    isNeatShape: false, // Split perfected shapes become open lines
+    shapeType: undefined,
+    isOpen: true
+  }));
 };
 
 // --- Optimized Sub-Component ---
 const MemoizedStroke = React.memo(({ stroke, isSelected, isDarkMode }) => {
+  const strokeSmoothingEnabled = useCanvasStore(state => state.strokeSmoothingEnabled);
   const isHighlighter = stroke.type === 'highlighter';
   const shapeRef = React.useRef(null);
   const baseColor = React.useMemo(() => resolveColor(stroke.color, isDarkMode), [stroke.color, isDarkMode]);
@@ -93,12 +231,13 @@ const MemoizedStroke = React.memo(({ stroke, isSelected, isDarkMode }) => {
       return { d: getNeatPathData(stroke.points, stroke.shapeType, stroke.isOpen), isArrow: stroke.shapeType === 'arrow' };
     }
 
+    const strokeSmoothing = strokeSmoothingEnabled ? (stroke.smoothing !== undefined ? stroke.smoothing : 0.5) : 0;
     const options = isHighlighter
-      ? { size: stroke.width, thinning: 0, smoothing: 0.5, streamline: 0.5 }
-      : { size: stroke.width, thinning: 0.5, smoothing: 0.5, streamline: 0.5 };
+      ? { size: stroke.width, thinning: 0, smoothing: strokeSmoothing, streamline: strokeSmoothing }
+      : { size: stroke.width, thinning: 0.5, smoothing: strokeSmoothing, streamline: strokeSmoothing };
 
     return { d: getSvgPathFromStroke(stroke.points, options), isArrow: false };
-  }, [stroke.points, stroke.width, stroke.isNeatShape, stroke.shapeType, stroke.isOpen, isHighlighter]);
+  }, [stroke.points, stroke.width, stroke.isNeatShape, stroke.shapeType, stroke.isOpen, isHighlighter, stroke.smoothing, strokeSmoothingEnabled]);
 
   React.useEffect(() => {
     if (shapeRef.current) {
@@ -272,6 +411,7 @@ const CanvasArea = forwardRef(({
 
 
 
+  const [penPointerPos, setPenPointerPos] = useState(null);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [stageSize, setStageSize] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -373,48 +513,8 @@ const CanvasArea = forwardRef(({
   const lastSelectedStrokeIdsRef = useRef(selectedStrokeIds);
 
   useEffect(() => {
-    const selectionChanged = lastSelectedStrokeIdsRef.current !== selectedStrokeIds;
-    lastSelectedStrokeIdsRef.current = selectedStrokeIds;
-
-    if (selectionChanged) {
-      try {
-        if (selectedStrokesGroupRef.current) {
-          selectedStrokesGroupRef.current.clearCache();
-        }
-        selectedStrokesGroupRef.current?.getLayer()?.batchDraw();
-      } catch (e) {
-        console.warn("Konva clearCache error:", e);
-      }
-    }
-
-    const timer = setTimeout(() => {
-      if (selectedStrokesGroupRef.current && selectedStrokeIds.length > 0) {
-        try {
-          const selectedStrokes = strokes.filter(s => selectedStrokeIds.includes(s.id));
-          const bounds = getGroupBounds([], selectedStrokes);
-          if (bounds && bounds.width > 0 && bounds.height > 0) {
-            const maxDimension = 3000;
-            const w = Math.min(bounds.width + 20, maxDimension);
-            const h = Math.min(bounds.height + 20, maxDimension);
-
-            selectedStrokesGroupRef.current.clearCache();
-            selectedStrokesGroupRef.current.cache({
-              x: bounds.x - 10,
-              y: bounds.y - 10,
-              width: w,
-              height: h,
-              pixelRatio: Math.min(1.5, scale || 1)
-            });
-            selectedStrokesGroupRef.current.getLayer()?.batchDraw();
-          }
-        } catch (e) {
-          console.warn("Konva selected caching error:", e);
-        }
-      }
-    }, 150);
-
-    return () => clearTimeout(timer);
-  }, [strokes, scale, isDarkMode, selectedStrokeIds]);
+    selectedStrokesGroupRef.current?.getLayer()?.batchDraw();
+  }, [selectedStrokeIds]);
 
   const groupedTiles = React.useMemo(() => {
     const tiles = {};
@@ -448,6 +548,10 @@ const CanvasArea = forwardRef(({
   const setEraserCursorPos = useCanvasStore(state => state.setEraserCursorPos);
 
   const loadNoteData = useCanvasStore(state => state.loadNoteData);
+  const eraserType = useCanvasStore(state => state.eraserType);
+  const eraserSize = useCanvasStore(state => state.eraserSize);
+  const strokeSmoothing = useCanvasStore(state => state.strokeSmoothing);
+  const strokeSmoothingEnabled = useCanvasStore(state => state.strokeSmoothingEnabled);
 
   // Estados Gestuais locais temporários (Preservados locais para evitar poluição global)
   const [currentStroke, setCurrentStroke] = useState(null);
@@ -460,11 +564,12 @@ const CanvasArea = forwardRef(({
   const performRender = useCallback(() => {
     if (activeStrokePathRef.current && hasUpdatesRef.current) {
       const width = activeStrokeConfigRef.current.width;
+      const currentSmoothing = strokeSmoothingEnabled ? strokeSmoothing : 0;
       const svgData = getSvgPathFromStroke(activeStrokePointsRef.current, {
         size: width,
         thinning: 0.6,
-        smoothing: 0.5,
-        streamline: 0.35,
+        smoothing: currentSmoothing,
+        streamline: currentSmoothing,
         simulatePressure: false
       });
       activeStrokePathRef.current.setData(svgData);
@@ -472,7 +577,7 @@ const CanvasArea = forwardRef(({
       hasUpdatesRef.current = false;
     }
     rafRef.current = requestAnimationFrame(performRender);
-  }, []);
+  }, [strokeSmoothing, strokeSmoothingEnabled]);
 
   // Sync RAF loop with stroke lifecycle
   useEffect(() => {
@@ -1581,7 +1686,7 @@ const CanvasArea = forwardRef(({
       const zA = getBlockEffectiveZIndex(a);
       const zB = getBlockEffectiveZIndex(b);
       if (zA !== zB) return zB - zA;
-      
+
       const idxA = blocksList.indexOf(a);
       const idxB = blocksList.indexOf(b);
       return idxB - idxA;
@@ -1628,8 +1733,58 @@ const CanvasArea = forwardRef(({
     }
 
     activePointerId.current = e.pointerId; lastPointerPos.current = { x: e.clientX, y: e.clientY };
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+      e.preventDefault();
+    }
     const pt = screenToCanvas(e.clientX, e.clientY);
-    if (activeTool === 'eraser') { setIsErasing(true); saveToHistory(); setStrokes(p => p.filter(s => !isStrokeClicked(s, pt, 15 / scale))); return; }
+
+    const isEraserAction = (activeTool === 'eraser') || (e.pointerType === 'pen' && (e.buttons & 32));
+    const isPenSelection = e.pointerType === 'pen' && (e.buttons & 2);
+
+    if (isEraserAction) {
+      e.preventDefault();
+      setIsErasing(true);
+      saveToHistory();
+      const radius = eraserSize / scale;
+      if (eraserType === 'vector') {
+        setStrokes(prevStrokes => {
+          let updated = [];
+          prevStrokes.forEach(s => {
+            if (isStrokeClicked(s, pt, radius)) {
+              const sliced = sliceStroke(s, pt, radius);
+              updated.push(...sliced);
+            } else {
+              updated.push(s);
+            }
+          });
+          return updated;
+        });
+      } else {
+        setStrokes(p => p.filter(s => !isStrokeClicked(s, pt, radius)));
+      }
+      containerRef.current?.setPointerCapture(e.pointerId);
+      return;
+    }
+
+    if (isPenSelection) {
+      e.preventDefault();
+      if (selectedIds.length > 0) setSelectedIds([]);
+      if (selectedStrokeIds.length > 0) setSelectedStrokeIds([]);
+      if (selectedConnectionIds.length > 0) setSelectedConnectionIds([]);
+      selectionRectRef.current = { startX: pt.x, startY: pt.y, currentX: pt.x, currentY: pt.y };
+      if (selectionRectKonvaRef.current) {
+        selectionRectKonvaRef.current.setAttrs({
+          x: pt.x,
+          y: pt.y,
+          width: 0,
+          height: 0,
+          visible: true
+        });
+        selectionRectKonvaRef.current.getLayer()?.batchDraw();
+      }
+      containerRef.current?.setPointerCapture(e.pointerId);
+      return;
+    }
 
     // Pan detection (Space or Middle Mouse)
     if (e.button === 1 || (activeTool === 'cursor' && e.altKey)) {
@@ -1694,6 +1849,7 @@ const CanvasArea = forwardRef(({
     }
     // ... (drawing logic remains as is for now)
     if (['pen', 'highlighter'].includes(activeTool)) {
+      e.preventDefault();
       setIsDrawing(true); const attrs = currentAttributes(); const ipt = { x: pt.x, y: pt.y, pressure: e.pressure };
       activeStrokePointsRef.current = [ipt];
 
@@ -1710,7 +1866,8 @@ const CanvasArea = forwardRef(({
           isNeatShape: true,
           isLiveShape: true,
           shapeType: activeForcedShape,
-          startPt: ipt
+          startPt: ipt,
+          smoothing: strokeSmoothing
         });
       } else {
         activeStrokeConfigRef.current = { width: attrs.width / scale }; hasUpdatesRef.current = true;
@@ -1722,7 +1879,8 @@ const CanvasArea = forwardRef(({
           type: attrs.type,
           isNeatShape: e.shiftKey,
           isShiftLine: e.shiftKey,
-          startPt: ipt
+          startPt: ipt,
+          smoothing: strokeSmoothing
         });
       }
       containerRef.current?.setPointerCapture(e.pointerId); return;
@@ -1743,8 +1901,21 @@ const CanvasArea = forwardRef(({
   };
 
   const handlePointerMove = (e) => {
+    // [FIX] Wacom tablets sometimes change pointerId mid-stroke or drop pointerup. 
+    // If it's a pen, it's the only pen, so always adopt its new ID.
+    if (e.pointerType === 'pen' && activePointerId.current !== e.pointerId) {
+      activePointerId.current = e.pointerId;
+    }
     if (activePointerId.current !== null && e.pointerId !== activePointerId.current) return;
+    if (activePointerId.current !== null && (e.pointerType === 'touch' || e.pointerType === 'pen')) {
+      e.preventDefault();
+    }
     const pt = screenToCanvas(e.clientX, e.clientY);
+    if (['pen', 'highlighter'].includes(activeTool)) {
+      setPenPointerPos({ x: e.clientX, y: e.clientY });
+    } else if (penPointerPos) {
+      setPenPointerPos(null);
+    }
 
     // [PRO CONNECTORS] Hover detection for handles
     if (activeTool === 'cursor' && !isDrawing && !isDraggingSelection && !selectionRectRef.current) {
@@ -1755,7 +1926,8 @@ const CanvasArea = forwardRef(({
       setHoveredBlockId(null);
     }
 
-    if (activeTool === 'eraser') { setEraserCursorPos(pt); } else if (eraserCursorPos) { setEraserCursorPos(null); }
+    const isEraserActive = activeTool === 'eraser' || (e.pointerType === 'pen' && (e.buttons & 32));
+    if (isEraserActive) { setEraserCursorPos(pt); } else if (eraserCursorPos) { setEraserCursorPos(null); }
     if (connectingState) {
       const blocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks];
       let snap = null;
@@ -1781,7 +1953,26 @@ const CanvasArea = forwardRef(({
       }
     }
 
-    if (isErasing) { setStrokes(p => p.filter(s => !isStrokeClicked(s, pt, 15 / scale))); return; }
+    if (isErasing) {
+      const radius = eraserSize / scale;
+      if (eraserType === 'vector') {
+        setStrokes(prevStrokes => {
+          let updated = [];
+          prevStrokes.forEach(s => {
+            if (isStrokeClicked(s, pt, radius)) {
+              const sliced = sliceStroke(s, pt, radius);
+              updated.push(...sliced);
+            } else {
+              updated.push(s);
+            }
+          });
+          return updated;
+        });
+      } else {
+        setStrokes(p => p.filter(s => !isStrokeClicked(s, pt, radius)));
+      }
+      return;
+    }
     if (selectionRectRef.current) {
       const rectVal = selectionRectRef.current;
       rectVal.currentX = pt.x;
@@ -1917,7 +2108,7 @@ const CanvasArea = forwardRef(({
         if (ghostTimer.current) { clearTimeout(ghostTimer.current); ghostTimer.current = null; }
         if (ghostShape) setGhostShape(null);
       } else if (activeStrokePointsRef.current.length > 20 && !currentStroke.isNeatShape) {
-        // Ghost Preview Timer (250ms hold)
+        // Ghost Preview Timer (500ms hold)
         if (!ghostTimer.current && !ghostShape) {
           ghostTimer.current = setTimeout(() => {
             import('../../services/ShapeRecognitionService').then(async ({ recognizeViaGoogle, fitGeometry, generateFittedPoints }) => {
@@ -1931,7 +2122,7 @@ const CanvasArea = forwardRef(({
                 }
               }
             }).catch(e => console.error(e));
-          }, 250);
+          }, 500);
         }
         // Final Snap Timer (600ms hold)
         if (!snapTimer.current) {
@@ -1990,8 +2181,8 @@ const CanvasArea = forwardRef(({
     containerRef.current?.releasePointerCapture(e.pointerId);
     if (currentStroke) {
       const fpts = (currentStroke.isNeatShape) ? currentStroke.points : (activeStrokePointsRef.current.length ? activeStrokePointsRef.current : currentStroke.points);
-      // [FASE 3] Ramer-Douglas-Peucker (RDP) Simplification
-      const simplifiedPts = currentStroke.isNeatShape ? fpts : simplifyPoints(fpts, 0.4);
+      // [FASE 3] Ramer-Douglas-Peucker (RDP) Simplification (Tuned to 0.15 for high precision)
+      const simplifiedPts = currentStroke.isNeatShape ? fpts : simplifyPoints(fpts, 0.15);
       const fstroke = { ...currentStroke, points: simplifiedPts };
       setStrokes(p => p.find(s => s.id === fstroke.id) ? p : [...p, fstroke]);
       setCurrentStroke(null); activeStrokePointsRef.current = [];
@@ -2084,6 +2275,7 @@ const CanvasArea = forwardRef(({
 
     if (isDraggingSelection || isDrawing) saveToHistory();
     setIsDrawing(false); setIsErasing(false); setIsDraggingSelection(false);
+    setPenPointerPos(null);
     if (connectingState?.targetId) {
       handleCompleteConnection(e, connectingState.targetId, connectingState.targetSide);
     }
@@ -2130,11 +2322,11 @@ const CanvasArea = forwardRef(({
   if (!activeNote) return <div className="loading">Carregando...</div>;
 
   return (
-    <div className={`canvas-viewport ${isPanning ? 'is-panning' : ''}`} ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onContextMenu={e => e.preventDefault()} style={{
+    <div className={`canvas-viewport ${isPanning ? 'is-panning' : ''}`} ref={containerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onContextMenu={e => e.preventDefault()} style={{
       width: '100%',
       height: '100%',
       overflow: 'hidden',
-      cursor: isErasing ? 'cell' : (['pen', 'highlighter'].includes(activeTool) ? 'crosshair' : 'default'),
+      cursor: isErasing ? 'cell' : (['pen', 'highlighter'].includes(activeTool) ? (isDrawing ? 'none' : 'crosshair') : 'default'),
       position: 'relative',
       backgroundColor: 'var(--canvas-bg-color)',
       borderRadius: '16px',
@@ -2149,8 +2341,11 @@ const CanvasArea = forwardRef(({
           backdrop-filter: none !important;
           -webkit-backdrop-filter: none !important;
         }
+        .canvas-viewport[style*="cursor: none"] * {
+          cursor: none !important;
+        }
       `}</style>
-      <Stage width={stageSize.width} height={stageSize.height} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1, pointerEvents: (isPanning || activeTool === 'cursor') ? 'all' : 'all' }}>
+      <Stage width={stageSize.width} height={stageSize.height} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1, pointerEvents: 'all', touchAction: 'none' }}>
         {/* Background Layer */}
         <Layer ref={el => { konvaLayerRefs.current[0] = el; }} x={position.x} y={position.y} scaleX={scale} scaleY={scale} listening={false}>
           {patternImage && paperPattern !== 'blank' && (
@@ -2234,11 +2429,11 @@ const CanvasArea = forwardRef(({
             strokeWidth={1 / scale}
             dash={[4, 4]}
           />
-          {activeTool === 'eraser' && eraserCursorPos && (
+          {(activeTool === 'eraser' || (eraserCursorPos && activePointerId.current !== null)) && eraserCursorPos && (
             <Circle
               x={eraserCursorPos.x}
               y={eraserCursorPos.y}
-              radius={15 / scale}
+              radius={eraserSize / scale}
               stroke="#6366f1"
               strokeWidth={1 / scale}
               dash={[3, 3]}
@@ -2470,6 +2665,33 @@ const CanvasArea = forwardRef(({
           activeNoteType={activeNote.type}
         />
       )}
+
+      {/* Stylus/Pen Floating Dot Pointer */}
+      {penPointerPos && isDrawing && ['pen', 'highlighter'].includes(activeTool) && (() => {
+        const attrs = currentAttributes();
+        const diameter = Math.max(6, Math.min(60, attrs.width * scale));
+        const colorVal = attrs.isDynamic ? (isDarkMode ? '#ffffff' : '#000000') : resolveColor(attrs.color, isDarkMode);
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              left: penPointerPos.x,
+              top: penPointerPos.y,
+              width: `${diameter}px`,
+              height: `${diameter}px`,
+              borderRadius: '50%',
+              backgroundColor: colorVal,
+              opacity: attrs.type === 'highlighter' ? 0.6 : 0.9,
+              border: `1.5px solid ${isDarkMode ? '#ffffff' : '#000000'}`,
+              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.35), 0 0 0 1.5px rgba(255, 255, 255, 0.4) inset',
+              pointerEvents: 'none',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 999999,
+              transition: 'width 0.05s ease, height 0.05s ease, background-color 0.1s ease',
+            }}
+          />
+        );
+      })()}
 
     </div>
   );

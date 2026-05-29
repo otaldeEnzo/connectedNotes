@@ -80,18 +80,8 @@ const BlockWrapper = forwardRef(
 
     const isSelected = isEditing || isDragging;
 
-    // Viewport Culling logic (Synchronous)
-    const viewportW = window.innerWidth;
-    const viewportH = window.innerHeight;
-    const margin = 300;
-    const bWidth = (block.width || block.measuredWidth || 400) * s;
-    const bHeight = (block.height || block.measuredHeight || 300) * s;
-    const isVisible = (
-      screenX + bWidth > -margin &&
-      screenX < viewportW + margin &&
-      screenY + bHeight > -margin &&
-      screenY < viewportH + margin
-    );
+    // Viewport Culling logic (Disabled to prevent vanishing blocks on re-render)
+    const isVisible = true;
 
     const measuredDimsRef = useRef({ w: block.measuredWidth, h: block.measuredHeight });
     useEffect(() => {

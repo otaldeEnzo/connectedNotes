@@ -51,6 +51,10 @@ export const useCanvasStore = create((set, get) => ({
   hoveredBlockId: null,
   connectingState: null,
   eraserCursorPos: null,
+  eraserType: 'stroke',
+  eraserSize: 20,
+  strokeSmoothing: 0.5,
+  strokeSmoothingEnabled: true,
 
   // Carregar dados da nota de forma limpa
   loadNoteData: (content) => set({
@@ -214,5 +218,9 @@ export const useCanvasStore = create((set, get) => ({
   setEditingBlockId: (id) => set({ editingBlockId: id }),
   setHoveredBlockId: (id) => set({ hoveredBlockId: id }),
   setConnectingState: (arg) => set(state => ({ connectingState: typeof arg === 'function' ? arg(state.connectingState) : arg })),
-  setEraserCursorPos: (arg) => set(state => ({ eraserCursorPos: typeof arg === 'function' ? arg(state.eraserCursorPos) : arg }))
+  setEraserCursorPos: (arg) => set(state => ({ eraserCursorPos: typeof arg === 'function' ? arg(state.eraserCursorPos) : arg })),
+  setEraserType: (type) => set({ eraserType: type }),
+  setEraserSize: (size) => set({ eraserSize: size }),
+  setStrokeSmoothing: (smoothing) => set({ strokeSmoothing: smoothing }),
+  setStrokeSmoothingEnabled: (enabled) => set({ strokeSmoothingEnabled: enabled })
 }));

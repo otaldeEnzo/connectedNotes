@@ -61,11 +61,10 @@ export const getSvgPathFromStroke = (points, options = {}) => {
 
     const stroke = getStroke(inputPoints, {
         size: options.size || 5, // Default size if not provided
-        thinning: 0.5,
-        smoothing: 0.45, // Reduced slightly for better fidelity
-        streamline: 0.45, // Reduced slightly for less lag
+        thinning: options.thinning !== undefined ? options.thinning : 0.5,
+        smoothing: options.smoothing !== undefined ? options.smoothing : 0.45,
+        streamline: options.streamline !== undefined ? options.streamline : 0.45,
         simulatePressure: points[0].pressure === undefined, // Simulate if no pressure data
-        ...options
     });
 
     return getSvgPathFromStrokePoints(stroke);
@@ -298,6 +297,16 @@ export const isPointInPoly = (poly, pt) => {
 };
 
 export const isStrokeClicked = (stroke, point, threshold = 10) => {
+    if (!stroke.points || stroke.points.length === 0) return false;
+
+    // Fast Bounding Box Pre-filter to eliminate O(N) calculations for distant strokes
+    const b = getStrokeBounds(stroke.points);
+    if (!b) return false;
+    if (point.x < b.x - threshold || point.x > b.right + threshold ||
+        point.y < b.y - threshold || point.y > b.bottom + threshold) {
+        return false;
+    }
+
     // Para formas perfeitas (NeatShapes como Retângulos, Círculos, etc.)
     if (stroke.isNeatShape) {
         // Se for uma seta ou linha aberta, verificamos apenas a distância do segmento
