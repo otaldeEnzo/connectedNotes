@@ -522,6 +522,7 @@ const FloatingToolbar = ({
         }}>
           <ToolbarButton toolId="text" icon={Icons.Type} label="Texto" isActive={activeTool === 'text'} onClick={() => { setActiveTool('text'); setShowAddInMenu(false); }} />
           <ToolbarButton toolId="math" icon={Icons.Math} label="Fórmula" isActive={activeTool === 'math'} onClick={() => { setActiveTool('math'); setShowAddInMenu(false); }} />
+          <ToolbarButton toolId="table" icon={Icons.Shapes} label="Tabela" isActive={activeTool === 'table'} onClick={() => { setActiveTool('table'); setShowAddInMenu(false); }} />
           <ToolbarButton toolId="ggb" icon={Icons.Code} label="GGB" isActive={activeTool === 'ggb'} onClick={() => { setActiveTool('ggb'); setShowAddInMenu(false); }} />
           <ToolbarButton toolId="mermaid" icon={Icons.Mermaid} label="Diagram" isActive={activeTool === 'mermaid'} onClick={() => { setActiveTool('mermaid'); setShowAddInMenu(false); }} />
           <ToolbarButton toolId="mindmap" icon={Icons.Mindmap} label="Mindmap" isActive={activeTool === 'mindmap'} onClick={() => { setActiveTool('mindmap'); setShowAddInMenu(false); }} />

@@ -37,6 +37,9 @@ export const useCanvasStore = create((set, get) => ({
   pdfBlocks: {},
   pdfBlockIds: [],
 
+  tableBlocks: {},
+  tableBlockIds: [],
+
   connections: {},
   connectionIds: [],
 
@@ -84,6 +87,9 @@ export const useCanvasStore = create((set, get) => ({
 
     pdfBlocks: normalize(content?.pdfBlocks),
     pdfBlockIds: (content?.pdfBlocks || []).map(b => b.id),
+
+    tableBlocks: normalize(content?.tableBlocks),
+    tableBlockIds: (content?.tableBlocks || []).map(b => b.id),
 
     connections: normalize(content?.connections),
     connectionIds: (content?.connections || []).map(c => c.id),
@@ -182,6 +188,15 @@ export const useCanvasStore = create((set, get) => ({
     };
   }),
 
+  setTableBlocks: (arg) => set(state => {
+    const current = Object.values(state.tableBlocks);
+    const resolved = typeof arg === 'function' ? arg(current) : arg;
+    return {
+      tableBlocks: normalize(resolved),
+      tableBlockIds: resolved.map(b => b.id)
+    };
+  }),
+
   setConnections: (arg) => set(state => {
     const current = Object.values(state.connections);
     const resolved = typeof arg === 'function' ? arg(current) : arg;
@@ -204,6 +219,7 @@ export const useCanvasStore = create((set, get) => ({
       mermaidBlocks: Object.values(s.mermaidBlocks),
       mindmapBlocks: Object.values(s.mindmapBlocks),
       pdfBlocks: Object.values(s.pdfBlocks),
+      tableBlocks: Object.values(s.tableBlocks),
       connections: Object.values(s.connections)
     };
   },

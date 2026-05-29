@@ -24,6 +24,7 @@ import GGBBlock from './GGBBlock';
 import MermaidBlock from './MermaidBlock';
 import MindmapBlock from './MindmapBlock';
 import PDFBlock from './PDFBlock';
+import TableBlock from './TableBlock';
 import MathRecognitionService from '../../services/MathRecognitionService';
 import { transformShapePoints } from '../../services/ShapeRecognitionService';
 import SelectionGroupOverlay from './SelectionGroupOverlay';
@@ -77,6 +78,7 @@ const extractCanvasContent = (content) => {
     mermaidBlocks: content.mermaidBlocks || [],
     mindmapBlocks: content.mindmapBlocks || [],
     pdfBlocks: content.pdfBlocks || [],
+    tableBlocks: content.tableBlocks || [],
     connections: content.connections || [],
   };
 };
@@ -490,6 +492,7 @@ const CanvasArea = forwardRef(({
   const mermaidBlocks = useCanvasStore(useShallow(state => Object.values(state.mermaidBlocks)));
   const mindmapBlocks = useCanvasStore(useShallow(state => Object.values(state.mindmapBlocks)));
   const pdfBlocks = useCanvasStore(useShallow(state => Object.values(state.pdfBlocks)));
+  const tableBlocks = useCanvasStore(useShallow(state => Object.values(state.tableBlocks)));
   const connections = useCanvasStore(useShallow(state => Object.values(state.connections)));
 
   const setStrokes = useCanvasStore(state => state.setStrokes);
@@ -501,6 +504,7 @@ const CanvasArea = forwardRef(({
   const setMermaidBlocks = useCanvasStore(state => state.setMermaidBlocks);
   const setMindmapBlocks = useCanvasStore(state => state.setMindmapBlocks);
   const setPdfBlocks = useCanvasStore(state => state.setPdfBlocks);
+  const setTableBlocks = useCanvasStore(state => state.setTableBlocks);
   const setConnections = useCanvasStore(state => state.setConnections);
 
   const selectedIds = useCanvasStore(state => state.selectedIds);
@@ -626,7 +630,7 @@ const CanvasArea = forwardRef(({
     if (!canvasEl) return null;
 
     // 1. Compute content bounds
-    const allBlocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks];
+    const allBlocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
     allBlocks.forEach(b => {
@@ -839,7 +843,9 @@ const CanvasArea = forwardRef(({
         ...mathBlocks,
         ...ggbBlocks,
         ...mermaidBlocks,
-        ...mindmapBlocks
+        ...mindmapBlocks,
+        ...pdfBlocks,
+        ...tableBlocks
       ].map(b => ({
         id: b.id,
         x: b.x,
@@ -926,6 +932,7 @@ const CanvasArea = forwardRef(({
     setMermaidBlocks(prev => prev.filter(b => String(b.id) !== String(id)));
     setMindmapBlocks(prev => prev.filter(b => String(b.id) !== String(id)));
     setPdfBlocks(prev => prev.filter(b => String(b.id) !== String(id)));
+    setTableBlocks(prev => prev.filter(b => String(b.id) !== String(id)));
   }, []);
 
   const updateAnyBlock = useCallback((type, id, newData) => {
@@ -941,6 +948,7 @@ const CanvasArea = forwardRef(({
     if (type === 'mermaid') setMermaidBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
     if (type === 'mindmap') setMindmapBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
     if (type === 'pdf') setPdfBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
+    if (type === 'table') setTableBlocks(prev => prev.map(b => String(b.id) === String(id) ? { ...b, ...newData } : b));
   }, [removeAnyBlock]);
 
   // Seleção Duplicada
@@ -955,7 +963,7 @@ const CanvasArea = forwardRef(({
       const n = items.map(b => ({ ...b, id: Date.now() + Math.random(), x: b.x + offset, y: b.y + offset }));
       n.forEach(x => newIds.push(x.id)); return [...prev, ...n];
     });
-    dup(textBlocks, setTextBlocks); dup(imageBlocks, setImageBlocks); dup(codeBlocks, setCodeBlocks); dup(mathBlocks, setMathBlocks); dup(ggbBlocks, setGgbBlocks); dup(mermaidBlocks, setMermaidBlocks); dup(mindmapBlocks, setMindmapBlocks); dup(pdfBlocks, setPdfBlocks);
+    dup(textBlocks, setTextBlocks); dup(imageBlocks, setImageBlocks); dup(codeBlocks, setCodeBlocks); dup(mathBlocks, setMathBlocks); dup(ggbBlocks, setGgbBlocks); dup(mermaidBlocks, setMermaidBlocks); dup(mindmapBlocks, setMindmapBlocks); dup(pdfBlocks, setPdfBlocks); dup(tableBlocks, setTableBlocks);
     if (selectedStrokeIds.length > 0) {
       setStrokes(prev => {
         const items = prev.filter(s => selectedStrokeIds.includes(s.id));
@@ -964,7 +972,7 @@ const CanvasArea = forwardRef(({
       });
     }
     setTimeout(() => { setSelectedIds(newIds); setSelectedStrokeIds(newStrokeIds); }, 50);
-  }, [selectedIds, selectedStrokeIds, saveToHistory, textBlocks, imageBlocks, codeBlocks, mathBlocks, ggbBlocks, mermaidBlocks, mindmapBlocks, strokes]);
+  }, [selectedIds, selectedStrokeIds, saveToHistory, textBlocks, imageBlocks, codeBlocks, mathBlocks, ggbBlocks, mermaidBlocks, mindmapBlocks, tableBlocks, strokes]);
 
   const handleMathPlot = useCallback((block, mathjsExpr) => {
     saveToHistory();
@@ -1064,7 +1072,7 @@ const CanvasArea = forwardRef(({
       if (isCtrl && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicateSelection(); }
       if (isCtrl && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault();
-        setSelectedIds([...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks].map(b => b.id));
+        setSelectedIds([...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks].map(b => b.id));
         setSelectedStrokeIds(strokes.map(s => s.id));
       }
     };
@@ -1081,6 +1089,7 @@ const CanvasArea = forwardRef(({
         mermaid: mermaidBlocks.filter(b => selectedIds.includes(b.id)),
         mindmap: mindmapBlocks.filter(b => selectedIds.includes(b.id)),
         pdf: pdfBlocks.filter(b => selectedIds.includes(b.id)),
+        table: tableBlocks.filter(b => selectedIds.includes(b.id)),
         strokes: strokes.filter(s => selectedStrokeIds.includes(s.id))
       };
 
@@ -1103,6 +1112,7 @@ const CanvasArea = forwardRef(({
       setMermaidBlocks(prev => prev.filter(b => !selectedIds.includes(b.id)));
       setMindmapBlocks(prev => prev.filter(b => !selectedIds.includes(b.id)));
       setPdfBlocks(prev => prev.filter(b => !selectedIds.includes(b.id)));
+      setTableBlocks(prev => prev.filter(b => !selectedIds.includes(b.id)));
       setStrokes(prev => prev.filter(s => !selectedStrokeIds.includes(s.id)));
 
       setSelectedIds([]);
@@ -1119,10 +1129,10 @@ const CanvasArea = forwardRef(({
           const parsed = JSON.parse(textData);
           if (parsed?.app === 'connected-notes' && parsed?.data) {
             e.preventDefault(); saveToHistory();
-            const { text, image, code, math, ggb, mermaid, mindmap, strokes: pstStrokes } = parsed.data;
+            const { text, image, code, math, ggb, mermaid, mindmap, table, strokes: pstStrokes } = parsed.data;
 
             // Calculate bounds to center at cursor
-            const allNodes = [...(text || []), ...(image || []), ...(code || []), ...(math || []), ...(ggb || []), ...(mermaid || []), ...(mindmap || [])];
+            const allNodes = [...(text || []), ...(image || []), ...(code || []), ...(math || []), ...(ggb || []), ...(mermaid || []), ...(mindmap || []), ...(table || [])];
             let minX = Infinity, minY = Infinity;
             allNodes.forEach(b => { minX = Math.min(minX, b.x); minY = Math.min(minY, b.y); });
             pstStrokes?.forEach(s => s.points.forEach(p => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); }));
@@ -1156,6 +1166,10 @@ const CanvasArea = forwardRef(({
               return { ...b, id: nid, x: b.x + dx, y: b.y + dy };
             })]);
             if (mindmap) setMindmapBlocks(p => [...p, ...mindmap.map(b => {
+              const nid = generateId(); newIds.push(nid);
+              return { ...b, id: nid, x: b.x + dx, y: b.y + dy };
+            })]);
+            if (table) setTableBlocks(p => [...p, ...table.map(b => {
               const nid = generateId(); newIds.push(nid);
               return { ...b, id: nid, x: b.x + dx, y: b.y + dy };
             })]);
@@ -1356,6 +1370,7 @@ const CanvasArea = forwardRef(({
         mermaidBlocks: safeMermaid,
         mindmapBlocks: safeMindmap,
         pdfBlocks: pdfBlocks,
+        tableBlocks: tableBlocks,
         connections
       };
 
@@ -1372,7 +1387,7 @@ const CanvasArea = forwardRef(({
       }, 1000); // Increased debounce for cleaner performance
       return () => clearTimeout(timer);
     }
-  }, [strokes, textBlocks, imageBlocks, codeBlocks, mathBlocks, ggbBlocks, mermaidBlocks, mindmapBlocks, pdfBlocks, connections, activeNoteId, isNoteLoaded, isDraggingSelection]);
+  }, [strokes, textBlocks, imageBlocks, codeBlocks, mathBlocks, ggbBlocks, mermaidBlocks, mindmapBlocks, pdfBlocks, tableBlocks, connections, activeNoteId, isNoteLoaded, isDraggingSelection]);
 
   // PDF & Image Handlers
   const importPdfAt = useCallback(async (file, startX, startY) => {
@@ -1443,7 +1458,7 @@ const CanvasArea = forwardRef(({
     return { x: (cx - r.left - position.x) / scale, y: (cy - r.top - position.y) / scale };
   }, [position, scale]);
 
-  const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks];
+  const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks];
   const groupBounds = getGroupBounds(
     allB.filter(b => selectedIds.includes(b.id)),
     strokes.filter(s => selectedStrokeIds.includes(s.id)),
@@ -1721,8 +1736,8 @@ const CanvasArea = forwardRef(({
     if (e.button !== 0 && e.pointerType !== 'pen') return;
 
     // Se estivermos com uma ferramenta de bloco, verifique se clicamos em um bloco existente
-    if (['text', 'code', 'math', 'ggb', 'mermaid', 'mindmap', 'pdf'].includes(activeTool)) {
-      const allBlocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks];
+    if (['text', 'code', 'math', 'ggb', 'mermaid', 'mindmap', 'pdf', 'table'].includes(activeTool)) {
+      const allBlocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks];
       const pt = screenToCanvas(e.clientX, e.clientY);
       const clickedBlock = findTopBlockAtPoint(allBlocks, pt);
 
@@ -1793,7 +1808,7 @@ const CanvasArea = forwardRef(({
     }
 
     if (activeTool === 'cursor' || activeTool === 'ai-lasso') {
-      const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks];
+      const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks];
       const pt = screenToCanvas(e.clientX, e.clientY);
       const clickedBlock = findTopBlockAtPoint(allB, pt);
       if (clickedBlock && activeTool === 'cursor') {
@@ -1885,7 +1900,7 @@ const CanvasArea = forwardRef(({
       }
       containerRef.current?.setPointerCapture(e.pointerId); return;
     }
-    if (['text', 'code', 'math', 'ggb', 'mermaid', 'mindmap'].includes(activeTool)) {
+    if (['text', 'code', 'math', 'ggb', 'mermaid', 'mindmap', 'table'].includes(activeTool)) {
       const nid = generateId(); saveToHistory();
       if (activeTool === 'text') setTextBlocks(p => [...p, { id: nid, x: pt.x, y: pt.y, content: '', width: 350, fixedSize: false }]);
       if (activeTool === 'code') setCodeBlocks(p => [...p, { id: nid, x: pt.x, y: pt.y, content: 'Code...', width: 450, height: 350 }]);
@@ -1893,7 +1908,8 @@ const CanvasArea = forwardRef(({
       if (activeTool === 'ggb') setGgbBlocks(p => [...p, { id: nid, x: pt.x, y: pt.y, expression: null, width: 400, height: 350 }]);
       if (activeTool === 'mermaid') setMermaidBlocks(p => [...p, { id: nid, type: 'mermaid', x: pt.x, y: pt.y, code: 'graph TD;\nA-->B;\nA-->C;\nB-->D;\nC-->D;', width: 300, height: 200 }]);
       if (activeTool === 'mindmap') setMindmapBlocks(p => [...p, { id: nid, type: 'mindmap', x: pt.x, y: pt.y, width: 400, height: 300, content: null }]);
-      if (!['mermaid', 'mindmap'].includes(activeTool)) {
+      if (activeTool === 'table') setTableBlocks(p => [...p, { id: nid, type: 'table', x: pt.x, y: pt.y, rowsCount: 3, colsCount: 3, cells: {}, width: 500, height: 300 }]);
+      if (!['mermaid', 'mindmap', 'table'].includes(activeTool)) {
         setEditingBlockId(nid);
       }
       setActiveTool('cursor'); // Reset tool after placement
@@ -1919,7 +1935,7 @@ const CanvasArea = forwardRef(({
 
     // [PRO CONNECTORS] Hover detection for handles
     if (activeTool === 'cursor' && !isDrawing && !isDraggingSelection && !selectionRectRef.current) {
-      const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks];
+      const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks];
       const hBlock = findTopBlockAtPoint(allB, pt, 20); // Padding de 20px para manter as alças ativas
       if (hBlock?.id !== hoveredBlockId) setHoveredBlockId(hBlock?.id || null);
     } else if (hoveredBlockId) {
@@ -1929,7 +1945,7 @@ const CanvasArea = forwardRef(({
     const isEraserActive = activeTool === 'eraser' || (e.pointerType === 'pen' && (e.buttons & 32));
     if (isEraserActive) { setEraserCursorPos(pt); } else if (eraserCursorPos) { setEraserCursorPos(null); }
     if (connectingState) {
-      const blocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks];
+      const blocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks];
       let snap = null;
       let minDist = 30; // Snap threshold
       for (const b of blocks) {
@@ -2197,7 +2213,7 @@ const CanvasArea = forwardRef(({
       };
 
       const nIds = [], nSIds = [], nCIds = [];
-      const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks];
+      const allB = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks];
       allB.forEach(b => { if (isBlockIntersecting(b, selRect)) nIds.push(b.id); });
       strokes.forEach(s => { if (isStrokeInRect(s, selRect)) nSIds.push(s.id); });
       connections.forEach(c => {
@@ -2404,7 +2420,7 @@ const CanvasArea = forwardRef(({
             ))}
           </Group>
 
-          <ConnectionLayer connections={connections} allBlocks={[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks]} tempConnection={connectingState} selectedIds={selectedConnectionIds} scale={scale} isDarkMode={isDarkMode} hoveredId={hoveredBlockId} onSelect={(id, shift) => setSelectedConnectionIds(prev => shift ? (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]) : [id])} />
+          <ConnectionLayer connections={connections} allBlocks={[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks]} tempConnection={connectingState} selectedIds={selectedConnectionIds} scale={scale} isDarkMode={isDarkMode} hoveredId={hoveredBlockId} onSelect={(id, shift) => setSelectedConnectionIds(prev => shift ? (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]) : [id])} />
         </Layer>
         <Layer ref={el => { konvaLayerRefs.current[2] = el; }} x={position.x} y={position.y} scaleX={scale} scaleY={scale} listening={false}>
           {currentStroke && (
@@ -2576,12 +2592,13 @@ const CanvasArea = forwardRef(({
         {mermaidBlocks.map(b => <MermaidBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('mermaid', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} isShadow={isShadow} />)}
         {mindmapBlocks.map(b => <MindmapBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('mindmap', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} isShadow={isShadow} />)}
         {pdfBlocks.map(b => <PDFBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('pdf', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
+        {tableBlocks.map(b => <TableBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('table', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
 
-        {[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks].map(b => (
+        {[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks].map(b => (
           <BlockHandles
             key={b.id}
             block={b}
-            type={['linear_transform', 'taylor_plot', 'vector_field', 'phase_portrait', 'conformal_map', 'fourier_synthesis'].includes(b.type) ? 'math' : b.type === 'pdf' ? 'pdf' : (b.src ? 'image' : (b.expression ? 'ggb' : (b.code ? 'mermaid' : (b.content?.root ? 'mindmap' : (typeof b.content === 'string' && b.content.includes('\\') ? 'math' : 'text')))))}
+            type={b.type === 'table' ? 'table' : (['linear_transform', 'taylor_plot', 'vector_field', 'phase_portrait', 'conformal_map', 'fourier_synthesis'].includes(b.type) ? 'math' : b.type === 'pdf' ? 'pdf' : (b.src ? 'image' : (b.expression ? 'ggb' : (b.code ? 'mermaid' : (b.content?.root ? 'mindmap' : (typeof b.content === 'string' && b.content.includes('\\') ? 'math' : 'text'))))))}
             scale={scale}
             // Separate connection handles and resizing logic:
             // Connection dots are suppressed if block is selected to avoid overlap with groups selection
@@ -2604,7 +2621,7 @@ const CanvasArea = forwardRef(({
 
             // Capture initial state of all selected items for stable relative manipulation
             interactionInitialBlocksRef.current = [
-              ...[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks].filter(b => selectedIds.includes(b.id)).map(b => ({
+              ...[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks].filter(b => selectedIds.includes(b.id)).map(b => ({
                 id: b.id,
                 x: b.x,
                 y: b.y,
@@ -2655,7 +2672,7 @@ const CanvasArea = forwardRef(({
 
       {isMiniMapEnabled && (
         <MiniMap
-          blocks={[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks]}
+          blocks={[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks]}
           strokes={strokes}
           panOffset={position}
           scale={scale}
