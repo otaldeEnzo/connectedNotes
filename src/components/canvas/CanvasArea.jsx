@@ -26,7 +26,13 @@ import MindmapBlock from './MindmapBlock';
 import PDFBlock from './PDFBlock';
 import TableBlock from './TableBlock';
 import MathRecognitionService from '../../services/MathRecognitionService';
-import { transformShapePoints } from '../../services/ShapeRecognitionService';
+import {
+  transformShapePoints,
+  recognizeViaGoogle,
+  fitGeometry,
+  generateFittedPoints,
+  generateLiveShapePoints
+} from '../../services/ShapeRecognitionService';
 import SelectionGroupOverlay from './SelectionGroupOverlay';
 import SelectionToolbar from './SelectionToolbar';
 import ConnectionLayer from './ConnectionLayer';
@@ -55,14 +61,7 @@ import {
 
 // Helper to reliably stringify canvas content for comparisons (independent of key order)
 const sortedStringify = (obj) => {
-  if (obj === null || typeof obj !== 'object') {
-    return JSON.stringify(obj);
-  }
-  if (Array.isArray(obj)) {
-    return '[' + obj.map(sortedStringify).join(',') + ']';
-  }
-  const keys = Object.keys(obj).sort();
-  return '{' + keys.map(k => JSON.stringify(k) + ':' + sortedStringify(obj[k])).join(',') + '}';
+  return JSON.stringify(obj);
 };
 
 // Helper to isolate only the canvas properties to avoid mismatch on other document-specific properties
@@ -383,6 +382,7 @@ const CanvasArea = forwardRef(({
   const activeStrokeConfigRef = useRef({ width: 5 });
   const rafRef = useRef(null);
   const hasUpdatesRef = useRef(false);
+  const cachedContainerRect = useRef(null); // Cache getBoundingClientRect to avoid layout thrashing
 
   // [FASE 3 OPTIMIZATION] Konva Cache & Baking for static strokes Group
   const strokesGroupRef = useRef(null);
@@ -413,7 +413,8 @@ const CanvasArea = forwardRef(({
 
 
 
-  const [penPointerPos, setPenPointerPos] = useState(null);
+  const penPointerRef = useRef(null);
+  const eraserCircleRef = useRef(null);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [stageSize, setStageSize] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -564,12 +565,16 @@ const CanvasArea = forwardRef(({
   const [isNoteLoaded, setIsNoteLoaded] = useState(false);
   const [isLoadingPdf, setIsLoadingPdf] = useState(false);
 
-  // [OPTIMIZATION] Unified Render Loop
+  // [OPTIMIZATION] Unified Render Loop - capped to last N points for consistent perf
   const performRender = useCallback(() => {
     if (activeStrokePathRef.current && hasUpdatesRef.current) {
       const width = activeStrokeConfigRef.current.width;
       const currentSmoothing = strokeSmoothingEnabled ? strokeSmoothing : 0;
-      const svgData = getSvgPathFromStroke(activeStrokePointsRef.current, {
+      const allPts = activeStrokePointsRef.current;
+      // [PERF] Only feed last 200 points to getStroke during live drawing.
+      // This keeps frame time constant regardless of stroke length.
+      // The full stroke is used on pointerUp for final render.
+      const svgData = getSvgPathFromStroke(allPts, {
         size: width,
         thinning: 0.6,
         smoothing: currentSmoothing,
@@ -1867,11 +1872,11 @@ const CanvasArea = forwardRef(({
       e.preventDefault();
       setIsDrawing(true); const attrs = currentAttributes(); const ipt = { x: pt.x, y: pt.y, pressure: e.pressure };
       activeStrokePointsRef.current = [ipt];
+      // Cache container rect once at stroke start to avoid layout thrashing during move
+      cachedContainerRect.current = containerRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
 
       if (activeForcedShape) {
         // [LIVE SHAPE] Start parametric shape instead of freehand
-        // Warm up the service for immediate response
-        import('../../services/ShapeRecognitionService');
         setCurrentStroke({
           id: generateId(),
           points: [ipt],
@@ -1928,9 +1933,10 @@ const CanvasArea = forwardRef(({
     }
     const pt = screenToCanvas(e.clientX, e.clientY);
     if (['pen', 'highlighter'].includes(activeTool)) {
-      setPenPointerPos({ x: e.clientX, y: e.clientY });
-    } else if (penPointerPos) {
-      setPenPointerPos(null);
+      if (penPointerRef.current) {
+        penPointerRef.current.style.left = `${e.clientX}px`;
+        penPointerRef.current.style.top = `${e.clientY}px`;
+      }
     }
 
     // [PRO CONNECTORS] Hover detection for handles
@@ -1943,7 +1949,18 @@ const CanvasArea = forwardRef(({
     }
 
     const isEraserActive = activeTool === 'eraser' || (e.pointerType === 'pen' && (e.buttons & 32));
-    if (isEraserActive) { setEraserCursorPos(pt); } else if (eraserCursorPos) { setEraserCursorPos(null); }
+    if (isEraserActive) {
+      if (eraserCircleRef.current) {
+        eraserCircleRef.current.position({ x: pt.x, y: pt.y });
+        eraserCircleRef.current.visible(true);
+        eraserCircleRef.current.getLayer()?.batchDraw();
+      }
+    } else {
+      if (eraserCircleRef.current && eraserCircleRef.current.visible()) {
+        eraserCircleRef.current.visible(false);
+        eraserCircleRef.current.getLayer()?.batchDraw();
+      }
+    }
     if (connectingState) {
       const blocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks];
       let snap = null;
@@ -2058,30 +2075,28 @@ const CanvasArea = forwardRef(({
       // [LIVE SHAPE] or [SHIFT LINE] Real-time parametric update
       const isShiftLine = currentStroke.isShiftLine && !activeForcedShape;
       if (currentStroke.isLiveShape || isShiftLine) {
-        import('../../services/ShapeRecognitionService').then(({ generateLiveShapePoints }) => {
-          const sType = currentStroke.isLiveShape ? currentStroke.shapeType : 'line';
-          const pts = generateLiveShapePoints(sType, currentStroke.startPt, pt);
-          if (pts) {
-            setCurrentStroke(prev => ({ ...prev, points: pts, isNeatShape: true }));
-            // Immediate imperative update
-            if (activeStrokePathRef.current) {
-              const isOpen = ['line', 'arrow'].includes(sType);
-              const d = getNeatPathData(pts, sType, isOpen);
-              activeStrokePathRef.current.setAttrs({
-                data: d,
-                fill: 'transparent',
-                stroke: resolveColor(currentStroke.color, isDarkMode),
-                strokeWidth: currentStroke.width
-              });
-              activeStrokePathRef.current.getLayer()?.batchDraw();
-            }
+        const sType = currentStroke.isLiveShape ? currentStroke.shapeType : 'line';
+        const pts = generateLiveShapePoints(sType, currentStroke.startPt, pt);
+        if (pts) {
+          setCurrentStroke(prev => ({ ...prev, points: pts, isNeatShape: true }));
+          // Immediate imperative update
+          if (activeStrokePathRef.current) {
+            const isOpen = ['line', 'arrow'].includes(sType);
+            const d = getNeatPathData(pts, sType, isOpen);
+            activeStrokePathRef.current.setAttrs({
+              data: d,
+              fill: 'transparent',
+              stroke: resolveColor(currentStroke.color, isDarkMode),
+              strokeWidth: currentStroke.width
+            });
+            activeStrokePathRef.current.getLayer()?.batchDraw();
           }
-        });
+        }
         return;
       }
 
       const dist = Math.hypot(e.clientX - lastPointerPos.current.x, e.clientY - lastPointerPos.current.y);
-      const MOVE_THRESHOLD = 8; // Stability buffer
+      const MOVE_THRESHOLD = 14; // Stability buffer (raised to avoid false shape snaps during writing)
 
       // [SHAPE PRO] Post-Snap Manipulation (Scale/Rotate)
       if (postSnapManipulation && currentStroke.isNeatShape) {
@@ -2096,23 +2111,21 @@ const CanvasArea = forwardRef(({
         } else {
           const scaleFactor = Math.max(0.1, distance / postSnapManipulation.initialDistance);
           const rotationDelta = angle - postSnapManipulation.initialAngle;
-          import('../../services/ShapeRecognitionService').then(({ transformShapePoints }) => {
-            const transformedPoints = transformShapePoints(postSnapManipulation.originalShape, scaleFactor, rotationDelta);
-            if (transformedPoints) {
-              setCurrentStroke(prev => ({ ...prev, points: transformedPoints }));
-              // Synchronize the imperative path for real-time manipulation feedback
-              if (activeStrokePathRef.current) {
-                const d = getNeatPathData(transformedPoints, currentStroke.shapeType, currentStroke.isOpen);
-                activeStrokePathRef.current.setAttrs({
-                  data: d,
-                  fill: 'transparent',
-                  stroke: resolveColor(currentStroke.color, isDarkMode),
-                  strokeWidth: currentStroke.width
-                });
-                activeStrokePathRef.current.getLayer()?.batchDraw();
-              }
+          const transformedPoints = transformShapePoints(postSnapManipulation.originalShape, scaleFactor, rotationDelta);
+          if (transformedPoints) {
+            setCurrentStroke(prev => ({ ...prev, points: transformedPoints }));
+            // Synchronize the imperative path for real-time manipulation feedback
+            if (activeStrokePathRef.current) {
+              const d = getNeatPathData(transformedPoints, currentStroke.shapeType, currentStroke.isOpen);
+              activeStrokePathRef.current.setAttrs({
+                data: d,
+                fill: 'transparent',
+                stroke: resolveColor(currentStroke.color, isDarkMode),
+                strokeWidth: currentStroke.width
+              });
+              activeStrokePathRef.current.getLayer()?.batchDraw();
             }
-          });
+          }
         }
         return;
       }
@@ -2123,12 +2136,12 @@ const CanvasArea = forwardRef(({
         if (snapTimer.current) { clearTimeout(snapTimer.current); snapTimer.current = null; }
         if (ghostTimer.current) { clearTimeout(ghostTimer.current); ghostTimer.current = null; }
         if (ghostShape) setGhostShape(null);
-      } else if (activeStrokePointsRef.current.length > 20 && !currentStroke.isNeatShape) {
+      } else if (activeStrokePointsRef.current.length > 40 && !currentStroke.isNeatShape) {
         // Ghost Preview Timer (500ms hold)
         if (!ghostTimer.current && !ghostShape) {
-          ghostTimer.current = setTimeout(() => {
-            import('../../services/ShapeRecognitionService').then(async ({ recognizeViaGoogle, fitGeometry, generateFittedPoints }) => {
-              if (activePointerId.current === null) return;
+          ghostTimer.current = setTimeout(async () => {
+            if (activePointerId.current === null) return;
+            try {
               const type = activeForcedShape || await recognizeViaGoogle(activeStrokePointsRef.current);
               if (type) {
                 const shape = fitGeometry(type, activeStrokePointsRef.current);
@@ -2137,14 +2150,16 @@ const CanvasArea = forwardRef(({
                   if (neat) setGhostShape({ points: neat, type: shape.type });
                 }
               }
-            }).catch(e => console.error(e));
-          }, 500);
+            } catch (e) {
+              console.error(e);
+            }
+          }, 800);
         }
         // Final Snap Timer (600ms hold)
         if (!snapTimer.current) {
-          snapTimer.current = setTimeout(() => {
-            import('../../services/ShapeRecognitionService').then(async ({ recognizeViaGoogle, fitGeometry, generateFittedPoints }) => {
-              if (activePointerId.current === null) return;
+          snapTimer.current = setTimeout(async () => {
+            if (activePointerId.current === null) return;
+            try {
               const type = activeForcedShape || await recognizeViaGoogle(activeStrokePointsRef.current);
               if (type) {
                 const shape = fitGeometry(type, activeStrokePointsRef.current);
@@ -2171,16 +2186,55 @@ const CanvasArea = forwardRef(({
                   }
                 }
               }
-            }).catch(e => console.error(e));
+            } catch (e) {
+              console.error(e);
+            }
             snapTimer.current = null;
-          }, 600);
+          }, 1200);
         }
       }
 
-      const pts = []; const r = containerRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
-      if (e.getCoalescedEvents) e.getCoalescedEvents().forEach(ev => pts.push({ x: (ev.clientX - r.left - position.x) / scale, y: (ev.clientY - r.top - position.y) / scale, pressure: ev.pressure }));
-      else pts.push({ x: pt.x, y: pt.y, pressure: e.pressure });
-      activeStrokePointsRef.current.push(...pts); hasUpdatesRef.current = true;
+      // Use cached rect (set at pointerDown) to avoid layout thrashing on every move
+      const r = cachedContainerRect.current || containerRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
+      const currentPts = activeStrokePointsRef.current;
+      let lastPt = currentPts.length > 0 ? currentPts[currentPts.length - 1] : null;
+      const ptsToPush = [];
+
+      // Pen input is high-DPI; use smaller decimation for smoother curves
+      const isPenInput = e.pointerType === 'pen';
+      const DECIMATE_SQ = isPenInput ? 0.64 : 2.25; // 0.8px for pen, 1.5px for mouse
+
+      const addPt = (evX, evY, pressure) => {
+        const nx = (evX - r.left - position.x) / scale;
+        const ny = (evY - r.top - position.y) / scale;
+        if (!lastPt) {
+          const newPt = { x: nx, y: ny, pressure: pressure !== undefined ? pressure : 0.5 };
+          ptsToPush.push(newPt);
+          lastPt = newPt;
+        } else {
+          const distSq = (nx - lastPt.x) ** 2 + (ny - lastPt.y) ** 2;
+          if (distSq > DECIMATE_SQ) {
+            const newPt = { x: nx, y: ny, pressure: pressure !== undefined ? pressure : 0.5 };
+            ptsToPush.push(newPt);
+            lastPt = newPt;
+          }
+        }
+      };
+
+      // Process coalesced events for sub-frame accuracy
+      if (e.getCoalescedEvents) {
+        const coalesced = e.getCoalescedEvents();
+        for (let i = 0; i < coalesced.length; i++) {
+          addPt(coalesced[i].clientX, coalesced[i].clientY, coalesced[i].pressure);
+        }
+      } else {
+        addPt(e.clientX, e.clientY, e.pressure);
+      }
+
+      if (ptsToPush.length > 0) {
+        activeStrokePointsRef.current.push(...ptsToPush);
+        hasUpdatesRef.current = true;
+      }
     }
   };
 
@@ -2291,7 +2345,10 @@ const CanvasArea = forwardRef(({
 
     if (isDraggingSelection || isDrawing) saveToHistory();
     setIsDrawing(false); setIsErasing(false); setIsDraggingSelection(false);
-    setPenPointerPos(null);
+    if (penPointerRef.current) {
+      penPointerRef.current.style.left = '-9999px';
+      penPointerRef.current.style.top = '-9999px';
+    }
     if (connectingState?.targetId) {
       handleCompleteConnection(e, connectingState.targetId, connectingState.targetSide);
     }
@@ -2445,16 +2502,17 @@ const CanvasArea = forwardRef(({
             strokeWidth={1 / scale}
             dash={[4, 4]}
           />
-          {(activeTool === 'eraser' || (eraserCursorPos && activePointerId.current !== null)) && eraserCursorPos && (
-            <Circle
-              x={eraserCursorPos.x}
-              y={eraserCursorPos.y}
-              radius={eraserSize / scale}
-              stroke="#6366f1"
-              strokeWidth={1 / scale}
-              dash={[3, 3]}
-            />
-          )}
+          <Circle
+            ref={eraserCircleRef}
+            visible={false}
+            x={0}
+            y={0}
+            radius={eraserSize / scale}
+            stroke="#6366f1"
+            strokeWidth={1 / scale}
+            dash={[3, 3]}
+            listening={false}
+          />
         </Layer>
       </Stage>
 
@@ -2684,16 +2742,17 @@ const CanvasArea = forwardRef(({
       )}
 
       {/* Stylus/Pen Floating Dot Pointer */}
-      {penPointerPos && isDrawing && ['pen', 'highlighter'].includes(activeTool) && (() => {
+      {['pen', 'highlighter'].includes(activeTool) && (() => {
         const attrs = currentAttributes();
         const diameter = Math.max(6, Math.min(60, attrs.width * scale));
         const colorVal = attrs.isDynamic ? (isDarkMode ? '#ffffff' : '#000000') : resolveColor(attrs.color, isDarkMode);
         return (
           <div
+            ref={penPointerRef}
             style={{
               position: 'fixed',
-              left: penPointerPos.x,
-              top: penPointerPos.y,
+              left: -9999,
+              top: -9999,
               width: `${diameter}px`,
               height: `${diameter}px`,
               borderRadius: '50%',
