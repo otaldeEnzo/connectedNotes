@@ -57,9 +57,7 @@ export const getSvgPathFromStroke = (points, options = {}) => {
         points = [p, { ...p, x: p.x + 0.1, y: p.y + 0.1 }];
     }
 
-    const inputPoints = points.map(p => [p.x, p.y, p.pressure !== undefined ? p.pressure : 0.5]);
-
-    const stroke = getStroke(inputPoints, {
+    const stroke = getStroke(points, {
         size: options.size || 5, // Default size if not provided
         thinning: options.thinning !== undefined ? options.thinning : 0.5,
         smoothing: options.smoothing !== undefined ? options.smoothing : 0.45,
@@ -142,13 +140,16 @@ export const getEffectiveMathDimensions = (block, isExpanded) => {
 
 export const getStrokeBounds = (points) => {
     if (!points || points.length === 0) return null;
+    if (points._bounds) return points._bounds;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     points.forEach(p => {
         if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y;
         if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y;
     });
     if (minX === Infinity) return null;
-    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY, right: maxX, bottom: maxY };
+    const bounds = { x: minX, y: minY, width: maxX - minX, height: maxY - minY, right: maxX, bottom: maxY };
+    points._bounds = bounds;
+    return bounds;
 };
 
 export const getConnectionBounds = (connection, allBlocks) => {
