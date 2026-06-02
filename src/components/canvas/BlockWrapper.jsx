@@ -257,7 +257,7 @@ const BlockWrapper = forwardRef(
           </div>
 
           {/* Content - Tailwind Refactored */}
-          <div className="block-content flex-1 overflow-visible relative">
+          <div className="block-content flex-1 flex flex-col min-h-0 w-full overflow-visible relative">
             {children}
           </div>
         </div>

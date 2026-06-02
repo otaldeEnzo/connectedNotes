@@ -167,7 +167,7 @@ const isFunctionPart = (text, idx) => {
   return false;
 };
 
-const MemorySidebar = ({ variables = {}, formulas = {}, ans, onToggle, isOpen, onEdit }) => {
+const MemorySidebar = ({ variables = {}, formulas = {}, ans, onToggle, isOpen, onEdit, onPlot }) => {
   const activeVars = Object.entries(variables || {}).filter(([key, val]) => {
     return val !== 0 || formulas[key];
   });
@@ -210,13 +210,24 @@ const MemorySidebar = ({ variables = {}, formulas = {}, ans, onToggle, isOpen, o
                   <div className="w-1.5 h-1.5 rounded-full bg-indigo-500/40 group-hover:bg-indigo-400 animate-pulse" />
                 </div>
                 {formula && (
-                  <button
-                    onClick={() => onEdit(formula)}
-                    className="p-1.5 rounded-lg hover:bg-indigo-500/20 text-indigo-400 group-hover:text-indigo-300 transition-all shadow-glow-indigo-soft active:scale-90"
-                    title="Editar Função"
-                  >
-                    <Pencil size={11} className="drop-shadow-glow-blue" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {onPlot && (
+                      <button
+                        onClick={() => onPlot(formula)}
+                        className="p-1.5 rounded-lg hover:bg-indigo-500/20 text-indigo-400 group-hover:text-indigo-300 transition-all shadow-glow-indigo-soft active:scale-90"
+                        title="Plotar Gráfico"
+                      >
+                        <LineChart size={11} className="drop-shadow-glow-blue" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => onEdit(formula)}
+                      className="p-1.5 rounded-lg hover:bg-indigo-500/20 text-indigo-400 group-hover:text-indigo-300 transition-all shadow-glow-indigo-soft active:scale-90"
+                      title="Editar Função"
+                    >
+                      <Pencil size={11} className="drop-shadow-glow-blue" />
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -1477,6 +1488,48 @@ const ScientificOmnibar = ({ isOpen, onClose, onInsert, onAddBlock, canvasPan, c
                   if (mathFieldRef.current) {
                     mathFieldRef.current.setValue(raw);
                     mathFieldRef.current.focus();
+                  }
+                }}
+                onPlot={(formula) => {
+                  try {
+                    const cleanFormula = formula.replace(':=', '=');
+                    const ggbCommand = MathService.latexToMathJS(cleanFormula);
+                    let ggbName = null;
+                    const nameMatch = ggbCommand.match(/^\s*([a-zA-Z0-9_]+)\s*(\(.*\))?\s*[=:]/);
+                    if (nameMatch) {
+                      ggbName = nameMatch[1];
+                    }
+                    
+                    setGraphFunctions(prev => {
+                      if (ggbName) {
+                        const existingIdx = prev.findIndex(f => f.ggbName === ggbName);
+                        if (existingIdx !== -1) {
+                          const next = [...prev];
+                          next[existingIdx] = {
+                            ...next[existingIdx],
+                            latex: cleanFormula,
+                            command: ggbCommand,
+                            visible: true
+                          };
+                          return next;
+                        }
+                      }
+                      const finalName = ggbName || `f${prev.length}`;
+                      const colors = ['#6366f1', '#10b981', '#f43f5e', '#f59e0b', '#06b6d4', '#8b5cf6'];
+                      const newFunc = {
+                        id: Date.now(),
+                        ggbName: finalName,
+                        latex: cleanFormula,
+                        command: ggbCommand,
+                        color: colors[prev.length % colors.length],
+                        visible: true
+                      };
+                      return [...prev, newFunc];
+                    });
+                    
+                    setActiveMode('graph');
+                  } catch (err) {
+                    console.error("Erro ao plotar da memória:", err);
                   }
                 }}
               />

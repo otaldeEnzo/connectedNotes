@@ -79,7 +79,7 @@ const SelectionToolbar = ({ bounds, scale = 1, position = { x: 0, y: 0 }, viewpo
             )}
 
             {/* Color Picker Section */}
-            {onColorChange && !hasOnlyPDF && !hasOnlyImage && (
+            {onColorChange && !hasOnlyPDF && !hasOnlyImage && !selectionTypes.includes('table') && (
                 <>
                     <div style={{ width: '1px', background: 'var(--border-color)', margin: '0 2px', opacity: 0.5 }} />
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>

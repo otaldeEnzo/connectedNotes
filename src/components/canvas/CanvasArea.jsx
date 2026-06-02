@@ -1009,7 +1009,27 @@ const CanvasArea = forwardRef(({
     saveToHistory();
     const newId = Date.now() + Math.random();
     const safe = (Array.isArray(steps) && steps[0] !== "undefined") ? steps : [{ label: 'Erro', expr: 'Passos não disponíveis.' }];
-    const content = `\\mathbf{\\text{PASSOS DE RESOLUÇÃO:}}\\\\[12pt]` + safe.map(s => `\\text{${s?.label || 'Passo'}: } ${s?.expr || '?'}`).join('\\\\[12pt]');
+    
+    const latexSteps = safe.map(s => {
+      const label = s?.label || 'Passo';
+      const expr = s?.expr || '';
+      
+      const hyphenIdx = expr.indexOf(' - ');
+      if (hyphenIdx !== -1) {
+        const desc = expr.substring(0, hyphenIdx).trim();
+        const math = expr.substring(hyphenIdx + 3).trim();
+        return `\\text{${label}: ${desc}} \\quad ${math}`;
+      } else {
+        const looksLikeTextOnly = /^[a-zA-Z\s\.,!\?áéíóúãõçâêôÀÉÍÓÚÂÊÔÇ]+$/.test(expr);
+        if (looksLikeTextOnly) {
+          return `\\text{${label}: ${expr}}`;
+        } else {
+          return `\\text{${label}: } ${expr}`;
+        }
+      }
+    });
+
+    const content = `\\mathbf{\\text{PASSOS DE RESOLUÇÃO:}}\\\\[12pt]` + latexSteps.join('\\\\[12pt]');
     const sourceH = getBlockDimensions(block).height;
     setMathBlocks(prev => [...prev, { id: newId, x: block.x, y: block.y + sourceH + 150, content, fixedSize: false, color: 'var(--accent-color)' }]);
     setConnections(prev => [...prev, { id: Date.now() + 3, fromId: block.id, fromSide: 'bottom', toId: newId, toSide: 'top', color: 'var(--accent-color)' }]);
@@ -1068,6 +1088,7 @@ const CanvasArea = forwardRef(({
           setMermaidBlocks(prev => prev.filter(b => !selectedIds.includes(b.id)));
           setMindmapBlocks(prev => prev.filter(b => !selectedIds.includes(b.id)));
           setPdfBlocks(prev => prev.filter(b => !selectedIds.includes(b.id)));
+          setTableBlocks(prev => prev.filter(b => !selectedIds.includes(b.id)));
           setStrokes(prev => prev.filter(s => !selectedStrokeIds.includes(s.id)));
           setConnections(prev => prev.filter(c => !selectedConnectionIds.includes(c.id)));
           setSelectedIds([]); setSelectedStrokeIds([]); setSelectedConnectionIds([]);
@@ -1569,6 +1590,7 @@ const CanvasArea = forwardRef(({
     setMermaidBlocks(prev => prev.map(scaleBlock));
     setMindmapBlocks(prev => prev.map(scaleBlock));
     setPdfBlocks(prev => prev.map(scaleBlock));
+    setTableBlocks(prev => prev.map(scaleBlock));
     setStrokes(prev => prev.map(s => {
       if (!selectedStrokeIds.includes(s.id)) return s;
       const initial = interactionInitialBlocksRef.current.find(is => is.id === s.id);
@@ -1621,7 +1643,7 @@ const CanvasArea = forwardRef(({
       try { containerRef.current.setPointerCapture(e.pointerId); } catch (err) { }
     }
 
-    const selectedBlocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks]
+    const selectedBlocks = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks]
       .filter(b => sIds.includes(b.id));
 
     const selectedStrokes = strokes.filter(s => sStrokeIds.includes(s.id));
@@ -1636,7 +1658,7 @@ const CanvasArea = forwardRef(({
   const handleBlockInteract = (id, e) => {
     e?.stopPropagation();
 
-    const block = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks].find(b => String(b.id) === String(id));
+    const block = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks].find(b => String(b.id) === String(id));
     if (!block) return;
 
     const isHeaderClick = e?.target?.closest('.block-header');
@@ -1646,7 +1668,8 @@ const CanvasArea = forwardRef(({
       (activeTool === 'math' && mathBlocks.some(b => b.id === id)) ||
       (activeTool === 'code' && codeBlocks.some(b => b.id === id)) ||
       (activeTool === 'ggb' && ggbBlocks.some(b => b.id === id)) ||
-      (['mermaid', 'mindmap'].includes(activeTool) && (mermaidBlocks.some(b => b.id === id) || mindmapBlocks.some(b => b.id === id)));
+      (['mermaid', 'mindmap'].includes(activeTool) && (mermaidBlocks.some(b => b.id === id) || mindmapBlocks.some(b => b.id === id))) ||
+      (activeTool === 'table' && tableBlocks.some(b => b.id === id));
 
     // Only enter edit mode if it's NOT a header click and tool matches
     if (isMatchingTool && activeTool !== 'cursor' && !isHeaderClick) {
@@ -1667,7 +1690,7 @@ const CanvasArea = forwardRef(({
       } else {
         const g = block.groupId;
         if (g) {
-          const groupIds = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks]
+          const groupIds = [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks]
             .filter(b => b.groupId === g)
             .map(b => b.id);
           newSel = [...new Set([...newSel, ...groupIds])];
@@ -2329,6 +2352,7 @@ const CanvasArea = forwardRef(({
         setMermaidBlocks(prev => prev.map(moveBlock));
         setMindmapBlocks(prev => prev.map(moveBlock));
         setPdfBlocks(prev => prev.map(moveBlock));
+        setTableBlocks(prev => prev.map(moveBlock));
         setStrokes(prev => prev.map(moveStroke));
       }
 
