@@ -1,4 +1,4 @@
-import { queryGemini } from './AIService';
+import { queryGemini, isAiFeatureEnabled } from './AIService';
 
 /**
  * MathRecognitionService.js
@@ -13,6 +13,10 @@ class MathRecognitionService {
      * @param {string} apiKey - User's personal Gemini API key.
      */
     async recognizeExpression(strokes, apiKey) {
+        if (!isAiFeatureEnabled('handwritingOCR')) {
+            throw new Error("O recurso de reconhecimento de escrita manual foi desativado nas suas configurações de privacidade e IA.");
+        }
+
         if (!apiKey) {
             throw new Error("MISSING_API_KEY");
         }

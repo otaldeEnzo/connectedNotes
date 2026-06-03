@@ -58,7 +58,7 @@ const ImageBlock = ({ block, activeTool, updateBlock, onInteract, removeBlock, i
                         height: 'calc(100% - 4px)', 
                         pointerEvents: 'none', 
                         display: 'block', 
-                        objectFit: 'cover', 
+                        objectFit: 'fill', 
                         borderRadius: '0px 0px 2.3rem 2.3rem' 
                     }} 
                 />

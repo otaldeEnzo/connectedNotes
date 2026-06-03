@@ -1,6 +1,7 @@
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 /**
  * CONFIGURAÇÃO DO FIREBASE
@@ -29,6 +30,7 @@ function getFirebaseConfig() {
 let app = initializeApp(getFirebaseConfig());
 let auth = getAuth(app);
 let db = getFirestore(app);
+let storage = getStorage(app);
 const appId = 'connectedNotes';
 
 /**
@@ -55,9 +57,10 @@ function updateFirebaseConfig(newConfig) {
   app = initializeApp(activeConfig);
   auth = getAuth(app);
   db = getFirestore(app);
+  storage = getStorage(app);
 
   // Despacha um evento personalizado para notificar os componentes React em tempo real
-  window.dispatchEvent(new CustomEvent('firebase-config-changed', { detail: { auth, db } }));
+  window.dispatchEvent(new CustomEvent('firebase-config-changed', { detail: { auth, db, storage } }));
 }
 
 /**
@@ -74,4 +77,4 @@ function isCustomFirebaseActive() {
   return !!localStorage.getItem('connected-notes-custom-firebase-config');
 }
 
-export { app, auth, db, appId, sanitize, updateFirebaseConfig, getFirebaseConfig, isCustomFirebaseActive };
+export { app, auth, db, storage, appId, sanitize, updateFirebaseConfig, getFirebaseConfig, isCustomFirebaseActive };

@@ -27,7 +27,7 @@ const SelectionGroupOverlay = ({ bounds, onResize, onStartDrag, onStartInteracti
     };
     const handleStyle = {
         background: 'white',
-        border: '1.5px solid var(--accent-color)',
+        border: activeTool === 'ai-lasso' ? '1.5px solid #14b8a6' : '1.5px solid var(--accent-color)',
         borderRadius: '50%',
         boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
         zIndex: 9005,
@@ -38,7 +38,7 @@ const SelectionGroupOverlay = ({ bounds, onResize, onStartDrag, onStartInteracti
     const handleHoverProps = {
         onMouseEnter: (e) => {
             e.target.style.transform = 'scale(1.4)';
-            e.target.style.boxShadow = '0 0 15px var(--accent-glow)';
+            e.target.style.boxShadow = activeTool === 'ai-lasso' ? '0 0 15px rgba(20, 184, 166, 0.6)' : '0 0 15px var(--accent-glow)';
         },
         onMouseLeave: (e) => {
             e.target.style.transform = 'scale(1)';
@@ -75,7 +75,7 @@ const SelectionGroupOverlay = ({ bounds, onResize, onStartDrag, onStartInteracti
                         cursor: 'move',
                         pointerEvents: 'auto',
                         zIndex: 1000,
-                        border: '2px dashed var(--accent-color)',
+                        border: activeTool === 'ai-lasso' ? '2px dashed #14b8a6' : '2px dashed var(--accent-color)',
                         borderRadius: '16px',
                         backgroundColor: 'transparent'
                     }}
@@ -143,7 +143,7 @@ const SelectionGroupOverlay = ({ bounds, onResize, onStartDrag, onStartInteracti
                             right: containerPadding - 8, 
                             width: 16, 
                             height: 16, 
-                            background: 'var(--accent-color)', 
+                            background: activeTool === 'ai-lasso' ? '#14b8a6' : 'var(--accent-color)', 
                             border: '2px solid white', 
                             cursor: 'nwse-resize' 
                         }}

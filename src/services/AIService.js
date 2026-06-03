@@ -1,5 +1,17 @@
 import { getMathPrompt } from './MathPrompts';
 
+export const isAiFeatureEnabled = (featureName) => {
+  try {
+    const saved = localStorage.getItem('connected-notes-ai-settings');
+    if (!saved) return true;
+    const parsed = JSON.parse(saved);
+    return parsed[featureName] !== false;
+  } catch (e) {
+    return true;
+  }
+};
+
+
 // Cache para evitar muitas chamadas de listagem
 let cachedModel = null;
 const blacklistedModels = new Set();
@@ -38,8 +50,16 @@ const getBestAvailableModel = async (apiKey) => {
       }
     }
 
-    // Se nenhum da lista de prioridade estiver limpo, pega o primeiro gemini que não esteja na blacklist
-    const fallback = availableNames.find(n => n.startsWith("gemini") && !n.includes("vision") && !blacklistedModels.has(n));
+    // Se nenhum da lista de prioridade estiver limpo, pega o primeiro gemini que não esteja na blacklist e que suporte Visão Multimodal
+    const fallback = availableNames.find(n => 
+      n.startsWith("gemini") && 
+      !n.includes("vision") && 
+      !n.includes("tts") && 
+      !n.includes("embed") && 
+      !n.includes("text-only") && 
+      !n.includes("voice") && 
+      !blacklistedModels.has(n)
+    );
     if (fallback) {
       cachedModel = fallback;
       return fallback;
@@ -48,7 +68,9 @@ const getBestAvailableModel = async (apiKey) => {
     // Caso extremo: se tudo estiver na blacklist, limpa e pega o primeiro prioritário
     if (availableNames.length > 0) {
       blacklistedModels.clear();
-      return priority.find(p => availableNames.includes(p)) || availableNames[0];
+      const firstValid = priority.find(p => availableNames.includes(p)) || 
+        availableNames.find(n => n.startsWith("gemini") && !n.includes("tts") && !n.includes("embed") && !n.includes("voice"));
+      return firstValid || "gemini-2.0-flash";
     }
 
     return "gemini-2.0-flash";
@@ -134,7 +156,6 @@ export const queryGemini = async (apiKey, prompt, images = [], history = [], dep
     throw new Error("API_KEY_MISSING");
   }
 
-  // Se excedermos 5 tentativas de modelos diferentes, interrompe para evitar loop infinito
   if (depth > 5) {
     throw new Error("⚠️ Todos os modelos de IA disponíveis atingiram o limite de uso. Isso é comum no plano gratuito se houver muitos pedidos seguidos. Aguarde de 1 a 5 minutos para que o Google restaure sua cota.");
   }
@@ -144,30 +165,32 @@ export const queryGemini = async (apiKey, prompt, images = [], history = [], dep
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const systemPrompt = `
-    Você é um tutor de Exatas (Física, Matemática, Engenharia) altamente didático e paciente.
-    Seu objetivo é ajudar o estudante a compreender conceitos profundamente e resolver problemas passo a passo.
+    Você é o Tutor IA, um assistente inteligente, paciente e altamente didático, com conhecimento em todas as disciplinas acadêmicas.
+    Seu objetivo é ajudar o estudante a compreender conceitos profundamente, explicar conteúdos passo a passo e responder de forma rica a qualquer tipo de dúvida ou seleção do usuário.
     
     DIRETRIZES:
     1. Analise o conteúdo (imagem/texto).
     2. RESPONDA SEMPRE EM JSON neste formato rigoroso:
     {
-      "message": "Texto explicativo ou pergunta para o usuário (pode usar LaTeX $$...$$)",
+      "message": "Texto explicativo, resposta rica ou pergunta para o usuário (pode usar LaTeX $$...$$ para trechos científicos/matemáticos)",
       "type": "question|math_analysis|general",
       "suggested_actions": [
         { "label": "Título do Botão", "action_id": "PLOT_GRAPH | SOLVE | DERIVE | SUMMARIZE | ADD_TO_NOTE", "payload": "Dados extras se necessário" }
       ],
       "data": {
-        "ggb_command": "", // Se for gráfico, forneça o comando ou expressão para o GeoGebra (ex: "f(x)=sin(x)", "x^2 + y^2 = 9")
-        "latex_detailed": "", // Resolução completa com explicações detalhadas em \text{...}
-        "latex_math_only": "" // Apenas os passos matemáticos puros
+        "ggb_command": "", // Se aplicável, comando ou expressão para o GeoGebra (ex: "f(x)=sin(x)", "x^2 + y^2 = 9")
+        "latex_detailed": "", // Se aplicável, resolução científica completa com explicações detalhadas em \\text{...}
+        "latex_math_only": "" // Se aplicável, apenas os passos matemáticos/fórmulas puros
       }
     }
 
     3. COMPORTAMENTO:
-       - Se o usuário circular uma fórmula/função: Identifique-a e ofereça ["PLOT_GRAPH", "SOLVE"].
+       - Você é um expert absoluto em STEM (Matemática, Física, Engenharia, Química, Computação), mas também responde com maestria e profunda clareza a perguntas de humanas, biológicas e cultura geral (História, Literatura, Biologia, Filosofia, etc.).
+       - Adapte-se ao assunto: se o usuário fizer uma pergunta geral/não exata (ex: "Quem foi Napoleão?" ou "Explique a fotossíntese"), responda rica e detalhadamente no campo "message" usando formatação markdown padrão, defina "type": "general", e ofereça botões de sugestões úteis como "Resumir" ou "Adicionar à nota" (action_id=ADD_TO_NOTE) em "suggested_actions".
+       - Se o usuário circular ou enviar uma fórmula/função: Identifique-a e ofereça ["PLOT_GRAPH", "SOLVE"].
        - Se for pedido para PLOTAR (action_id=PLOT_GRAPH): Forneça a expressão ou comando puro para o GeoGebra no campo "data.ggb_command".
        - Se for pedido para RESOLVER (action_id=SOLVE): Encontre os valores das variáveis ($x$, $y$, etc.). 
-       - O campo "data.latex_detailed" deve conter o PASSO A PASSO COMPLETO com explicações ricas em Português usando o comando \\text{...}. Deixe o conteúdo rico para que o usuário possa estudar os passos.
+       - O campo "data.latex_detailed" deve conter o PASSO A PASO COMPLETO com explicações ricas em Português usando o comando \\text{...}. Deixe o conteúdo rico para que o usuário possa estudar os passos.
        - O campo "data.latex_math_only" deve conter APENAS as equações e passos matemáticos puros, sem explicações textuais em Português.
        - REGRAS DE LaTeX:
          * SEMPRE use a barra invertida (\\) para comandos (ex: \\quad, \\sqrt, \\frac). NUNCA omita a barra (ex: NÃO use "quad").
@@ -224,10 +247,17 @@ export const queryGemini = async (apiKey, prompt, images = [], history = [], dep
 
   contents.push({ role: 'user', parts: currentParts });
 
-  // Helper para retry com backoff exponencial
+  // Helper para retry com backoff exponencial com timeout de 30 segundos
   const fetchWithRetry = async (url, options, retries = 2, backoff = 1000) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
     try {
-      const response = await fetch(url, options);
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
 
       if (response.status === 429) {
         console.warn(`Cota excedida para ${model}.`);
@@ -246,6 +276,10 @@ export const queryGemini = async (apiKey, prompt, images = [], history = [], dep
 
       return response;
     } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === "AbortError") {
+        throw new Error("⚠️ A requisição à IA expirou (timeout de 30s). Verifique sua conexão e tente novamente.");
+      }
       if (err.message === "QUOTA_EXCEEDED_FOR_MODEL") throw err;
       if (retries > 0) {
         await new Promise(r => setTimeout(r, backoff));
@@ -298,6 +332,10 @@ export const validateKey = async (apiKey) => {
  * Uses queryGeminiSimple for plain text responses without JSON formatting
  */
 export const quickMathAction = async (apiKey, type, expression) => {
+  if (!isAiFeatureEnabled('mathSolver')) {
+    return "Erro: O recurso de Resolução & Passos Matemáticos foi desativado nas suas configurações de privacidade e IA.";
+  }
+
   const prompts = {
     solve: `Você é um solucionador de equações matemáticas. Resolva a equação ou expressão abaixo e encontre o valor da variável.
 

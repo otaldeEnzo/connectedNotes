@@ -5,7 +5,7 @@
  */
 
 import { FileSystemBridge } from './FileSystemBridge';
-import { db, auth, sanitize } from '../firebase';
+import { db, auth, sanitize, storage } from '../firebase';
 import { 
   doc, 
   setDoc, 
@@ -14,6 +14,81 @@ import {
   collection, 
   onSnapshot 
 } from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+
+let isStorageCorsBlocked = false;
+let corsChecked = false;
+
+// Probe to check if Storage CORS is active
+async function checkStorageCors(userId) {
+  if (corsChecked) return;
+  corsChecked = true;
+  try {
+    const tempRef = ref(storage, `users/${userId}/_cors_probe.txt`);
+    await uploadString(tempRef, 'probe', 'raw', { contentType: 'text/plain' });
+    isStorageCorsBlocked = false;
+  } catch (err) {
+    isStorageCorsBlocked = true;
+    console.warn(
+      "[ConnectedNotes] Firebase Storage CORS ou permissões não configuradas. Salvaremos os payloads base64 diretamente no Firestore para evitar spam de erros de CORS no console. Para resolver em definitivo, configure o CORS no seu console do Firebase."
+    );
+  }
+}
+
+// Helper to upload a base64 file to Firebase Storage
+async function uploadBase64ToStorage(userId, noteId, fileId, base64String) {
+  const match = base64String.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return base64String;
+  const contentType = match[1];
+  const rawBase64 = match[2];
+
+  let extension = 'bin';
+  if (contentType.includes('/')) {
+    extension = contentType.split('/')[1];
+  }
+  const storagePath = `users/${userId}/notes/${noteId}/${fileId}.${extension}`;
+  const fileRef = ref(storage, storagePath);
+
+  await uploadString(fileRef, rawBase64, 'base64', { contentType });
+  return await getDownloadURL(fileRef);
+}
+
+// Recursive helper to find and upload all base64 data URL strings inside content object
+async function processBase64Fields(userId, noteId, data) {
+  if (!data) return data;
+
+  if (typeof data === 'string') {
+    if (data.startsWith('data:') && data.includes(';base64,')) {
+      if (isStorageCorsBlocked) {
+        return data; // Safe fallback bypass
+      }
+      const fileId = 'file_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+      try {
+        return await uploadBase64ToStorage(userId, noteId, fileId, data);
+      } catch (err) {
+        console.error("Failed to upload base64 file to Storage:", err);
+        return data;
+      }
+    }
+    return data;
+  }
+
+  if (Array.isArray(data)) {
+    const promises = data.map(item => processBase64Fields(userId, noteId, item));
+    return Promise.all(promises);
+  }
+
+  if (typeof data === 'object') {
+    const result = {};
+    const keys = Object.keys(data);
+    for (const key of keys) {
+      result[key] = await processBase64Fields(userId, noteId, data[key]);
+    }
+    return result;
+  }
+
+  return data;
+}
 
 // Nome das chaves de configuração no LocalStorage
 const CONFIG_KEYS = {
@@ -345,11 +420,34 @@ export const StorageService = {
       const user = auth.currentUser;
       if (user) {
         try {
+          // Probe CORS dynamically if not checked yet
+          if (!corsChecked) {
+            checkStorageCors(user.uid);
+          }
+
           const docRef = doc(db, 'users', user.uid, 'notes', noteId);
-          await setDoc(docRef, sanitize(noteData));
+          
+          // Offload base64 files to Firebase Storage to keep firestore doc size tiny
+          const processedContent = await processBase64Fields(user.uid, noteId, noteData.content);
+          const processedNoteData = {
+            ...noteData,
+            content: processedContent
+          };
+          
+          await setDoc(docRef, sanitize(processedNoteData));
+
+          // Strip heavy 'content' fields from all notes in notesState to keep the workspace document tiny and prevent Firebase 1MB limit crash
+          const workspaceState = {};
+          Object.keys(notesState).forEach(id => {
+            const note = notesState[id];
+            if (note) {
+              const { content, ...rest } = note;
+              workspaceState[id] = rest;
+            }
+          });
 
           const wsRef = doc(db, 'users', user.uid, 'workspace', 'state');
-          await setDoc(wsRef, sanitize({ notes: notesState }));
+          await setDoc(wsRef, sanitize({ notes: workspaceState }));
           success = true;
         } catch (err) {
           console.error("Erro ao salvar nota no Firebase:", err);
@@ -397,8 +495,18 @@ export const StorageService = {
           const docRef = doc(db, 'users', user.uid, 'notes', noteId);
           await deleteDoc(docRef);
 
+          // Strip heavy 'content' fields from all notes in notesState to keep the workspace document tiny and prevent Firebase 1MB limit crash
+          const workspaceState = {};
+          Object.keys(notesState).forEach(id => {
+            const note = notesState[id];
+            if (note) {
+              const { content, ...rest } = note;
+              workspaceState[id] = rest;
+            }
+          });
+
           const wsRef = doc(db, 'users', user.uid, 'workspace', 'state');
-          await setDoc(wsRef, sanitize({ notes: notesState }));
+          await setDoc(wsRef, sanitize({ notes: workspaceState }));
         } catch (err) {
           console.error("Erro ao deletar nota no Firebase:", err);
         }

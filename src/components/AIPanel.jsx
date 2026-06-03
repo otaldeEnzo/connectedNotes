@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { queryGemini } from '../services/AIService';
+import { queryGemini, isAiFeatureEnabled } from '../services/AIService';
 
 // Renderizador simplificado de LaTeX para o chat
 const LatexMessage = ({ text }) => {
@@ -65,8 +65,12 @@ const AIPanel = ({ apiKey, contextData, onClose, onOpenSettings, onAddBlock, onU
 
   useEffect(() => {
     if (contextData && contextData.id !== lastProcessedId.current) {
+      const { text, images, isSelection, isPlaceholder } = contextData;
+      if (isPlaceholder) {
+        setIsLoading(true);
+        return;
+      }
       lastProcessedId.current = contextData.id;
-      const { text, images, isSelection } = contextData;
       if (isSelection && (text || images.length > 0)) {
         handleSend(text, images, true);
       }
@@ -87,6 +91,19 @@ const AIPanel = ({ apiKey, contextData, onClose, onOpenSettings, onAddBlock, onU
     const displayText = isSystemContext ? "Analise a área selecionada." : text;
     setMessages(prev => [...prev, { role: 'user', text: displayText, hasImage: images.length > 0 }]);
     setIsLoading(true);
+
+    if (!isAiFeatureEnabled('globalAssistant')) {
+      setTimeout(() => {
+        setMessages(prev => [...prev, {
+          role: 'ai',
+          content: {
+            message: "⚠️ O **Assistente Tutor Geral (RAG)** está desativado nas suas configurações de privacidade e IA. Ative-o no modal de configurações para poder enviar mensagens."
+          }
+        }]);
+        setIsLoading(false);
+      }, 500);
+      return;
+    }
 
     try {
       const prompt = isSystemContext
@@ -115,12 +132,54 @@ const AIPanel = ({ apiKey, contextData, onClose, onOpenSettings, onAddBlock, onU
           }
         }
 
+        // [ROBUSTNESS] Fix raw unescaped newlines/tabs inside JSON double-quoted string values
+        cleanJson = cleanJson.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (match, stringVal) => {
+          return '"' + stringVal.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t') + '"';
+        });
+
         parsedResponse = JSON.parse(cleanJson);
         console.log("Parsed AI Response:", parsedResponse);
       } catch (e) {
-        // Se falhar, assume que é texto plano
-        console.warn("Failed to parse AI response as JSON, using as text.");
-        parsedResponse = { message: responseText, type: 'general' };
+        // [ROBUSTNESS FALLBACK] If standard JSON.parse fails, try to surgically extract message/type fields
+        console.warn("Failed to parse AI response as JSON, trying surgical extraction:", e);
+        
+        let cleanJson = responseText
+          .replace(/^```json\s*/i, '')
+          .replace(/^```\s*/i, '')
+          .replace(/\s*```$/i, '')
+          .trim();
+
+        const messageMatch = cleanJson.match(/"message"\s*:\s*"([\s\S]*?)"\s*,\s*"/);
+        const typeMatch = cleanJson.match(/"type"\s*:\s*"([\s\S]*?)"/);
+        
+        if (messageMatch) {
+          parsedResponse = {
+            message: messageMatch[1]
+              .replace(/\\n/g, '\n')
+              .replace(/\\r/g, '\r')
+              .replace(/\\t/g, '\t')
+              .replace(/\\"/g, '"'),
+            type: typeMatch ? typeMatch[1] : 'general'
+          };
+          
+          // Try to extract suggested_actions
+          const actionsMatch = cleanJson.match(/"suggested_actions"\s*:\s*(\[[\s\S]*?\])/);
+          if (actionsMatch) {
+            try {
+              parsedResponse.suggested_actions = JSON.parse(actionsMatch[1]);
+            } catch (_) {}
+          }
+        } else {
+          // If surgical extraction also fails, clean raw JSON markers and use as general text
+          const plainText = responseText
+            .replace(/```json|```/g, '')
+            .replace(/"message"\s*:\s*"/, '')
+            .replace(/"\s*,\s*"type"\s*:\s*"[\s\S]*?$/, '')
+            .replace(/\\n/g, '\n')
+            .replace(/\\"/g, '"')
+            .trim();
+          parsedResponse = { message: plainText, type: 'general' };
+        }
       }
 
       setMessages(prev => [...prev, { role: 'ai', content: parsedResponse }]);

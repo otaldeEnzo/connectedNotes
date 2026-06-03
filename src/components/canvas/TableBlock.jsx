@@ -1,9 +1,40 @@
 import React, { useState, useRef, useEffect } from 'react';
 import BlockWrapper from './BlockWrapper';
-import { Plus, Minus, Check, Trash2, Keyboard, Loader2 } from 'lucide-react';
+import { Plus, Minus, Check, Trash2, Keyboard, Loader2, Sparkles, FileSpreadsheet } from 'lucide-react';
+import { queryGemini, isAiFeatureEnabled } from '../../services/AIService';
+
+const evaluateFormula = (formulaStr, rowValues) => {
+  let expr = formulaStr.trim();
+  if (expr.startsWith('=')) expr = expr.slice(1);
+  if (!expr) return '';
+  
+  // Replace A..Z with values
+  for (let i = 0; i < 26; i++) {
+    const letter = String.fromCharCode(65 + i); // 'A', 'B'...
+    const val = parseFloat(rowValues[i]) || 0;
+    // Replace whole word letters to avoid replacing letters inside math functions like sin, cos
+    const regex = new RegExp(`\\b${letter}\\b`, 'gi');
+    expr = expr.replace(regex, val);
+  }
+  
+  // Replace standard math functions with Math.xxx
+  const mathFunctions = ['sin', 'cos', 'tan', 'sqrt', 'pow', 'abs', 'exp', 'log', 'PI', 'E'];
+  mathFunctions.forEach(fn => {
+    const regex = new RegExp(`\\b${fn}\\b`, 'gi');
+    expr = expr.replace(regex, `Math.${fn.toUpperCase()}`);
+  });
+
+  try {
+    const result = new Function(`return ${expr}`)();
+    return typeof result === 'number' && !isNaN(result) ? Number(result.toFixed(4)).toString() : '';
+  } catch (e) {
+    return 'Erro';
+  }
+};
 
 const TableBlock = ({
   block,
+  apiKey,
   activeTool,
   isDarkMode,
   updateBlock,
@@ -42,7 +73,195 @@ const TableBlock = ({
 
   const handleCellChange = (r, c, val) => {
     const updatedCells = { ...cells, [`${r}-${c}`]: val };
+    
+    // Re-evaluate column formulas for this row
+    const formulas = block.formulas || {};
+    if (Object.keys(formulas).length > 0) {
+      const rowValues = [];
+      for (let colIdx = 0; colIdx < cols; colIdx++) {
+        rowValues.push(colIdx === c ? val : (cells[`${r}-${colIdx}`] || '0'));
+      }
+      
+      Object.entries(formulas).forEach(([cIdx, formula]) => {
+        const targetCol = parseInt(cIdx);
+        if (formula.trim()) {
+          const evaluated = evaluateFormula(formula, rowValues);
+          updatedCells[`${r}-${targetCol}`] = evaluated;
+        }
+      });
+    }
+
     updateBlock(block.id, { cells: updatedCells });
+  };
+
+  const handleFormulaChange = (colIdx, val) => {
+    const updatedFormulas = { ...(block.formulas || {}), [colIdx]: val };
+    
+    // Auto-evaluate the formulas for all rows
+    const updatedCells = { ...cells };
+    const currentFormulas = updatedFormulas;
+    
+    for (let r = 0; r < rows; r++) {
+      const rowValues = [];
+      for (let c = 0; c < cols; c++) {
+        rowValues.push(cells[`${r}-${c}`] || '0');
+      }
+      
+      Object.entries(currentFormulas).forEach(([cIdx, formula]) => {
+        const c = parseInt(cIdx);
+        if (formula.trim()) {
+          const evaluated = evaluateFormula(formula, rowValues);
+          updatedCells[`${r}-${c}`] = evaluated;
+        }
+      });
+    }
+
+    updateBlock(block.id, { formulas: updatedFormulas, cells: updatedCells });
+  };
+
+  const handleAiAutofill = async (e) => {
+    e.stopPropagation();
+    if (!isAiFeatureEnabled('mathSolver')) {
+      alert("O recurso de IA para preenchimento semântico está desativado nas suas configurações de privacidade.");
+      return;
+    }
+    setIsRecognizing(true);
+    try {
+      const tableData = [];
+      for (let r = 0; r < rows; r++) {
+        const row = [];
+        for (let c = 0; c < cols; c++) {
+          row.push(cells[`${r}-${c}`] || '');
+        }
+        tableData.push(row);
+      }
+
+      const prompt = `Você é um assistente de preenchimento semântico de tabelas.
+Analise a tabela abaixo, identifique o padrão de dados das colunas/linhas, e preencha as células vazias coerentemente de acordo com a sequência ou lógica existente.
+
+TABELA ATUAL:
+${JSON.stringify(tableData, null, 2)}
+
+INSTRUÇÕES:
+- Retorne a tabela COMPLETA em formato JSON contendo a matriz de strings bidimensional correspondente às células.
+- NÃO adicione explicações, comentários ou markdown. Retorne APENAS o JSON puro no formato:
+[
+  ["valor00", "valor01", ...],
+  ["valor10", "valor11", ...],
+  ...
+]`;
+
+      const response = await queryGemini(apiKey, prompt);
+      let cleanJson = response
+        .replace(/^```json\s*/i, '')
+        .replace(/^```\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+
+      const parsed = JSON.parse(cleanJson);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const updatedCells = { ...cells };
+        parsed.forEach((row, r) => {
+          if (r < rows && Array.isArray(row)) {
+            row.forEach((val, c) => {
+              if (c < cols && val !== undefined) {
+                updatedCells[`${r}-${c}`] = val;
+              }
+            });
+          }
+        });
+        updateBlock(block.id, { cells: updatedCells });
+      }
+    } catch (err) {
+      console.error("Semantic Autofill error:", err);
+      alert("Erro ao realizar autopreenchimento por IA: " + err.message);
+    } finally {
+      setIsRecognizing(false);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!isAiFeatureEnabled('handwritingOCR')) {
+      alert("O recurso de OCR de imagem foi desativado nas suas configurações de privacidade e IA.");
+      return;
+    }
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith('image/')) {
+        setIsRecognizing(true);
+        try {
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            try {
+              const base64Image = event.target.result;
+              
+              const prompt = `Você é um extrator de tabelas especialista.
+Analise a imagem da tabela fornecida e extraia toda a estrutura e dados das células.
+Converta para uma matriz bidimensional em JSON.
+
+INSTRUÇÕES:
+- Identifique a quantidade correta de linhas e colunas.
+- Retorne APENAS o JSON puro contendo a matriz de strings bidimensional correspondente às células, sem markdown, sem explicações.
+[
+  ["valor00", "valor01", ...],
+  ["valor10", "valor11", ...],
+  ...
+]`;
+              const response = await queryGemini(apiKey, prompt, [{ src: base64Image }]);
+              let cleanJson = response
+                .replace(/^```json\s*/i, '')
+                .replace(/^```\s*/i, '')
+                .replace(/\s*```$/i, '')
+                .trim();
+
+              const parsed = JSON.parse(cleanJson);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                const newRows = parsed.length;
+                const newCols = Math.max(...parsed.map(row => Array.isArray(row) ? row.length : 0));
+                
+                const updatedCells = {};
+                parsed.forEach((row, r) => {
+                  if (Array.isArray(row)) {
+                    row.forEach((val, c) => {
+                      updatedCells[`${r}-${c}`] = val || '';
+                    });
+                  }
+                });
+                
+                updateBlock(block.id, {
+                  rowsCount: newRows,
+                  colsCount: newCols,
+                  cells: updatedCells
+                });
+              }
+            } catch (err) {
+              console.error("Image Table OCR Import error:", err);
+              alert("Erro ao extrair dados da tabela na imagem: " + err.message);
+            } finally {
+              setIsRecognizing(false);
+            }
+          };
+          reader.onerror = () => {
+            setIsRecognizing(false);
+            alert("Erro ao ler o arquivo de imagem.");
+          };
+          reader.readAsDataURL(file);
+        } catch (err) {
+          console.error("Reader setup error:", err);
+          setIsRecognizing(false);
+        }
+      }
+    }
   };
 
   const handleAddRow = (e) => {
@@ -245,6 +464,14 @@ const TableBlock = ({
       >
         <Minus size={12} className="rotate-90" />
       </button>
+      <div className="w-[1px] h-3 bg-[var(--text-secondary)] opacity-20 mx-0.5" />
+      <button
+        onClick={handleAiAutofill}
+        className="p-1 hover:bg-black/15 dark:hover:bg-white/10 rounded-lg text-emerald-400 hover:text-emerald-300 transition"
+        title="Auto-preencher por IA"
+      >
+        <Sparkles size={12} />
+      </button>
     </div>
   );
 
@@ -264,14 +491,33 @@ const TableBlock = ({
       updateBlock={updateBlock}
       headerActions={headerActions}
     >
-      <div className="block-interactivity-isolation w-full flex-1 p-4 flex flex-col min-h-[150px] overflow-hidden">
+      <div 
+        className="block-interactivity-isolation w-full flex-1 p-4 flex flex-col min-h-[150px] overflow-hidden"
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        {isEditing && (
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: '10px', marginBottom: '12px' }}>
+            {Array.from({ length: cols }).map((_, c) => (
+              <div key={c} className="glass-extreme" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <span style={{ fontSize: '0.75rem', opacity: 0.6, fontWeight: 700, color: '#34d399' }}>{String.fromCharCode(65 + c)} =</span>
+                <input
+                  value={block.formulas?.[c] || ''}
+                  onChange={(e) => handleFormulaChange(c, e.target.value)}
+                  placeholder="fórmula..."
+                  style={{ background: 'transparent', border: 'none', outline: 'none', color: 'white', fontSize: '0.75rem', width: '100%' }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
         {/* CSS GRID TABLE: immune to HTML row/column height distribution bugs */}
         <div
           className="w-full flex-1 border border-black/10 dark:border-white/10 rounded-[1.5rem] select-text overflow-hidden"
           style={{
             display: 'grid',
             gridTemplateRows: `repeat(${rows}, 1fr)`,
-            gridTemplateColumns: `repeat(${cols}, 1fr)`,
+            gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
             backgroundColor: 'transparent'
           }}
         >

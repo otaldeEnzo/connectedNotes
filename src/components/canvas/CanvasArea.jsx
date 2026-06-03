@@ -1,6 +1,6 @@
 import React, { forwardRef, useState, useEffect, useLayoutEffect, useRef, useCallback, useImperativeHandle, memo } from 'react';
 import { Stage, Layer, Line, Path, Rect, Circle, Group } from 'react-konva';
-import { queryGemini } from '../../services/AIService';
+import { queryGemini, isAiFeatureEnabled } from '../../services/AIService';
 import { MathService } from '../../services/MathService';
 import { useNotes } from '../../contexts/NotesContext';
 import { ExportService } from '../../services/ExportService';
@@ -62,6 +62,39 @@ import {
 // Helper to reliably stringify canvas content for comparisons (independent of key order)
 const sortedStringify = (obj) => {
   return JSON.stringify(obj);
+};
+
+const compressImageBase64 = (base64Str, maxWidth = 1000, quality = 0.6) => {
+  return new Promise((resolve) => {
+    if (!base64Str || !base64Str.startsWith('data:image/')) {
+      resolve(base64Str);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const compressed = canvas.toDataURL('image/jpeg', quality);
+      resolve(compressed);
+    };
+    img.onerror = () => {
+      resolve(base64Str);
+    };
+    img.src = base64Str;
+  });
 };
 
 // Helper to isolate only the canvas properties to avoid mismatch on other document-specific properties
@@ -296,50 +329,13 @@ const MemoizedStroke = React.memo(({ stroke, isSelected, isDarkMode }) => {
 
 const TILE_SIZE = 1500; // Define dimensions for spatial grid caching tiles
 
-const StrokeTile = memo(({ tileKey, strokes, scale, isDarkMode, selectedStrokeIds }) => {
-  const groupRef = useRef(null);
-
-  useEffect(() => {
-    if (!groupRef.current) return;
-
-    // Clear old cache immediately
-    try {
-      groupRef.current.clearCache();
-    } catch (e) { }
-
-    // Debounce recreation of cache for this specific grid tile
-    const timer = setTimeout(() => {
-      if (groupRef.current && strokes.length > 0) {
-        try {
-          const unselected = strokes.filter(s => !selectedStrokeIds.includes(s.id));
-          if (unselected.length === 0) return;
-
-          const bounds = getGroupBounds([], unselected);
-          if (bounds && bounds.width > 0 && bounds.height > 0) {
-            groupRef.current.cache({
-              x: bounds.x - 10,
-              y: bounds.y - 10,
-              width: bounds.width + 20,
-              height: bounds.height + 20,
-              pixelRatio: Math.min(1.5, scale || 1) // Cap pixel ratio to keep canvas sizes reasonable
-            });
-            groupRef.current.getLayer()?.batchDraw();
-          }
-        } catch (e) {
-          console.warn("Grid tile caching error:", e);
-        }
-      }
-    }, 150);
-
-    return () => clearTimeout(timer);
-  }, [strokes, scale, isDarkMode, selectedStrokeIds]);
-
+const StrokeTile = memo(({ tileKey, strokes, isDarkMode, selectedStrokeIds }) => {
   const unselectedStrokes = strokes.filter(s => !selectedStrokeIds.includes(s.id));
 
   if (unselectedStrokes.length === 0) return null;
 
   return (
-    <Group ref={groupRef}>
+    <Group>
       {unselectedStrokes.map(s => (
         <MemoizedStroke
           key={s.id}
@@ -1221,9 +1217,10 @@ const CanvasArea = forwardRef(({
         for (let i = 0; i < items.length; i++) {
           if (items[i].type.indexOf('image') !== -1) {
             const reader = new FileReader();
-            reader.onload = (ev) => {
+            reader.onload = async (ev) => {
               saveToHistory();
-              setImageBlocks(p => [...p, { id: generateId(), x: pt.x - 150, y: pt.y - 150, width: 300, height: 300, src: ev.target.result, extractedText: '' }]);
+              const compressed = await compressImageBase64(ev.target.result);
+              setImageBlocks(p => [...p, { id: generateId(), x: pt.x - 150, y: pt.y - 150, width: 300, height: 300, src: compressed, extractedText: '' }]);
             };
             reader.readAsDataURL(items[i].getAsFile());
           } else if (items[i].type === 'application/pdf') {
@@ -1250,14 +1247,15 @@ const CanvasArea = forwardRef(({
           const file = files[i];
           if (file.type.startsWith('image/')) {
             const reader = new FileReader();
-            reader.onload = (ev) => {
+            reader.onload = async (ev) => {
+              const compressed = await compressImageBase64(ev.target.result);
               setImageBlocks(p => [...p, {
                 id: generateId(),
                 x: pt.x - 150 + (i * 20),
                 y: pt.y - 150 + (i * 20),
                 width: 300,
                 height: 300,
-                src: ev.target.result,
+                src: compressed,
                 extractedText: ''
               }]);
             };
@@ -1420,53 +1418,45 @@ const CanvasArea = forwardRef(({
     if (!file || !window.pdfjsLib) return;
     setIsLoadingPdf(true);
     try {
-      const pdf = await window.pdfjsLib.getDocument(new Uint8Array(await file.arrayBuffer())).promise;
-      const imgs = [];
-      let cy = startY;
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const vp = page.getViewport({ scale: 1.5 });
-        const cnv = document.createElement('canvas');
-        const ctx = cnv.getContext('2d');
-        cnv.height = vp.height;
-        cnv.width = vp.width;
-        await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        try {
+          const pdfDataUrl = ev.target.result;
+          const pdf = await window.pdfjsLib.getDocument(new Uint8Array(await file.arrayBuffer())).promise;
+          const firstPage = await pdf.getPage(1);
+          const vp = firstPage.getViewport({ scale: 1.0 });
+          let dw = vp.width, dh = vp.height;
+          if (dw > 800) { dh *= (800 / dw); dw = 800; }
 
-        let dw = vp.width, dh = vp.height;
-        if (dw > 1000) { dh *= (1000 / dw); dw = 1000; }
+          const pdfBlock = {
+            id: generateId(),
+            type: 'pdf',
+            fileName: file.name,
+            x: startX,
+            y: startY,
+            pdfRaw: pdfDataUrl,
+            totalPages: pdf.numPages,
+            width: dw,
+            height: dh + 120,
+            zIndex: 51,
+            color: 'rose'
+          };
 
-        imgs.push({
-          id: generateId(),
-          x: startX,
-          y: cy,
-          src: cnv.toDataURL('image/png'),
-          width: dw,
-          height: dh,
-          extractedText: '',
-          zIndex: 50
-        });
-        cy += dh + 20;
-      }
-      const pdfBlock = {
-        id: generateId(),
-        type: 'pdf',
-        fileName: file.name,
-        x: startX,
-        y: startY,
-        pages: imgs.map(p => p.src),
-        width: imgs[0]?.width || 600,
-        height: (imgs[0]?.height || 800) + 120, // Content + some margin for controls
-        zIndex: 51,
-        color: 'rose'
+          saveToHistory();
+          setPdfBlocks(p => [...p, pdfBlock]);
+        } catch (innerErr) {
+          console.error("Erro ao analisar páginas do PDF:", innerErr);
+          alert("Erro ao ler o documento PDF.");
+        } finally {
+          setIsLoadingPdf(false);
+          onPdfImported?.();
+        }
       };
-      saveToHistory();
-      setPdfBlocks(p => [...p, pdfBlock]);
+      reader.readAsDataURL(file);
     } catch (e) {
       console.error("Erro PDF:", e);
       alert("Erro ao importar PDF.");
-    } finally {
       setIsLoadingPdf(false);
-      onPdfImported?.();
     }
   }, [saveToHistory, onPdfImported]);
 
@@ -2304,7 +2294,92 @@ const CanvasArea = forwardRef(({
         selectionRectKonvaRef.current.getLayer()?.batchDraw();
       }
       selectionRectRef.current = null;
-      setSelectedIds(nIds); setSelectedStrokeIds(nSIds); setSelectedConnectionIds(nCIds);
+      if (activeTool === 'ai-lasso') {
+        // For AI Lasso, we clear the active selection immediately so it doesn't get stuck in selection mode or trigger visual glitches
+        setSelectedIds([]); setSelectedStrokeIds([]); setSelectedConnectionIds([]);
+      } else {
+        setSelectedIds(nIds); setSelectedStrokeIds(nSIds); setSelectedConnectionIds(nCIds);
+      }
+
+      // AI Lasso analysis trigger
+      if (activeTool === 'ai-lasso') {
+        // Open the AI Panel instantly with a loading context
+        const initialContext = {
+          id: generateId(),
+          text: "Analisando a área selecionada com Inteligência Artificial...",
+          images: [],
+          isSelection: true,
+          isPlaceholder: true,
+          sourceBlockId: null
+        };
+        if (setAiPanel) {
+          setAiPanel({
+            visible: true,
+            context: initialContext
+          });
+        }
+
+        (async () => {
+          let combinedText = "";
+          let strokeImage = null;
+          
+          // 1. Extract text from selected blocks
+          const selectedBlocks = allB.filter(b => nIds.includes(b.id));
+          selectedBlocks.forEach(b => {
+            if (b.type === 'text' && b.content) {
+              const tempDiv = document.createElement("div");
+              tempDiv.innerHTML = b.content;
+              combinedText += tempDiv.innerText + "\n";
+            } else if (b.type === 'math' && b.latex) {
+              combinedText += `Fórmula: $$${b.latex}$$\n`;
+            } else if (b.type === 'code' && b.code) {
+              combinedText += `Código (${b.language}):\n\`\`\`${b.language}\n${b.code}\n\`\`\`\n`;
+            }
+          });
+
+          // 2. OCR of selected drawings/handwriting
+          const selectedStrokes = strokes.filter(s => nSIds.includes(s.id));
+          if (selectedStrokes.length > 0) {
+            try {
+              // Convert selected strokes to a base64 image so Gemini can read handwritten text directly
+              strokeImage = await MathRecognitionService.strokesToBase64(selectedStrokes);
+            } catch (err) {
+              console.warn("Lasso strokes to image failed:", err);
+            }
+
+            if (apiKey && isAiFeatureEnabled('handwritingOCR')) {
+              try {
+                const latex = await MathRecognitionService.recognizeExpression(selectedStrokes, apiKey);
+                if (latex && latex !== "?") {
+                  combinedText += `Escrita Manual (LaTeX reconhecido): $$${latex}$$\n`;
+                }
+              } catch (err) {
+                console.warn("Lasso OCR failed:", err);
+              }
+            } else if (!apiKey) {
+              combinedText += `(Caligrafia não processada por OCR - configure sua Chave de API Gemini para OCR completo)\n`;
+            }
+          }
+
+          if (!combinedText.trim() && !strokeImage) {
+            combinedText = "Nenhum texto, fórmula ou caligrafia legível foi identificada na área circulada com o Lasso. Escreva fórmulas mais nítidas ou digite suas dúvidas aqui!";
+          }
+
+          // Update the context with the fully compiled selection content and images
+          if (setAiPanel) {
+            setAiPanel({
+              visible: true,
+              context: {
+                id: initialContext.id,
+                text: combinedText,
+                images: strokeImage ? [{ src: strokeImage }] : [],
+                isSelection: true,
+                sourceBlockId: null
+              }
+            });
+          }
+        })();
+      }
     }
     if (isDraggingSelection && dragStartRef.current) {
       // Use the last captured drag position if available, as pointerup clientX/Y can be zero or invalid in captured states
@@ -2521,9 +2596,9 @@ const CanvasArea = forwardRef(({
           <Rect
             ref={selectionRectKonvaRef}
             visible={false}
-            fill="rgba(99, 102, 241, 0.05)"
-            stroke="#6366f1"
-            strokeWidth={1 / scale}
+            fill={activeTool === 'ai-lasso' ? "rgba(20, 184, 166, 0.08)" : "rgba(99, 102, 241, 0.05)"}
+            stroke={activeTool === 'ai-lasso' ? "#14b8a6" : "#6366f1"}
+            strokeWidth={activeTool === 'ai-lasso' ? 1.5 / scale : 1 / scale}
             dash={[4, 4]}
           />
           <Circle
@@ -2581,7 +2656,7 @@ const CanvasArea = forwardRef(({
         {imageBlocks.map(b => <ImageBlock key={b.id} block={b} activeTool={activeTool} updateBlock={(id, d) => updateAnyBlock('image', id, d)} onInteract={handleBlockInteract} removeBlock={removeAnyBlock} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {ggbBlocks.map(b => <GGBBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('ggb', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} isShadow={isShadow} />)}
         {codeBlocks.map(b => <CodeBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('code', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
-        {textBlocks.map(b => <TextBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('text', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
+        {textBlocks.map(b => <TextBlock key={b.id} block={b} apiKey={apiKey} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('text', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} saveHistory={saveToHistory} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
         {mathBlocks.map(b => {
           if (b.type === 'linear_transform') {
             return (
@@ -2674,7 +2749,7 @@ const CanvasArea = forwardRef(({
         {mermaidBlocks.map(b => <MermaidBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('mermaid', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} isShadow={isShadow} />)}
         {mindmapBlocks.map(b => <MindmapBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('mindmap', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} isShadow={isShadow} />)}
         {pdfBlocks.map(b => <PDFBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('pdf', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
-        {tableBlocks.map(b => <TableBlock key={b.id} block={b} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('table', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
+        {tableBlocks.map(b => <TableBlock key={b.id} block={b} apiKey={apiKey} activeTool={activeTool} isDarkMode={isDarkMode} updateBlock={(id, d) => updateAnyBlock('table', id, d)} removeBlock={removeAnyBlock} onInteract={handleBlockInteract} isEditing={editingBlockId === b.id} setEditing={v => setEditingBlockId(v ? b.id : null)} isDragging={selectedIds.includes(b.id) && isDraggingSelection} canvasScale={scale} canvasPan={position} />)}
 
         {[...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks, ...pdfBlocks, ...tableBlocks].map(b => (
           <BlockHandles

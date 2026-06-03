@@ -18,6 +18,7 @@ import {
 const TABS = [
   { id: 'appearance', label: '🎨 Aparência' },
   { id: 'editor', label: '✏️ Editor' },
+  { id: 'ai', label: '🧠 Privacidade & IA' },
   { id: 'storage', label: '📦 Armazenamento' },
   { id: 'data', label: '💾 Dados' },
   { id: 'about', label: 'ℹ️ Sobre' },
@@ -396,10 +397,34 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
     }
   };
 
+  const DEFAULT_AI_SETTINGS = {
+    globalAssistant: true,
+    textCopilot: true,
+    handwritingOCR: true,
+    mathSolver: true,
+    codeCopilot: true,
+  };
+
+  const getSavedAiSettings = () => {
+    try {
+      const saved = localStorage.getItem('connected-notes-ai-settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return { ...DEFAULT_AI_SETTINGS, ...parsed };
+        }
+      }
+      return DEFAULT_AI_SETTINGS;
+    } catch (e) {
+      return DEFAULT_AI_SETTINGS;
+    }
+  };
+
   const [tempKey, setTempKey] = useState(apiKey);
   const [tempTheme, setTempTheme] = useState(currentTheme);
   const [tempAppearance, setTempAppearance] = useState(appearance);
   const [tempEditor, setTempEditor] = useState(getSavedEditor);
+  const [tempAiSettings, setTempAiSettings] = useState(getSavedAiSettings);
 
   const DEFAULT_APPEARANCE = {
     fontSize: 14,
@@ -422,6 +447,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
       setTempTheme(currentTheme);
       setTempAppearance(getSavedAppearance());
       setTempEditor(getSavedEditor());
+      setTempAiSettings(getSavedAiSettings());
       setStatus('');
       setEditingTheme(null);
       setIsCreating(false);
@@ -481,6 +507,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
     setAppearance(tempAppearance);
     localStorage.setItem('connected-notes-appearance-settings', JSON.stringify(tempAppearance));
     localStorage.setItem('connected-notes-editor-settings', JSON.stringify(tempEditor));
+    localStorage.setItem('connected-notes-ai-settings', JSON.stringify(tempAiSettings));
     applySettings(tempAppearance);
     
     // Sincroniza preferências na nuvem do usuário se estiver logado
@@ -490,8 +517,9 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
         setDoc(prefRef, {
           appearance: tempAppearance,
           editor: tempEditor,
-          theme: tempTheme
-        });
+          theme: tempTheme,
+          ai: tempAiSettings
+        }, { merge: true });
       } catch (err) {
         console.warn("Aviso ao salvar preferências na nuvem:", err);
       }
@@ -503,6 +531,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
   const resetAllSettings = () => {
     setTempAppearance(DEFAULT_APPEARANCE);
     setTempEditor(DEFAULT_EDITOR);
+    setTempAiSettings(DEFAULT_AI_SETTINGS);
     setTempKey('');
     setTempTheme('dark');
   };
@@ -1200,6 +1229,33 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
                             </div>
                           </div>
 
+                          {/* Firebase Usage Progress Bar */}
+                          {(() => {
+                            let totalBytes = 0;
+                            try {
+                              if (notes) {
+                                totalBytes = JSON.stringify(notes).length;
+                              }
+                            } catch (e) {}
+                            const limitBytes = 1024 * 1024 * 1024; // 1 GB (Spark Plan)
+                            const usedMB = (totalBytes / (1024 * 1024)).toFixed(2);
+                            const percentage = Math.min(100, (totalBytes / limitBytes) * 100).toFixed(2);
+                            return (
+                              <div className="glass-extreme" style={{ padding: '12px 16px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 500 }}>
+                                  <span>Espaço no Firebase (Limites Gratuitos)</span>
+                                  <span style={{ fontWeight: 600, color: 'var(--accent-color)' }}>{usedMB} MB / 1024 MB ({percentage}%)</span>
+                                </div>
+                                <div style={{ width: '100%', height: '8px', borderRadius: '4px', background: 'rgba(255, 255, 255, 0.1)', overflow: 'hidden' }}>
+                                  <div style={{ width: `${percentage}%`, height: '100%', background: 'linear-gradient(90deg, #ec4899 0%, #8b5cf6 100%)', borderRadius: '4px', transition: 'width 0.5s ease-in-out' }} />
+                                </div>
+                                <div style={{ fontSize: '0.65rem', opacity: 0.5, lineHeight: 1.3 }}>
+                                  * Limite gratuito do plano Spark do Firebase: 1 GB no Firestore Database e 5 GB no Storage. O gráfico acima mostra a utilização estimada das suas notas.
+                                </div>
+                              </div>
+                            );
+                          })()}
+
                           {isCustomFirebaseActive() && (
                             <div className="glass-extreme" style={{ padding: '12px 14px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                               <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>
@@ -1448,39 +1504,101 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
     window.location.reload();
   };
 
-  if (!isOpen) return null;
+  const renderAi = () => {
+    const handleToggle = (key, val) => {
+      setTempAiSettings(prev => ({ ...prev, [key]: val }));
+    };
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {/* API Key */}
+        <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', background: 'var(--glass-bg)' }}>
+          <label style={{ display: 'block', marginBottom: '12px', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>
+            CHAVE DE API (GOOGLE GEMINI)
+          </label>
+          <GlassInput
+            type="password"
+            value={tempKey}
+            onChange={(e) => setTempKey(e.target.value)}
+            placeholder="AI Key..."
+          />
+          <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ fontSize: '0.75rem', color: 'var(--accent-color)', textDecoration: 'none' }}>Obter chave gratuita ↗</a>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>{status}</span>
+              <button
+                onClick={handleVerify}
+                className="liquid-button"
+                style={{
+                  height: '40px', padding: '0 20px', fontSize: '0.85rem', fontWeight: 600,
+                  background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '10px',
+                  boxShadow: '0 4px 15px var(--accent-glow)'
+                }}
+              >
+                Verificar
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Toggles */}
+        <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', background: 'var(--glass-bg)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>
+            PRIVACIDADE E RECURSOS DE IA
+          </label>
+          <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+            Ative ou desative recursos específicos da Inteligência Artificial. Quando desativados, nenhuma requisição ou dado é transmitido para as APIs de nuvem do Google.
+          </p>
+
+          <GlassToggle
+            checked={tempAiSettings.globalAssistant}
+            onChange={(val) => handleToggle('globalAssistant', val)}
+            label="🧠 Assistente Tutor Geral (RAG)"
+            sublabel="Permite analisar todo o canvas e responder no painel lateral."
+          />
+
+          <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)' }} />
+
+          <GlassToggle
+            checked={tempAiSettings.textCopilot}
+            onChange={(val) => handleToggle('textCopilot', val)}
+            label="✏️ Copiloto de Texto Inline"
+            sublabel="Menu suspenso ao selecionar textos para melhorar a escrita ou traduzir para LaTeX."
+          />
+
+          <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)' }} />
+
+          <GlassToggle
+            checked={tempAiSettings.handwritingOCR}
+            onChange={(val) => handleToggle('handwritingOCR', val)}
+            label="✍️ Reconhecimento de Caligrafia (OCR)"
+            sublabel="Converter desenhos e escritas manuais do canvas em equações matemáticas LaTeX."
+          />
+
+          <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)' }} />
+
+          <GlassToggle
+            checked={tempAiSettings.mathSolver}
+            onChange={(val) => handleToggle('mathSolver', val)}
+            label="🧮 Resolução & Passos Matemáticos"
+            sublabel="Solucionar fórmulas e gerar passo a passo em equações KaTeX/LaTeX."
+          />
+
+          <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)' }} />
+
+          <GlassToggle
+            checked={tempAiSettings.codeCopilot}
+            onChange={(val) => handleToggle('codeCopilot', val)}
+            label="💻 Copiloto de Código"
+            sublabel="Explicar algoritmos e sugerir otimizações com visualização de diferenças (diff) no CodeBlock."
+          />
+        </div>
+      </div>
+    );
+  };
 
   const renderAppearance = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', background: 'var(--glass-bg)' }}>
-        <label style={{ display: 'block', marginBottom: '12px', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>
-          CHAVE DE API (GOOGLE GEMINI)
-        </label>
-        <GlassInput
-          type="password"
-          value={tempKey}
-          onChange={(e) => setTempKey(e.target.value)}
-          placeholder="AI Key..."
-        />
-        <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ fontSize: '0.75rem', color: 'var(--accent-color)', textDecoration: 'none' }}>Obter chave gratuita ↗</a>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>{status}</span>
-            <button
-              onClick={handleVerify}
-              className="liquid-button"
-              style={{
-                height: '40px', padding: '0 20px', fontSize: '0.85rem', fontWeight: 600,
-                background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '10px',
-                boxShadow: '0 4px 15px var(--accent-glow)'
-              }}
-            >
-              Verificar
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div className="glass-extreme" style={{ padding: '1.5rem', borderRadius: '1.5rem', background: 'var(--glass-bg)' }}>
         <label style={{ display: 'block', marginBottom: '16px', fontSize: '0.85rem', fontWeight: 600, letterSpacing: '0.5px' }}>TEMAS PADRÃO</label>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
@@ -1778,6 +1896,8 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
     </div>
   );
 
+  if (!isOpen) return null;
+
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -1864,6 +1984,7 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
         <div style={{ padding: '28px', overflowY: 'auto', flex: 1 }} className="custom-scrollbar">
           {activeTab === 'appearance' && renderAppearance()}
           {activeTab === 'editor' && renderEditor()}
+          {activeTab === 'ai' && renderAi()}
           {activeTab === 'storage' && renderStorage()}
           {activeTab === 'data' && renderData()}
           {activeTab === 'about' && renderAbout()}

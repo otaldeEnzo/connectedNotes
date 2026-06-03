@@ -1,5 +1,6 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import ReactDOM from 'react-dom';
+import { queryGemini, isAiFeatureEnabled } from '../../services/AIService';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -16,9 +17,14 @@ import { FontSize } from '../../extensions/FontSize';
 import { Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify } from 'lucide-react';
 import BlockWrapper from './BlockWrapper';
 
-const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, onInteract, saveHistory, isEditing, setEditing, isDragging, canvasScale, canvasPan }) => {
+const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, onInteract, saveHistory, isEditing, setEditing, isDragging, canvasScale, canvasPan, apiKey }) => {
     const toolbarRef = useRef(null);
     const cardRef = useRef(null);
+
+    const [selectionCoords, setSelectionCoords] = useState(null);
+    const [selectedText, setSelectedText] = useState("");
+    const [aiLoading, setAiLoading] = useState(false);
+    const [showAutocompleteLevels, setShowAutocompleteLevels] = useState(false);
 
     const editor = useEditor({
         extensions: [
@@ -57,6 +63,78 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
         }
     });
 
+    const getSelectionCoords = () => {
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) return null;
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return null;
+        return {
+            x: rect.left + rect.width / 2,
+            y: rect.top - 55, // 55px above selection
+            left: rect.left,
+            top: rect.top
+        };
+    };
+
+    useEffect(() => {
+        const handleSelectionChange = () => {
+            if (!editor || !isEditing) return;
+            const { from, to } = editor.state.selection;
+            if (from === to) {
+                setSelectionCoords(null);
+                setSelectedText("");
+                setShowAutocompleteLevels(false);
+                return;
+            }
+            const text = editor.state.doc.textBetween(from, to, " ");
+            setSelectedText(text);
+
+            const coords = getSelectionCoords();
+            setSelectionCoords(coords);
+        };
+
+        document.addEventListener('selectionchange', handleSelectionChange);
+        return () => document.removeEventListener('selectionchange', handleSelectionChange);
+    }, [editor, isEditing]);
+
+    const handleAiTextAction = async (actionType) => {
+        if (!selectedText.trim()) return;
+        setAiLoading(true);
+        try {
+            let prompt = "";
+            if (actionType === 'aprimorar') {
+                prompt = `Você é um revisor acadêmico especialista em exatas. Melhore a coesão, estilo e precisão científica do parágrafo abaixo, tornando-o mais profissional e bem redigido. Mantenha os termos matemáticos/físicos intactos. Retorne APENAS o texto revisado final, sem aspas, sem explicações adicionais, sem blocos markdown.\n\nTEXTO:\n${selectedText}`;
+            } else if (actionType === 'sintetizar') {
+                prompt = `Você é um revisor de artigos científicos. Transforme o parágrafo ou conceito abaixo em tópicos limpos, diretos e objetivos (usando tags HTML como <ul> e <li> para formatação direta). Retorne APENAS a lista em HTML final, sem explicações extras, sem markdown.\n\nTEXTO:\n${selectedText}`;
+            } else if (actionType === 'latex') {
+                prompt = `Você é um tradutor de LaTeX para exatas. Identifique trechos de raciocínio lógico ou fórmulas matemáticas no texto abaixo e converta-os para equações formatadas em LaTeX (usando delimitadores inline $ ou blocos $$ conforme adequado). Mantenha o texto explicativo ao redor, apenas convertendo a matemática. Retorne APENAS o texto formatado final, sem markdown.\n\nTEXTO:\n${selectedText}`;
+            } else if (actionType === 'basico') {
+                prompt = `Você é um tutor didático e amigável de exatas e geral. Com base na frase/tópico fornecido abaixo: "${selectedText}"\nEscreva uma explicação didática, simples, de nível BÁSICO. Use analogias intuitivas e exemplos cotidianos para facilitar o entendimento. Formate o texto usando parágrafos simples e listas em tópicos se necessário, usando tags HTML diretas (como <p>, <ul>, <li>). Retorne APENAS a explicação final formatada em HTML limpo, sem explicações adicionais, sem aspas, sem blocos markdown.`;
+            } else if (actionType === 'intermediario') {
+                prompt = `Você é um professor universitário e didático. Com base na frase/tópico fornecido abaixo: "${selectedText}"\nEscreva uma explicação clara e de nível INTERMEDIÁRIO. Apresente conceitos formais, exemplos práticos com resolução passo a passo e use fórmulas formatadas com LaTeX (delimitadores inline $ ou blocos $$ conforme apropriado). Retorne APENAS a explicação final formatada em HTML limpo, sem explicações adicionais, sem aspas, sem blocos markdown.`;
+            } else if (actionType === 'avancado') {
+                prompt = `Você é um cientista e matemático extremamente rigoroso. Com base na frase/tópico fornecido abaixo: "${selectedText}"\nEscreva uma explicação profunda de nível AVANÇADO. Apresente formalismo matemático rígido, demonstrações detalhadas e equações complexas formatadas em LaTeX (delimitadores inline $ ou blocos $$). Retorne APENAS a explicação final completa formatada em HTML limpo, sem explicações adicionais, sem aspas, sem blocos markdown.`;
+            }
+
+            const response = await queryGemini(apiKey, prompt);
+
+            if (response && !response.startsWith('Erro:')) {
+                editor.chain().focus().insertContent(response).run();
+            } else {
+                alert(response || "Erro ao processar requisição de IA.");
+            }
+        } catch (e) {
+            console.error("AI Text Action Error:", e);
+            alert("Erro ao conectar ao Gemini: " + e.message);
+        } finally {
+            setAiLoading(false);
+            setSelectionCoords(null);
+            setSelectedText("");
+            setShowAutocompleteLevels(false);
+        }
+    };
+
     useEffect(() => {
         if (editor) {
             editor.setEditable(isEditing);
@@ -65,7 +143,6 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
     }, [isEditing, editor]);
 
     const handleSingleClick = (e) => {
-        // Se clicar em qualquer lugar que não seja o cabeçalho, entra em edição
         if (e && !e.target.closest(".block-header")) {
             e.stopPropagation();
             if (setEditing) setEditing(true);
@@ -192,7 +269,15 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
                 )
             }
         >
-            <div className={`p-6 pb-8 transition-colors duration-500`}>
+            <div 
+                className={`p-6 pb-8 transition-colors duration-500`}
+                onClick={(e) => {
+                    if (!isEditing) {
+                        e.stopPropagation();
+                        if (setEditing) setEditing(true);
+                    }
+                }}
+            >
                 <EditorContent
                     editor={editor}
                     className="ProseMirror-container text-[var(--text-primary)]"
@@ -218,6 +303,55 @@ const TextBlock = ({ block, updateBlock, removeBlock, activeTool, isDarkMode, on
                 .ProseMirror ul, .ProseMirror ol { padding-left: 1.5rem; margin: 1rem 0; }
                 .ProseMirror li { margin-bottom: 0.5rem; }
             `}</style>
+
+            {selectedText && isEditing && isAiFeatureEnabled('textCopilot') && (
+                <div
+                    className="glass-extreme absolute left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-2 rounded-2xl whitespace-nowrap animate-in fade-in slide-in-from-bottom-2 duration-300 w-max z-[16000]"
+                    style={{
+                        top: '-65px',
+                        pointerEvents: 'auto',
+                        background: 'var(--glass-bg-floating)',
+                        backdropFilter: 'blur(32px) saturate(180%) brightness(1.2)',
+                        WebkitBackdropFilter: 'blur(32px) saturate(180%) brightness(1.2)',
+                        border: '1.5px solid rgba(255, 255, 255, 0.25)',
+                        boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4), 0 0 20px rgba(139, 92, 246, 0.1)',
+                        color: 'white'
+                    }}
+                    onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                    onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                >
+                    {aiLoading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 10px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent-color)' }}>
+                            <span className="ai-pulse-dot" style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent-color)', animation: 'pulse 1s infinite' }} />
+                            <span>Processando com IA...</span>
+                        </div>
+                    ) : (
+                        <>
+                            {!showAutocompleteLevels ? (
+                                <>
+                                    <button onClick={() => handleAiTextAction('aprimorar')} style={{ background: 'transparent', border: 'none', color: '#f8fafc', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, padding: '6px 10px', borderRadius: '8px', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '4px' }}>✨ Aprimorar Escrita</button>
+                                    <div style={{ width: '1px', height: '14px', background: 'rgba(255,255,255,0.15)' }} />
+                                    <button onClick={() => handleAiTextAction('sintetizar')} style={{ background: 'transparent', border: 'none', color: '#f8fafc', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, padding: '6px 10px', borderRadius: '8px', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '4px' }}>📝 Sintetizar Conceito</button>
+                                    <div style={{ width: '1px', height: '14px', background: 'rgba(255,255,255,0.15)' }} />
+                                    <button onClick={() => handleAiTextAction('latex')} style={{ background: 'transparent', border: 'none', color: '#f8fafc', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, padding: '6px 10px', borderRadius: '8px', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '4px' }}>🧮 Traduzir para LaTeX</button>
+                                    <div style={{ width: '1px', height: '14px', background: 'rgba(255,255,255,0.15)' }} />
+                                    <button onClick={() => setShowAutocompleteLevels(true)} style={{ background: 'transparent', border: 'none', color: '#f8fafc', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, padding: '6px 10px', borderRadius: '8px', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '4px' }}>✍️ Autocompletar</button>
+                                </>
+                            ) : (
+                                <>
+                                    <button onClick={() => setShowAutocompleteLevels(false)} style={{ background: 'transparent', border: 'none', color: '#f8fafc', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, padding: '6px 10px', borderRadius: '8px', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '4px' }}>⬅️ Voltar</button>
+                                    <div style={{ width: '1px', height: '14px', background: 'rgba(255,255,255,0.15)' }} />
+                                    <button onClick={() => handleAiTextAction('basico')} style={{ background: 'transparent', border: 'none', color: '#34d399', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, padding: '6px 10px', borderRadius: '8px', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '4px' }}>🟢 Básico</button>
+                                    <div style={{ width: '1px', height: '14px', background: 'rgba(255,255,255,0.15)' }} />
+                                    <button onClick={() => handleAiTextAction('intermediario')} style={{ background: 'transparent', border: 'none', color: '#fbbf24', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, padding: '6px 10px', borderRadius: '8px', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '4px' }}>🟡 Intermediário</button>
+                                    <div style={{ width: '1px', height: '14px', background: 'rgba(255,255,255,0.15)' }} />
+                                    <button onClick={() => handleAiTextAction('avancado')} style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, padding: '6px 10px', borderRadius: '8px', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '4px' }}>🔴 Avançado</button>
+                                </>
+                            )}
+                        </>
+                    )}
+                </div>
+            )}
         </BlockWrapper>
     );
 };
