@@ -29,6 +29,8 @@ const PDFStudyEditor = ({
     const [pdfPan, setPdfPan] = useState({ x: 0, y: 0 });
     const [isPdfPanning, setIsPdfPanning] = useState(false);
     const [lastPdfMousePos, setLastPdfMousePos] = useState({ x: 0, y: 0 });
+    const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
+    const [currentPdfStroke, setCurrentPdfStroke] = useState(null);
     
     const canvasRef = useRef(null); // Canvas for PDF rendering
     const pdfContainerRef = useRef(null); // Container for left-side camera transforms
@@ -118,6 +120,7 @@ const PDFStudyEditor = ({
                 
                 setPdfScale(initialScale);
                 setFitScale(initialScale);
+                setPageSize({ width: viewport.width, height: viewport.height });
                 setPdfPan({
                     x: (containerWidth - pageW) / 2,
                     y: (containerHeight - pageH) / 2
@@ -194,6 +197,80 @@ const PDFStudyEditor = ({
 
     const handlePdfContextMenu = (e) => {
         e.preventDefault();
+    };
+
+    // Drawing handlers for the PDF side
+    const pdfPageData = content.pdfPagesData?.[currentPage] || { strokes: [] };
+    const pdfStrokes = pdfPageData.strokes || [];
+
+    const handleSvgPointerDown = (e) => {
+        if (e.button !== 0) return; // Only left click
+        if (!['pen', 'highlighter', 'eraser'].includes(activeTool) || !canvasRef.current) return;
+        
+        const rect = canvasRef.current.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / pdfScale;
+        const y = (e.clientY - rect.top) / pdfScale;
+        
+        if (activeTool === 'eraser') {
+            eraseStrokeAt(x, y);
+        } else {
+            const config = activeTool === 'pen' ? penConfig : highlighterConfig;
+            const newStroke = {
+                id: Date.now().toString(),
+                type: activeTool,
+                color: config.color,
+                width: config.width,
+                points: [{ x, y }]
+            };
+            setCurrentPdfStroke(newStroke);
+        }
+    };
+
+    const handleSvgPointerMove = (e) => {
+        if (!canvasRef.current) return;
+        const rect = canvasRef.current.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / pdfScale;
+        const y = (e.clientY - rect.top) / pdfScale;
+
+        if (currentPdfStroke) {
+            setCurrentPdfStroke(prev => ({
+                ...prev,
+                points: [...prev.points, { x, y }]
+            }));
+        } else if (activeTool === 'eraser' && e.buttons === 1) {
+            eraseStrokeAt(x, y);
+        }
+    };
+
+    const handleSvgPointerUp = () => {
+        if (currentPdfStroke) {
+            const updatedStrokes = [...pdfStrokes, currentPdfStroke];
+            savePdfStrokes(updatedStrokes);
+            setCurrentPdfStroke(null);
+        }
+    };
+
+    const eraseStrokeAt = (x, y) => {
+        const threshold = 15;
+        const updated = pdfStrokes.filter(stroke => {
+            return !stroke.points.some(p => Math.hypot(p.x - x, p.y - y) < threshold);
+        });
+        if (updated.length !== pdfStrokes.length) {
+            savePdfStrokes(updated);
+        }
+    };
+
+    const savePdfStrokes = (strokes) => {
+        updateContent({
+            ...content,
+            pdfPagesData: {
+                ...content.pdfPagesData,
+                [currentPage]: {
+                    ...content.pdfPagesData?.[currentPage],
+                    strokes
+                }
+            }
+        });
     };
 
     useEffect(() => {
@@ -301,18 +378,66 @@ const PDFStudyEditor = ({
                     ) : error ? (
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ff6b6b' }}>{error}</div>
                     ) : (
-                        <canvas 
-                            ref={canvasRef} 
-                            style={{ 
-                                position: 'absolute',
-                                transform: `translate(${pdfPan.x}px, ${pdfPan.y}px) scale(${pdfScale})`,
-                                transformOrigin: '0 0',
-                                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
-                                borderRadius: '8px',
-                                display: 'block',
-                                pointerEvents: 'none'
-                            }} 
-                        />
+                        <div style={{
+                            position: 'absolute',
+                            transform: `translate(${pdfPan.x}px, ${pdfPan.y}px) scale(${pdfScale})`,
+                            transformOrigin: '0 0',
+                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.15)',
+                            borderRadius: '8px',
+                            display: 'block',
+                            width: pageSize.width ? `${pageSize.width}px` : 'auto',
+                            height: pageSize.height ? `${pageSize.height}px` : 'auto'
+                        }}>
+                            <canvas 
+                                ref={canvasRef} 
+                                style={{ 
+                                    display: 'block',
+                                    borderRadius: '8px',
+                                    pointerEvents: 'none',
+                                    width: '100%',
+                                    height: '100%'
+                                }} 
+                            />
+                            {/* SVG drawing layer on top of PDF page */}
+                            <svg
+                                onPointerDown={handleSvgPointerDown}
+                                onPointerMove={handleSvgPointerMove}
+                                onPointerUp={handleSvgPointerUp}
+                                style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    borderRadius: '8px',
+                                    pointerEvents: ['pen', 'highlighter', 'eraser'].includes(activeTool) ? 'auto' : 'none',
+                                    touchAction: 'none'
+                                }}
+                            >
+                                {pdfStrokes.map(stroke => (
+                                    <path
+                                        key={stroke.id}
+                                        d={"M " + stroke.points.map(p => `${p.x} ${p.y}`).join(" L ")}
+                                        fill="none"
+                                        stroke={stroke.color}
+                                        strokeWidth={stroke.width}
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        opacity={stroke.type === 'highlighter' ? 0.4 : 1}
+                                    />
+                                ))}
+                                {currentPdfStroke && (
+                                    <path
+                                        d={"M " + currentPdfStroke.points.map(p => `${p.x} ${p.y}`).join(" L ")}
+                                        fill="none"
+                                        stroke={currentPdfStroke.color}
+                                        strokeWidth={currentPdfStroke.width}
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        opacity={currentPdfStroke.type === 'highlighter' ? 0.4 : 1}
+                                    />
+                                )}
+                            </svg>
+                        </div>
                     )}
                 </div>
 
@@ -346,6 +471,27 @@ const PDFStudyEditor = ({
                         </button>
                     </div>
 
+                    {/* Replace PDF Button */}
+                    <label 
+                        className="liquid-btn" 
+                        style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '6px', 
+                            padding: '4px 8px', 
+                            borderRadius: '6px', 
+                            fontSize: '0.7rem', 
+                            cursor: 'pointer',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)'
+                        }} 
+                        title="Substituir PDF"
+                    >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                        <span>Substituir PDF</span>
+                        <input type="file" accept="application/pdf" style={{ display: 'none' }} onChange={handleImportPdf} />
+                    </label>
+
                     {/* PDF Zoom Controls */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <button 
@@ -378,8 +524,9 @@ const PDFStudyEditor = ({
             {/* Right side: CanvasArea */}
             <div style={{ flex: 1, position: 'relative' }}>
                 <CanvasArea
+                    key={`canvas_page_${currentPage}`}
                     ref={ref}
-                    activeNote={proxyNote}
+                    note={proxyNote}
                     updateContent={proxyUpdateContent}
                     scale={scale}
                     panOffset={panOffset}

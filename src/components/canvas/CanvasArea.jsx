@@ -351,7 +351,7 @@ const StrokeTile = memo(({ tileKey, strokes, isDarkMode, selectedStrokeIds }) =>
 
 // --- Componente Principal ---
 const CanvasArea = forwardRef(({
-  note: propNote, activeTool, isDarkMode, pdfToImport, onPdfImported,
+  note: propNote, updateContent: propUpdateContent, activeTool, isDarkMode, pdfToImport, onPdfImported,
   penType, apiKey, scale,
   penConfig, highlighterConfig,
   panOffset: position, setAiPanel, onMoveView, isMiniMapEnabled, setActiveTool,
@@ -1418,11 +1418,26 @@ const CanvasArea = forwardRef(({
 
       const timer = setTimeout(() => {
         lastSavedJson.current = contentJson;
-        updateNoteContent(activeNoteId, content);
+        if (propUpdateContent) {
+          propUpdateContent(content);
+        } else {
+          updateNoteContent(activeNoteId, content);
+        }
       }, 1500); // Debounce de 1.5s para otimizar o salvamento no Google Drive
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+        // Force immediate save of pending changes when switching pages or unmounting
+        if (lastSavedJson.current !== contentJson) {
+          lastSavedJson.current = contentJson;
+          if (propUpdateContent) {
+            propUpdateContent(content);
+          } else {
+            updateNoteContent(activeNoteId, content);
+          }
+        }
+      };
     }
-  }, [strokes, textBlocks, imageBlocks, codeBlocks, mathBlocks, ggbBlocks, mermaidBlocks, mindmapBlocks, pdfBlocks, tableBlocks, connections, activeNoteId, isNoteLoaded, isDraggingSelection]);
+  }, [strokes, textBlocks, imageBlocks, codeBlocks, mathBlocks, ggbBlocks, mermaidBlocks, mindmapBlocks, pdfBlocks, tableBlocks, connections, activeNoteId, isNoteLoaded, isDraggingSelection, propUpdateContent]);
 
   // PDF & Image Handlers
   const importPdfAt = useCallback(async (file, startX, startY) => {
