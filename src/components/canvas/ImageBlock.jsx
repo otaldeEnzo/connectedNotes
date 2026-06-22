@@ -4,6 +4,19 @@ import BlockWrapper from './BlockWrapper';
 const ImageBlock = ({ block, activeTool, updateBlock, onInteract, removeBlock, isDragging, isDarkMode, canvasScale, canvasPan }) => {
     const cardRef = React.useRef(null);
     const dotColor = block.color === 'cyan' ? '#06b6d4' : (block.color === 'blue' ? '#3b82f6' : '#06b6d4');
+    const [resolvedSrc, setResolvedSrc] = React.useState(block.src?.startsWith('media://') ? null : block.src);
+
+    useEffect(() => {
+        if (block.src && block.src.startsWith('media://')) {
+            import('../../services/StorageService').then(({ StorageService }) => {
+                StorageService.loadMediaFile(block.src).then(url => {
+                    setResolvedSrc(url);
+                });
+            });
+        } else {
+            setResolvedSrc(block.src);
+        }
+    }, [block.src]);
 
     // Dynamically adjust block dimensions to match the image's natural aspect ratio on mount
     useEffect(() => {
@@ -26,9 +39,9 @@ const ImageBlock = ({ block, activeTool, updateBlock, onInteract, removeBlock, i
                     });
                 }
             };
-            img.src = block.src;
+            img.src = resolvedSrc;
         }
-    }, [block.src, block.id, block.width, updateBlock, block.aspectRatioAdjusted]);
+    }, [resolvedSrc, block.id, block.width, updateBlock, block.aspectRatioAdjusted]);
 
     return (
         <BlockWrapper
@@ -51,7 +64,7 @@ const ImageBlock = ({ block, activeTool, updateBlock, onInteract, removeBlock, i
                 style={{ width: '100%', height: '100%', cursor: activeTool === 'eraser' ? 'cell' : 'default', overflow: 'hidden' }}
             >
                 <img 
-                    src={block.src} 
+                    src={resolvedSrc} 
                     alt="Content" 
                     style={{ 
                         width: '100%', 

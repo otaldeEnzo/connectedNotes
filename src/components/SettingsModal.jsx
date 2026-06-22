@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { validateKey } from '../services/AIService';
 import { useNotes } from '../contexts/NotesContext';
 import { StorageService } from '../services/StorageService';
+import { GoogleDriveService } from '../services/GoogleDriveService';
 import { useCanvasStore } from '../store/useCanvasStore';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db, updateFirebaseConfig, getFirebaseConfig, isCustomFirebaseActive } from '../firebase';
@@ -14,6 +15,64 @@ import {
   GoogleAuthProvider,
   signInWithPopup
 } from 'firebase/auth';
+
+// Storage Estimation Component
+const StorageUsageGauge = ({ notes }) => {
+  const [estimatedBytes, setEstimatedBytes] = useState(0);
+
+  useEffect(() => {
+    try {
+      const jsonString = JSON.stringify(notes || {});
+      setEstimatedBytes(new Blob([jsonString]).size);
+    } catch (e) {
+      setEstimatedBytes(0);
+    }
+  }, [notes]);
+
+  const MAX_FREE_TIER = 1048576 * 100; // 100MB arbitrary soft limit for display
+  const usagePercent = Math.min((estimatedBytes / MAX_FREE_TIER) * 100, 100);
+  const isWarning = usagePercent > 80;
+
+  const formatBytes = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  return (
+    <div style={{
+      marginTop: '16px',
+      padding: '14px',
+      borderRadius: '12px',
+      background: 'rgba(0, 0, 0, 0.2)',
+      border: '1px solid rgba(255, 255, 255, 0.05)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', opacity: 0.8, fontWeight: 600 }}>
+        <span>Uso Estimado da Conta</span>
+        <span>{formatBytes(estimatedBytes)} / ~100 MB</span>
+      </div>
+      
+      <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
+        <div style={{
+          height: '100%',
+          width: `${usagePercent}%`,
+          background: isWarning ? '#ef4444' : 'linear-gradient(90deg, #8b5cf6, #3b82f6)',
+          transition: 'width 0.5s ease',
+          boxShadow: '0 0 10px rgba(139, 92, 246, 0.5)'
+        }} />
+      </div>
+
+      <div style={{ fontSize: '0.65rem', opacity: 0.5, textAlign: 'center', marginTop: '2px' }}>
+        Tamanho aproximado baseado no cache local. Ao conectar sua conta Google, os desenhos do Canvas serão salvos no seu Google Drive pessoal (15 GB gratuitos), economizando espaço.
+      </div>
+    </div>
+  );
+};
 
 const TABS = [
   { id: 'appearance', label: '🎨 Aparência' },
@@ -33,10 +92,8 @@ const NOTE_TYPES = [
 ];
 
 const CLOUD_PROVIDERS = [
-  { id: 'firebase', label: '🔥 Firebase Cloud (Ativo)' },
-  { id: 'custom_server', label: '🖥️ Servidor Próprio (Self-Hosted)' },
-  { id: 'supabase', label: '⚡ Supabase (Planejado)' },
-  { id: 'couchdb', label: ' CouchDB (Planejado)' },
+  { id: 'firebase', label: '🔥 Firebase + Google Drive' },
+  { id: 'custom_server', label: '🖥️ Servidor Próprio (Self-Hosted)' }
 ];
 
 const SettingsIcons = {
@@ -326,14 +383,44 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
   });
 
   const [activeAuth, setActiveAuth] = useState(auth);
+  const [driveQuota, setDriveQuota] = useState(null);
+  const [googleClientId, setGoogleClientId] = useState(() => localStorage.getItem('google-drive-client-id') || '');
 
-  // Escuta as mudanças globais de configuração do Firebase
+  const fetchQuota = useCallback(async (customToken) => {
+    const token = customToken || StorageService.getGoogleToken();
+    if (token) {
+      try {
+        const quota = await GoogleDriveService.getStorageQuota(token);
+        if (quota) {
+          setDriveQuota(quota);
+        }
+      } catch (e) {
+        console.error("Erro ao carregar quota do Google Drive na UI:", e);
+      }
+    }
+  }, []);
+
+  // Busca a cota do Google Drive quando o modal é aberto
+  useEffect(() => {
+    if (isOpen) {
+      fetchQuota();
+    }
+  }, [isOpen, authUser, fetchQuota]);
+
+  // Escuta as mudanças globais de configuração do Firebase e expiração de token do Google
   useEffect(() => {
     const handleConfigChange = (e) => {
       setActiveAuth(e.detail.auth);
     };
+    const handleTokenExpired = () => {
+      setDriveQuota(null);
+    };
     window.addEventListener('firebase-config-changed', handleConfigChange);
-    return () => window.removeEventListener('firebase-config-changed', handleConfigChange);
+    window.addEventListener('google-token-expired', handleTokenExpired);
+    return () => {
+      window.removeEventListener('firebase-config-changed', handleConfigChange);
+      window.removeEventListener('google-token-expired', handleTokenExpired);
+    };
   }, []);
 
   useEffect(() => {
@@ -642,14 +729,20 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
   const handleToggleProvider = async (providerName, currentIsActive) => {
     const newIsActive = !currentIsActive;
 
-    // Garante que pelo menos um local de armazenamento deve estar ativo
-    const activeCount = Object.values(storageProviders).filter(Boolean).length;
-    if (!newIsActive && activeCount <= 1) {
-      setAuthStatus('⚠️ Pelo menos um local de armazenamento deve estar ativo.');
-      return;
+    // Garante que pelo menos um local de armazenamento visível (Pasta Local ou Nuvem) esteja ativo
+    if (providerName !== 'indexeddb') {
+      const visibleProviders = {
+        local_vault: storageProviders.local_vault,
+        firebase: storageProviders.firebase
+      };
+      const activeCount = Object.keys(visibleProviders)
+        .filter(k => k === providerName ? newIsActive : visibleProviders[k]).length;
+      
+      if (activeCount === 0) {
+        setAuthStatus('⚠️ Pelo menos Pasta Local ou Nuvem deve estar ativo.');
+        return;
+      }
     }
-
-
 
     try {
       setAuthStatus('Alterando armazenamento...');
@@ -659,6 +752,8 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
         setStorageProviders(updatedProviders);
         setVaultPath(StorageService.getVaultPath());
         setAuthStatus('');
+        // Sincroniza automaticamente as notas após mudar o provedor
+        await handleMigrateNotes(updatedProviders);
       } else {
         setAuthStatus('❌ Seleção de pasta cancelada ou não suportada pelo navegador.');
       }
@@ -712,8 +807,22 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
     setAuthStatus('Conectando ao Google...');
     try {
       const provider = new GoogleAuthProvider();
+      provider.addScope('https://www.googleapis.com/auth/drive.file');
+      provider.addScope('https://www.googleapis.com/auth/drive.appdata');
       const userCredential = await signInWithPopup(auth, provider);
       const user = userCredential.user;
+
+      // Salva o token de acesso do Google para uso com o Drive
+      const credential = GoogleAuthProvider.credentialFromResult(userCredential);
+      const token = credential?.accessToken;
+      if (token) {
+        localStorage.setItem('google-drive-access-token', token);
+        localStorage.setItem('google-drive-token-expiry', (Date.now() + 3500 * 1000).toString());
+        if (StorageService.setGoogleToken) {
+          StorageService.setGoogleToken(token);
+        }
+        fetchQuota(token);
+      }
 
       // Se o Firebase ativo no momento for o ROTEADOR padrão (ou seja, isCustomFirebaseActive() é falso)
       if (!isCustomFirebaseActive()) {
@@ -743,6 +852,17 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
           setAuthStatus('Autenticando no seu servidor privado...');
           const privateCredential = await signInWithPopup(auth, provider);
           setAuthUser(privateCredential.user);
+
+          const privCred = GoogleAuthProvider.credentialFromResult(privateCredential);
+          const privToken = privCred?.accessToken;
+          if (privToken) {
+            localStorage.setItem('google-drive-access-token', privToken);
+            localStorage.setItem('google-drive-token-expiry', (Date.now() + 3500 * 1000).toString());
+            if (StorageService.setGoogleToken) {
+              StorageService.setGoogleToken(privToken);
+            }
+            fetchQuota(privToken);
+          }
 
           setAuthStatus('✅ Conectado com sucesso ao seu servidor privado!');
           await StorageService.setProviderActive('firebase', true);
@@ -845,8 +965,23 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
       if (wasLoggedInOnRouter) {
         setAuthStatus('Autenticando no seu novo servidor privado...');
         const provider = new GoogleAuthProvider();
+        provider.addScope('https://www.googleapis.com/auth/drive.file');
+        provider.addScope('https://www.googleapis.com/auth/drive.appdata');
         const privateCredential = await signInWithPopup(auth, provider);
         setAuthUser(privateCredential.user);
+
+        // Salva o token de acesso do Google para uso com o Drive
+        const privCred = GoogleAuthProvider.credentialFromResult(privateCredential);
+        const privToken = privCred?.accessToken;
+        if (privToken) {
+          localStorage.setItem('google-drive-access-token', privToken);
+          localStorage.setItem('google-drive-token-expiry', (Date.now() + 3500 * 1000).toString());
+          if (StorageService.setGoogleToken) {
+            StorageService.setGoogleToken(privToken);
+          }
+          fetchQuota(privToken);
+        }
+
         await StorageService.setProviderActive('firebase', true);
         setStorageProviders(prev => ({ ...prev, firebase: true }));
         setAuthStatus('✅ Servidor personalizado registrado e conectado com sucesso!');
@@ -876,7 +1011,10 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
     }
   };
 
-  const handleMigrateNotes = async () => {
+  const handleMigrateNotes = async (customProviders = null) => {
+    const providersToUse = (customProviders && typeof customProviders === 'object' && !customProviders.nativeEvent)
+      ? customProviders
+      : storageProviders;
     setMigrationStatus('Sincronizando notas...');
     try {
       const noteCount = Object.keys(notes).length;
@@ -905,8 +1043,8 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
         }
       }
 
-      const activeList = Object.keys(storageProviders)
-        .filter(k => storageProviders[k])
+      const activeList = Object.keys(providersToUse)
+        .filter(k => providersToUse[k])
         .map(k => k === 'local_vault' ? 'Pasta Local' : k === 'firebase' ? 'Nuvem' : 'Navegador')
         .join(', ');
 
@@ -927,12 +1065,11 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
   const renderStorage = () => {
     const isLocalVault = storageProviders.local_vault;
     const isFirebase = storageProviders.firebase;
-    const isIndexedDB = storageProviders.indexeddb;
 
     const activeListText = Object.keys(storageProviders)
-      .filter(k => storageProviders[k])
-      .map(k => k === 'local_vault' ? 'Pasta Local' : k === 'firebase' ? 'Nuvem' : 'Navegador')
-      .join(' e ');
+      .filter(k => storageProviders[k] && k !== 'indexeddb')
+      .map(k => k === 'local_vault' ? 'Pasta Local' : 'Nuvem')
+      .join(' e ') || 'Nenhum';
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -942,39 +1079,6 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
             LOCAIS DE ARMAZENAMENTO DAS NOTAS
           </label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* Provedor 1: IndexedDB */}
-            <div
-              style={{
-                width: '100%', padding: '14px 20px',
-                background: 'rgba(255,255,255,0.03)',
-                color: 'var(--text-primary)',
-                border: isIndexedDB ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid rgba(255,255,255,0.08)',
-                borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '14px',
-                boxShadow: isIndexedDB ? '0 4px 15px rgba(139, 92, 246, 0.05)' : 'none',
-                boxSizing: 'border-box',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              <div style={{
-                width: '42px', height: '42px', borderRadius: '12px',
-                background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px',
-                boxShadow: '0 4px 10px rgba(139, 92, 246, 0.3)',
-                flexShrink: 0
-              }}>
-                💾
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>Navegador</div>
-                <div style={{ fontSize: '0.75rem', opacity: 0.6, marginTop: '2px' }}>Notas salvas localmente na memória do navegador.</div>
-              </div>
-              <div style={{ pointerEvents: 'auto', flexShrink: 0 }}>
-                <GlassToggle
-                  checked={isIndexedDB}
-                  onChange={() => handleToggleProvider('indexeddb', isIndexedDB)}
-                />
-              </div>
-            </div>
 
             {/* Provedor 2: Local Vault */}
             <div
@@ -1226,35 +1330,193 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
                               <div style={{ fontSize: '0.7rem', color: '#22c55e', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} /> Conectado e Sincronizando
                               </div>
+                              <div style={{ fontSize: '0.7rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#38bdf8', display: 'inline-block' }} /> 📁 Canvas: Google Drive ({
+                                  StorageService.getGoogleToken() 
+                                    ? 'Ativo' 
+                                    : StorageService.isGoogleTokenExpired() 
+                                      ? 'Sessão Expirada - Reconecte' 
+                                      : 'Aguardando Login com Google'
+                                })
+                              </div>
                             </div>
                           </div>
 
-                          {/* Firebase Usage Progress Bar */}
-                          {(() => {
-                            let totalBytes = 0;
-                            try {
-                              if (notes) {
-                                totalBytes = JSON.stringify(notes).length;
-                              }
-                            } catch (e) {}
-                            const limitBytes = 1024 * 1024 * 1024; // 1 GB (Spark Plan)
-                            const usedMB = (totalBytes / (1024 * 1024)).toFixed(2);
-                            const percentage = Math.min(100, (totalBytes / limitBytes) * 100).toFixed(2);
-                            return (
-                              <div className="glass-extreme" style={{ padding: '12px 16px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 500 }}>
-                                  <span>Espaço no Firebase (Limites Gratuitos)</span>
-                                  <span style={{ fontWeight: 600, color: 'var(--accent-color)' }}>{usedMB} MB / 1024 MB ({percentage}%)</span>
-                                </div>
-                                <div style={{ width: '100%', height: '8px', borderRadius: '4px', background: 'rgba(255, 255, 255, 0.1)', overflow: 'hidden' }}>
-                                  <div style={{ width: `${percentage}%`, height: '100%', background: 'linear-gradient(90deg, #ec4899 0%, #8b5cf6 100%)', borderRadius: '4px', transition: 'width 0.5s ease-in-out' }} />
-                                </div>
-                                <div style={{ fontSize: '0.65rem', opacity: 0.5, lineHeight: 1.3 }}>
-                                  * Limite gratuito do plano Spark do Firebase: 1 GB no Firestore Database e 5 GB no Storage. O gráfico acima mostra a utilização estimada das suas notas.
-                                </div>
-                              </div>
-                            );
-                          })()}
+                           {/* Firebase Usage Progress Bar */}
+                           {(() => {
+                             let totalBytes = 0;
+                             try {
+                               if (notes) {
+                                 totalBytes = JSON.stringify(notes).length;
+                               }
+                             } catch (e) {}
+                             const limitBytes = 1024 * 1024 * 1024; // 1 GB (Spark Plan)
+                             const usedMB = (totalBytes / (1024 * 1024)).toFixed(2);
+                             const percentage = Math.min(100, (totalBytes / limitBytes) * 100).toFixed(2);
+                             return (
+                               <div className="glass-extreme" style={{ padding: '12px 16px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 500 }}>
+                                   <span>Espaço no Firebase (Limites Gratuitos)</span>
+                                   <span style={{ fontWeight: 600, color: 'var(--accent-color)' }}>{usedMB} MB / 1024 MB ({percentage}%)</span>
+                                 </div>
+                                 <div style={{ width: '100%', height: '8px', borderRadius: '4px', background: 'rgba(255, 255, 255, 0.1)', overflow: 'hidden' }}>
+                                   <div style={{ width: `${percentage}%`, height: '100%', background: 'linear-gradient(90deg, #ec4899 0%, #8b5cf6 100%)', borderRadius: '4px', transition: 'width 0.5s ease-in-out' }} />
+                                 </div>
+                                 <div style={{ fontSize: '0.65rem', opacity: 0.5, lineHeight: 1.3 }}>
+                                   * Limite gratuito do plano Spark do Firebase: 1 GB no Firestore Database. Como os desenhos do Canvas são enviados para o seu Google Drive, o consumo de espaço no Firebase permanece extremamente baixo.
+                                 </div>
+                               </div>
+                             );
+                           })()}
+
+                           {/* Google Drive Usage Progress Bar */}
+                           {(() => {
+                             const token = StorageService.getGoogleToken();
+                             
+                             if (!token) {
+                               const isExpired = StorageService.isGoogleTokenExpired();
+                               return (
+                                 <div className="glass-extreme" style={{ padding: '12px 16px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.04)', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                                   <div style={{ fontSize: '0.75rem', fontWeight: 600, color: isExpired ? '#fca5a5' : '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                     <span>{isExpired ? '⚠️ Sessão Google Drive Expirada' : '📁 Integração Google Drive'}</span>
+                                   </div>
+                                   <div style={{ fontSize: '0.7rem', opacity: 0.8, lineHeight: 1.4 }}>
+                                     {isExpired 
+                                       ? 'O token do Google Drive expirou. Os desenhos locais não estão sendo sincronizados com a nuvem.' 
+                                       : 'A autenticação com o Google Drive é necessária para salvar desenhos do Canvas de forma ilimitada na nuvem.'}
+                                   </div>
+                                   <button 
+                                     onClick={(e) => {
+                                       e.preventDefault();
+                                       handleGoogleSignIn();
+                                     }}
+                                     style={{ 
+                                       alignSelf: 'flex-start',
+                                       background: 'rgba(56, 189, 248, 0.15)', 
+                                       border: '1px solid rgba(56, 189, 248, 0.3)', 
+                                       color: '#38bdf8', 
+                                       padding: '4px 12px', 
+                                       borderRadius: '6px', 
+                                       fontSize: '0.7rem', 
+                                       fontWeight: '600',
+                                       cursor: 'pointer',
+                                       transition: 'all 0.2s ease'
+                                     }}
+                                     onMouseEnter={(e) => e.target.style.background = 'rgba(56, 189, 248, 0.25)'}
+                                     onMouseLeave={(e) => e.target.style.background = 'rgba(56, 189, 248, 0.15)'}
+                                   >
+                                     {isExpired ? 'Reconectar com Google' : 'Fazer Login com Google'}
+                                   </button>
+                                   
+                                   {/* Input para Client ID (Renovação Silenciosa) */}
+                                   <div style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '10px' }}>
+                                     <label style={{ fontSize: '0.7rem', opacity: 0.8, display: 'block', marginBottom: '4px' }}>
+                                       <strong>Renovação Automática (Opcional):</strong> Insira seu Google Client ID para manter o backup conectado sem popups de login.
+                                     </label>
+                                     <input 
+                                       type="text" 
+                                       value={googleClientId}
+                                       onChange={(e) => {
+                                         setGoogleClientId(e.target.value);
+                                         localStorage.setItem('google-drive-client-id', e.target.value);
+                                       }}
+                                       placeholder="123456789-abc.apps.googleusercontent.com"
+                                       style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', fontSize: '0.75rem', borderRadius: '6px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}
+                                     />
+                                   </div>
+                                 </div>
+                               );
+                             }
+
+                             if (!driveQuota) return null;
+
+                             if (driveQuota.error === 'API_DISABLED') {
+                                return (
+                                  <div className="glass-extreme" style={{ padding: '12px 16px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
+                                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#fca5a5' }}>
+                                      ⚠️ API do Google Drive Desativada
+                                    </div>
+                                    <div style={{ fontSize: '0.7rem', opacity: 0.8, lineHeight: 1.4 }}>
+                                      O app não conseguiu ler o espaço do Drive porque a <strong>Google Drive API</strong> está desativada no seu console Google Cloud.
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '4px' }}>
+                                      <a 
+                                        href="https://console.cloud.google.com/apis/library/drive.googleapis.com" 
+                                        target="_blank" 
+                                        rel="noreferrer" 
+                                        style={{ fontSize: '0.7rem', color: '#38bdf8', textDecoration: 'underline' }}
+                                      >
+                                        Ativar Google Drive API no Cloud Console ↗
+                                      </a>
+                                      <button 
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          fetchQuota();
+                                        }}
+                                        style={{ 
+                                          background: 'rgba(56, 189, 248, 0.1)', 
+                                          border: '1px solid rgba(56, 189, 248, 0.3)', 
+                                          color: '#38bdf8', 
+                                          padding: '3px 8px', 
+                                          borderRadius: '4px', 
+                                          fontSize: '0.65rem', 
+                                          cursor: 'pointer',
+                                          transition: 'all 0.2s ease'
+                                        }}
+                                        onMouseEnter={(e) => e.target.style.background = 'rgba(56, 189, 248, 0.2)'}
+                                        onMouseLeave={(e) => e.target.style.background = 'rgba(56, 189, 248, 0.1)'}
+                                      >
+                                        Tentar Novamente
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                             }
+
+                             let appCanvasBytes = 0;
+                             try {
+                               if (notes) {
+                                 Object.keys(notes).forEach(key => {
+                                   if (notes[key]?.type === 'canvas' && notes[key]?.content) {
+                                     appCanvasBytes += JSON.stringify(notes[key].content).length;
+                                   }
+                                 });
+                               }
+                             } catch (e) {}
+
+                             const limitBytes = parseInt(driveQuota.limit) || (15 * 1024 * 1024 * 1024);
+                             const usageBytes = parseInt(driveQuota.usage) || 0;
+                             
+                             const formatBytes = (bytes) => {
+                               if (bytes === 0) return '0 Bytes';
+                               const k = 1024;
+                               const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                               const i = Math.floor(Math.log(bytes) / Math.log(k));
+                               return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+                             };
+
+                             const driveUsedPercent = Math.min(100, (usageBytes / limitBytes) * 100).toFixed(2);
+                             const appPercent = Math.min(100, (appCanvasBytes / limitBytes) * 100).toFixed(4);
+
+                             return (
+                               <div className="glass-extreme" style={{ padding: '12px 16px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 500 }}>
+                                   <span>Espaço no Google Drive (Geral)</span>
+                                   <span style={{ fontWeight: 600, color: '#38bdf8' }}>{formatBytes(usageBytes)} / {formatBytes(limitBytes)} ({driveUsedPercent}%)</span>
+                                 </div>
+                                 <div style={{ width: '100%', height: '8px', borderRadius: '4px', background: 'rgba(255, 255, 255, 0.1)', overflow: 'hidden' }}>
+                                   <div style={{ width: `${driveUsedPercent}%`, height: '100%', background: '#38bdf8', borderRadius: '4px', transition: 'width 0.5s ease-in-out' }} />
+                                 </div>
+                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', opacity: 0.8, marginTop: '2px' }}>
+                                   <span>📁 Uso do ConnectedNotes (Desenhos):</span>
+                                   <span style={{ fontWeight: 600, color: '#38bdf8' }}>{formatBytes(appCanvasBytes)} ({appPercent}%)</span>
+                                 </div>
+                                 <div style={{ fontSize: '0.65rem', opacity: 0.5, lineHeight: 1.3 }}>
+                                   * O espaço dos desenhos é descontado da sua conta do Google Drive e não consome recursos do banco de dados Firebase.
+                                 </div>
+                               </div>
+                             );
+                           })()}
 
                           {isCustomFirebaseActive() && (
                             <div className="glass-extreme" style={{ padding: '12px 14px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -1340,6 +1602,9 @@ const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey, currentTheme, setTh
                             💡 <strong>Sincronização Descentralizada Privada:</strong><br />
                             Conecte-se com sua conta Google para sincronizar suas notas automaticamente. Se for seu primeiro uso, você poderá vincular seu Firebase privado à sua conta de forma totalmente gratuita!
                           </div>
+                          
+                          {/* Visual Storage Gauge */}
+                          {authUser && <StorageUsageGauge notes={notes} />}
 
                           <button
                             type="button"

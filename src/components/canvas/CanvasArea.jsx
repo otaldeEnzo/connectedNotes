@@ -12,6 +12,7 @@ import { simplifyPoints } from '../../utils/simplify';
 
 import TextBlock from './TextBlock';
 import ImageBlock from './ImageBlock';
+import { StorageService } from '../../services/StorageService';
 import CodeBlock from './CodeBlock';
 import MathBlock from './MathBlock';
 import LinearTransformBlock from './LinearTransformBlock';
@@ -1141,7 +1142,7 @@ const CanvasArea = forwardRef(({
       setSelectedStrokeIds([]);
     };
 
-    const handlePaste = (e) => {
+    const handlePaste = async (e) => {
       if (['TEXTAREA', 'INPUT'].includes(document.activeElement.tagName)) return;
 
       const pt = screenToCanvas(lastMousePosRef.current.x, lastMousePosRef.current.y);
@@ -1216,13 +1217,14 @@ const CanvasArea = forwardRef(({
       if (items) {
         for (let i = 0; i < items.length; i++) {
           if (items[i].type.indexOf('image') !== -1) {
-            const reader = new FileReader();
-            reader.onload = async (ev) => {
-              saveToHistory();
-              const compressed = await compressImageBase64(ev.target.result);
-              setImageBlocks(p => [...p, { id: generateId(), x: pt.x - 150, y: pt.y - 150, width: 300, height: 300, src: compressed, extractedText: '' }]);
-            };
-            reader.readAsDataURL(items[i].getAsFile());
+            const file = items[i].getAsFile();
+            if (file) {
+              try {
+                const mediaUrl = await StorageService.saveMediaFile(file);
+                saveToHistory();
+                setImageBlocks(p => [...p, { id: generateId(), x: pt.x - 150, y: pt.y - 150, width: 300, height: 300, src: mediaUrl, extractedText: '' }]);
+              } catch (e) { console.error("Error saving media:", e); }
+            }
           } else if (items[i].type === 'application/pdf') {
             const file = items[i].getAsFile();
             if (file) importPdfAt(file, pt.x, pt.y);
@@ -1236,7 +1238,7 @@ const CanvasArea = forwardRef(({
       e.dataTransfer.dropEffect = 'copy';
     };
 
-    const handleDrop = (e) => {
+    const handleDrop = async (e) => {
       e.preventDefault();
       const pt = screenToCanvas(e.clientX, e.clientY);
       const files = e.dataTransfer.files;
@@ -1246,20 +1248,18 @@ const CanvasArea = forwardRef(({
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           if (file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = async (ev) => {
-              const compressed = await compressImageBase64(ev.target.result);
+            try {
+              const mediaUrl = await StorageService.saveMediaFile(file);
               setImageBlocks(p => [...p, {
                 id: generateId(),
                 x: pt.x - 150 + (i * 20),
                 y: pt.y - 150 + (i * 20),
                 width: 300,
                 height: 300,
-                src: compressed,
+                src: mediaUrl,
                 extractedText: ''
               }]);
-            };
-            reader.readAsDataURL(file);
+            } catch (e) { console.error("Error saving dropped media:", e); }
           } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
             importPdfAt(file, pt.x + (i * 20), pt.y + (i * 20));
           } else if (file.type === 'text/plain') {
@@ -1357,19 +1357,30 @@ const CanvasArea = forwardRef(({
   const isSelectedLocked = (selectedIds.length > 0) && [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].some(b => selectedIds.includes(b.id) && b.locked);
   const isSelectedGrouped = (selectedIds.length > 0) && [...textBlocks, ...imageBlocks, ...codeBlocks, ...mathBlocks, ...ggbBlocks, ...mermaidBlocks, ...mindmapBlocks].some(b => selectedIds.includes(b.id) && b.groupId);
 
-  // Carrega Nota (Unificado) - Optimized to prevent selection loss during auto-saves
+  // Carrega Nota (Unificado) - Only triggers on NOTE SWITCH or UNDO/REDO
+  // CRITICAL: This must NOT trigger from remote sync overwriting content,
+  // otherwise the user's local edits get wiped out.
   useEffect(() => {
     if (activeNote) {
-      const content = extractCanvasContent(activeNote.content);
-      const contentJson = sortedStringify(content);
-
-      // Only perform a full reload if the note ID changed OR if the content was updated externally
-      // (e.g. via Undo/Redo or from another session, meaning it differs from our lastSavedJson)
-      if (activeNote.id !== lastLoadedNoteId.current || contentJson !== lastSavedJson.current) {
+      // Case 1: User switched to a different note → full reload
+      if (activeNote.id !== lastLoadedNoteId.current) {
+        const content = extractCanvasContent(activeNote.content);
+        const contentJson = sortedStringify(content);
         setIsNoteLoaded(false);
         loadNoteData(content);
-
         lastLoadedNoteId.current = activeNote.id;
+        lastSavedJson.current = contentJson;
+        setIsNoteLoaded(true);
+        return;
+      }
+
+      // Case 2: Same note, but content changed (undo/redo from NotesContext)
+      // Only reload if the content is actually different from what we last saved
+      const content = extractCanvasContent(activeNote.content);
+      const contentJson = sortedStringify(content);
+      if (contentJson !== lastSavedJson.current) {
+        setIsNoteLoaded(false);
+        loadNoteData(content);
         lastSavedJson.current = contentJson;
         setIsNoteLoaded(true);
       }
@@ -1408,7 +1419,7 @@ const CanvasArea = forwardRef(({
       const timer = setTimeout(() => {
         lastSavedJson.current = contentJson;
         updateNoteContent(activeNoteId, content);
-      }, 1000); // Increased debounce for cleaner performance
+      }, 1500); // Debounce de 1.5s para otimizar o salvamento no Google Drive
       return () => clearTimeout(timer);
     }
   }, [strokes, textBlocks, imageBlocks, codeBlocks, mathBlocks, ggbBlocks, mermaidBlocks, mindmapBlocks, pdfBlocks, tableBlocks, connections, activeNoteId, isNoteLoaded, isDraggingSelection]);
@@ -1428,13 +1439,14 @@ const CanvasArea = forwardRef(({
           let dw = vp.width, dh = vp.height;
           if (dw > 800) { dh *= (800 / dw); dw = 800; }
 
+          const mediaUrl = await StorageService.saveMediaFile(file);
           const pdfBlock = {
             id: generateId(),
             type: 'pdf',
             fileName: file.name,
             x: startX,
             y: startY,
-            pdfRaw: pdfDataUrl,
+            pdfRaw: mediaUrl,
             totalPages: pdf.numPages,
             width: dw,
             height: dh + 120,

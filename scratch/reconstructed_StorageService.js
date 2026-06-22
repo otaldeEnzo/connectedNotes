@@ -1,4 +1,4 @@
-/**
+﻿/**
  * StorageService.js
  * 
  * Orquestrador de PersistÃªncia e SincronizaÃ§Ã£o HÃ­brida para ConnectedNotes.
@@ -15,417 +15,9 @@ import {
   onSnapshot 
 } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
-import { GoogleDriveService } from './GoogleDriveService';
 
 let isStorageCorsBlocked = false;
 let corsChecked = false;
-let googleToken = null;
-
-// Rastreamento de estados de base e fila de salvamento debocado
-const baseNotesState = {};
-const cloudSaveDebouncers = {};
-
-let currentSyncStatus = 'synced'; // 'synced', 'syncing', 'pending', 'error'
-let activeSavesCount = 0;
-
-function setSyncStatus(status) {
-  currentSyncStatus = status;
-  setTimeout(() => {
-    window.dispatchEvent(new CustomEvent('sync-status-changed', { detail: status }));
-  }, 0);
-}
-
-// Helper para calcular a diferença de linhas (LCS)
-function getLinesDiff(base, target) {
-  const m = base.length;
-  const n = target.length;
-  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (base[i - 1] === target[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1;
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
-      }
-    }
-  }
-  
-  const diffOps = [];
-  let i = m, j = n;
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && base[i - 1] === target[j - 1]) {
-      diffOps.unshift({ op: 'keep', line: base[i - 1], baseIdx: i - 1 });
-      i--;
-      j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      diffOps.unshift({ op: 'insert', line: target[j - 1], baseIdx: i });
-      j--;
-    } else {
-      diffOps.unshift({ op: 'delete', line: base[i - 1], baseIdx: i - 1 });
-      i--;
-    }
-  }
-  return diffOps;
-}
-
-// Algoritmo de Fusão de 3 Vias para texto Markdown (.md)
-function mergeText3Way(baseStr, localStr, remoteStr) {
-  const base = (baseStr || "").split(/\r?\n/);
-  const local = (localStr || "").split(/\r?\n/);
-  const remote = (remoteStr || "").split(/\r?\n/);
-
-  if (localStr === baseStr) return remoteStr;
-  if (remoteStr === baseStr) return localStr;
-  if (localStr === remoteStr) return localStr;
-
-  const localDiff = getLinesDiff(base, local);
-  const remoteDiff = getLinesDiff(base, remote);
-
-  const N = base.length;
-  const actions = Array.from({ length: N + 1 }, () => ({
-    deletedLocal: false,
-    deletedRemote: false,
-    localInserts: [],
-    remoteInserts: []
-  }));
-
-  for (const op of localDiff) {
-    if (op.op === 'delete') {
-      actions[op.baseIdx].deletedLocal = true;
-    } else if (op.op === 'insert') {
-      actions[op.baseIdx].localInserts.push(op.line);
-    }
-  }
-
-  for (const op of remoteDiff) {
-    if (op.op === 'delete') {
-      actions[op.baseIdx].deletedRemote = true;
-    } else if (op.op === 'insert') {
-      actions[op.baseIdx].remoteInserts.push(op.line);
-    }
-  }
-
-  const mergedLines = [];
-
-  for (let i = 0; i <= N; i++) {
-    const lIns = actions[i].localInserts;
-    const rIns = actions[i].remoteInserts;
-
-    if (lIns.length > 0 && rIns.length > 0) {
-      if (lIns.join('\n') === rIns.join('\n')) {
-        mergedLines.push(...lIns);
-      } else {
-        mergedLines.push(`<<<<<<< Local (Inserção)`);
-        mergedLines.push(...lIns);
-        mergedLines.push(`=======`);
-        mergedLines.push(...rIns);
-        mergedLines.push(`>>>>>>> Remoto (Inserção)`);
-      }
-    } else if (lIns.length > 0) {
-      mergedLines.push(...lIns);
-    } else if (rIns.length > 0) {
-      mergedLines.push(...rIns);
-    }
-
-    if (i < N) {
-      const line = base[i];
-      const delL = actions[i].deletedLocal;
-      const delR = actions[i].deletedRemote;
-
-      if (delL && delR) {
-        // Deletado em ambos
-      } else if (delL || delR) {
-        // Deletado em um
-      } else {
-        mergedLines.push(line);
-      }
-    }
-  }
-
-  return mergedLines.join('\n');
-}
-
-// Algoritmo de Reconciliação Estrutural de Canvas (.canvas.json)
-function mergeCanvasStructural(base, local, remote) {
-  const baseNodes = base.nodes || [];
-  const localNodes = local.nodes || [];
-  const remoteNodes = remote.nodes || [];
-
-  const baseEdges = base.edges || [];
-  const localEdges = local.edges || [];
-  const remoteEdges = remote.edges || [];
-
-  const baseNodesMap = new Map(baseNodes.map(n => [n.id, n]));
-  const localNodesMap = new Map(localNodes.map(n => [n.id, n]));
-  const remoteNodesMap = new Map(remoteNodes.map(n => [n.id, n]));
-
-  const baseEdgesMap = new Map(baseEdges.map(e => [e.id, e]));
-  const localEdgesMap = new Map(localEdges.map(e => [e.id, e]));
-  const remoteEdgesMap = new Map(remoteEdges.map(e => [e.id, e]));
-
-  const mergedNodes = [];
-  const mergedEdges = [];
-
-  const allNodeIds = new Set([
-    ...baseNodesMap.keys(),
-    ...localNodesMap.keys(),
-    ...remoteNodesMap.keys()
-  ]);
-
-  for (const id of allNodeIds) {
-    const baseNode = baseNodesMap.get(id);
-    const localNode = localNodesMap.get(id);
-    const remoteNode = remoteNodesMap.get(id);
-
-    if (baseNode) {
-      if (localNode && remoteNode) {
-        const mergedNode = { ...baseNode };
-        const allKeys = new Set([
-          ...Object.keys(baseNode),
-          ...Object.keys(localNode),
-          ...Object.keys(remoteNode)
-        ]);
-
-        for (const key of allKeys) {
-          const baseVal = baseNode[key];
-          const localVal = localNode[key];
-          const remoteVal = remoteNode[key];
-
-          if (JSON.stringify(localVal) !== JSON.stringify(baseVal) && JSON.stringify(remoteVal) !== JSON.stringify(baseVal)) {
-            if (typeof localVal === 'object' && typeof remoteVal === 'object' && localVal && remoteVal) {
-              mergedNode[key] = { ...remoteVal, ...localVal };
-            } else {
-              mergedNode[key] = localVal;
-            }
-          } else if (JSON.stringify(localVal) !== JSON.stringify(baseVal)) {
-            mergedNode[key] = localVal;
-          } else if (JSON.stringify(remoteVal) !== JSON.stringify(baseVal)) {
-            mergedNode[key] = remoteVal;
-          }
-        }
-        mergedNodes.push(mergedNode);
-      } else if (!localNode && remoteNode) {
-        const remoteModified = JSON.stringify(remoteNode) !== JSON.stringify(baseNode);
-        if (remoteModified) {
-          mergedNodes.push(remoteNode);
-        }
-      } else if (localNode && !remoteNode) {
-        const localModified = JSON.stringify(localNode) !== JSON.stringify(baseNode);
-        if (localModified) {
-          mergedNodes.push(localNode);
-        }
-      }
-    } else {
-      if (localNode && remoteNode) {
-        mergedNodes.push(localNode);
-      } else if (localNode) {
-        mergedNodes.push(localNode);
-      } else if (remoteNode) {
-        mergedNodes.push(remoteNode);
-      }
-    }
-  }
-
-  const allEdgeIds = new Set([
-    ...baseEdgesMap.keys(),
-    ...localEdgesMap.keys(),
-    ...remoteEdgesMap.keys()
-  ]);
-
-  for (const id of allEdgeIds) {
-    const baseEdge = baseEdgesMap.get(id);
-    const localEdge = localEdgesMap.get(id);
-    const remoteEdge = remoteEdgesMap.get(id);
-
-    if (baseEdge) {
-      if (localEdge && remoteEdge) {
-        const mergedEdge = { ...baseEdge, ...remoteEdge, ...localEdge };
-        mergedEdges.push(mergedEdge);
-      } else if (!localEdge && remoteEdge) {
-        const remoteModified = JSON.stringify(remoteEdge) !== JSON.stringify(baseEdge);
-        if (remoteModified) mergedEdges.push(remoteEdge);
-      } else if (localEdge && !remoteEdge) {
-        const localModified = JSON.stringify(localEdge) !== JSON.stringify(baseEdge);
-        if (localModified) mergedEdges.push(localEdge);
-      }
-    } else {
-      if (localEdge) mergedEdges.push(localEdge);
-      else if (remoteEdge) mergedEdges.push(remoteEdge);
-    }
-  }
-
-  return {
-    ...remote,
-    ...local,
-    nodes: mergedNodes,
-    edges: mergedEdges
-  };
-}
-
-// Grava a alteracão final debocada e reconciliada no Firebase + Google Drive
-async function performCloudSave(noteId, noteData, notesState) {
-  const user = auth.currentUser;
-  if (!user) return { success: false, merged: false };
-
-  try {
-    if (!corsChecked) {
-      corsChecked = true;
-      await checkStorageCors(user.uid);
-    }
-
-    const docRef = doc(db, 'users', user.uid, 'notes', noteId);
-    const docSnap = await getDoc(docRef);
-
-    let baseInfo = baseNotesState[noteId];
-    let finalContent = { ...noteData.content };
-    let merged = false;
-
-    if (docSnap.exists() && baseInfo) {
-      const remoteNote = docSnap.data();
-      if (remoteNote.updatedAt && remoteNote.updatedAt > baseInfo.updatedAt) {
-        console.warn(`[StorageService] Conflito detectado para a nota ${noteId}. Iniciando mesclagem...`);
-
-        let remoteContent = remoteNote.content || {};
-        if (remoteNote.driveFileId) {
-          const token = await StorageService.getGoogleTokenAsync();
-          if (token) {
-            try {
-              const canvasData = await GoogleDriveService.getCanvasData(remoteNote.driveFileId, token);
-              remoteContent = { ...remoteContent, ...canvasData };
-            } catch (err) {
-              console.error("[StorageService] Erro ao baixar canvas remoto para fusão:", err);
-            }
-          }
-        }
-
-        if (noteData.type === 'canvas') {
-          finalContent = mergeCanvasStructural(baseInfo.content || {}, noteData.content || {}, remoteContent);
-        } else {
-          const baseText = baseInfo.content?.markdown || "";
-          const localText = noteData.content?.markdown || "";
-          const remoteText = remoteContent.markdown || "";
-          const mergedText = mergeText3Way(baseText, localText, remoteText);
-          finalContent = {
-            ...noteData.content,
-            markdown: mergedText
-          };
-        }
-        merged = true;
-      }
-    }
-
-    const processedContent = await processBase64Fields(user.uid, noteId, finalContent);
-    
-    let driveFileId = noteData.driveFileId || null;
-    const token = await StorageService.getGoogleTokenAsync();
-
-    if (token) {
-      try {
-        console.log(`[StorageService] Salvando nota no Google Drive: ${noteId}`);
-        const folderSegments = [];
-        let currentId = noteId;
-        while (true) {
-          const parentId = Object.keys(notesState).find(key => notesState[key]?.children?.includes(currentId));
-          if (!parentId || parentId === 'root') {
-            break;
-          }
-          const parentNote = notesState[parentId];
-          if (parentNote && parentNote.title) {
-            folderSegments.unshift(parentNote.title);
-          }
-          currentId = parentId;
-        }
-
-        const noteDataForDrive = {
-          ...noteData,
-          content: processedContent
-        };
-
-        driveFileId = await GoogleDriveService.saveNoteData(
-          noteId, 
-          noteDataForDrive, 
-          token, 
-          folderSegments, 
-          noteData.title
-        );
-      } catch (err) {
-        console.error("[StorageService] Erro ao salvar nota no Google Drive:", err);
-      }
-    }
-
-    let processedNoteData = {
-      ...noteData,
-      content: processedContent,
-      driveFileId,
-      updatedAt: Date.now()
-    };
-
-    if (driveFileId && token && noteData.type === 'canvas') {
-      processedNoteData.content = {
-        _stored_in_drive: true
-      };
-    }
-
-    const MAX_FIRESTORE_DOC_SIZE = 1_000_000;
-    let serialized = JSON.stringify(sanitize(processedNoteData));
-    
-    if (serialized.length > MAX_FIRESTORE_DOC_SIZE) {
-      const stripBase64 = (obj) => {
-        if (!obj) return obj;
-        if (typeof obj === 'string') {
-          if (obj.startsWith('data:') && obj.includes(';base64,') && obj.length > 500) {
-            return '[base64_stripped_for_cloud]';
-          }
-          return obj;
-        }
-        if (Array.isArray(obj)) return obj.map(stripBase64);
-        if (typeof obj === 'object') {
-          const result = {};
-          for (const key in obj) {
-            result[key] = stripBase64(obj[key]);
-          }
-          return result;
-        }
-        return obj;
-      };
-      
-      processedNoteData = {
-        ...processedNoteData,
-        content: stripBase64(processedContent)
-      };
-      serialized = JSON.stringify(sanitize(processedNoteData));
-      
-      if (serialized.length > MAX_FIRESTORE_DOC_SIZE) {
-        const { content, ...metaOnly } = processedNoteData;
-        processedNoteData = { ...metaOnly, content: { _cloud_truncated: true } };
-      }
-    }
-
-    await setDoc(docRef, sanitize(processedNoteData));
-
-    const workspaceState = {};
-    Object.keys(notesState).forEach(id => {
-      const note = notesState[id];
-      if (note) {
-        const { content, ...rest } = note;
-        workspaceState[id] = rest;
-      }
-    });
-
-    const wsRef = doc(db, 'users', user.uid, 'workspace', 'state');
-    await setDoc(wsRef, sanitize({ notes: workspaceState }));
-
-    baseNotesState[noteId] = {
-      content: JSON.parse(JSON.stringify(finalContent)),
-      updatedAt: processedNoteData.updatedAt
-    };
-
-    return { success: true, merged, content: finalContent };
-  } catch (err) {
-    console.error("Erro no performCloudSave:", err);
-    throw err;
-  }
-}
 
 // Probe to check if Storage CORS is active
 async function checkStorageCors(userId) {
@@ -575,7 +167,6 @@ function getNoteFilePath(noteId, notesState) {
   else if (note.type === 'code') ext = '.code';
   else if (note.type === 'mermaid') ext = '.mermaid';
   else if (note.type === 'mindmap') ext = '.mindmap';
-  else if (note.type === 'pdf_study') ext = '.study';
 
   if (!ext) return null; // Folders nÃ£o possuem arquivos de conteÃºdo prÃ³prios
 
@@ -826,37 +417,43 @@ export const StorageService = {
       }
     }
 
-    // 2. Grava no Firebase Cloud + Google Drive se estiver ativo
+    // 2. Grava no Firebase Cloud se estiver ativo
     if (activeProviders.firebase) {
       const user = auth.currentUser;
       if (user) {
-        // Debounce cloud saving by 1 second
-        if (cloudSaveDebouncers[noteId]) {
-          clearTimeout(cloudSaveDebouncers[noteId]);
-        }
+        try {
+          // Probe CORS dynamically if not checked yet
+          if (!corsChecked) {
+            checkStorageCors(user.uid);
+          }
 
-        setSyncStatus('pending');
+          const docRef = doc(db, 'users', user.uid, 'notes', noteId);
+          
+          // Offload base64 files to Firebase Storage to keep firestore doc size tiny
+          const processedContent = await processBase64Fields(user.uid, noteId, noteData.content);
+          const processedNoteData = {
+            ...noteData,
+            content: processedContent
+          };
+          
+          await setDoc(docRef, sanitize(processedNoteData));
 
-        return new Promise((resolve) => {
-          cloudSaveDebouncers[noteId] = setTimeout(async () => {
-            activeSavesCount++;
-            setSyncStatus('syncing');
-
-            try {
-              const res = await performCloudSave(noteId, noteData, notesState);
-              activeSavesCount--;
-              if (activeSavesCount === 0) {
-                setSyncStatus('synced');
-              }
-              resolve({ success: res.success, merged: res.merged, content: res.content });
-            } catch (err) {
-              console.error("[StorageService] Falha ao sincronizar com a nuvem:", err);
-              activeSavesCount--;
-              setSyncStatus('error');
-              resolve({ success: false, merged: false });
+          // Strip heavy 'content' fields from all notes in notesState to keep the workspace document tiny and prevent Firebase 1MB limit crash
+          const workspaceState = {};
+          Object.keys(notesState).forEach(id => {
+            const note = notesState[id];
+            if (note) {
+              const { content, ...rest } = note;
+              workspaceState[id] = rest;
             }
-          }, 1000);
-        });
+          });
+
+          const wsRef = doc(db, 'users', user.uid, 'workspace', 'state');
+          await setDoc(wsRef, sanitize({ notes: workspaceState }));
+          success = true;
+        } catch (err) {
+          console.error("Erro ao salvar nota no Firebase:", err);
+        }
       }
     }
 
@@ -955,13 +552,6 @@ export const StorageService = {
           }
         }
         
-        if (remoteData && remoteData.content) {
-          baseNotesState[noteId] = {
-            content: JSON.parse(JSON.stringify(remoteData.content)),
-            updatedAt: remoteData.updatedAt || Date.now()
-          };
-        }
-        
         callback(remoteData);
       }
     }, (err) => {
@@ -1050,71 +640,12 @@ export const StorageService = {
     
     if (!session && activeProviders.indexeddb) {
       try {
-        const idbSession = await IdbService.getSession();
-        if (idbSession) session = idbSession;
+        const data = localStorage.getItem('connected-notes-session');
+        if (data) session = JSON.parse(data);
       } catch (e) {}
     }
     
     return session;
-  },
-
-  /**
-   * Salva um arquivo de mídia (imagem/pdf) na pasta central e retorna a URL customizada
-   * @param {Blob|File} fileOrBlob 
-   */
-  async saveMediaFile(fileOrBlob) {
-    const arrayBuffer = await fileOrBlob.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    
-    const mimeType = fileOrBlob.type || '';
-    let ext = 'bin';
-    if (mimeType.includes('png')) ext = 'png';
-    else if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = 'jpg';
-    else if (mimeType.includes('pdf')) ext = 'pdf';
-    else if (fileOrBlob.name) {
-        const parts = fileOrBlob.name.split('.');
-        if (parts.length > 1) ext = parts.pop();
-    }
-    
-    const fileName = `${hashHex}.${ext}`;
-    const mediaDir = 'ConnectedNotes_Media';
-    
-    const target = FileSystemBridge.isElectron ? activeVaultPath : activeVaultHandle;
-    if (target) {
-        await FileSystemBridge.writeFile(target, `${mediaDir}/${fileName}`, fileOrBlob);
-    }
-    
-    return `media://${fileName}`;
-  },
-
-  /**
-   * Resolve uma URL de mídia customizada para um ObjectURL
-   * @param {string} mediaUrl 
-   */
-  async loadMediaFile(mediaUrl) {
-    if (!mediaUrl || typeof mediaUrl !== 'string' || !mediaUrl.startsWith('media://')) {
-        return mediaUrl;
-    }
-    
-    const fileName = mediaUrl.replace('media://', '');
-    const mediaDir = 'ConnectedNotes_Media';
-    
-    const target = FileSystemBridge.isElectron ? activeVaultPath : activeVaultHandle;
-    if (target) {
-        const buffer = await FileSystemBridge.readFile(target, `${mediaDir}/${fileName}`);
-        if (buffer) {
-           let type = 'application/octet-stream';
-           if (fileName.endsWith('.png')) type = 'image/png';
-           else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) type = 'image/jpeg';
-           else if (fileName.endsWith('.pdf')) type = 'application/pdf';
-           
-           const blob = new Blob([buffer], { type });
-           return URL.createObjectURL(blob);
-        }
-    }
-    return null;
   },
 
   setGoogleToken(token) {
@@ -1130,24 +661,6 @@ export const StorageService = {
       return token;
     }
     return null;
-  },
-
-  async getGoogleTokenAsync() {
-    // Retorna o token vÃ¡lido, tentando renovar silenciosamente se necessÃ¡rio
-    let token = this.getGoogleToken();
-    if (!token && GoogleDriveService.onTokenRefreshNeeded) {
-      try {
-        console.log("[StorageService] Token expirado ou ausente. Tentando renovação silenciosa...");
-        token = await GoogleDriveService.onTokenRefreshNeeded();
-      } catch (err) {
-        console.error("[StorageService] Falha na renovação silenciosa do token do Google:", err);
-      }
-    }
-    return token;
-  },
-
-  getSyncStatus() {
-    return currentSyncStatus;
   },
 
   isGoogleTokenExpired() {

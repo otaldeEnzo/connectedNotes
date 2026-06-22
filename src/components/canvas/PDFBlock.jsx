@@ -197,7 +197,11 @@ const PDFBlock = ({ block, activeTool, updateBlock, onInteract, removeBlock, isD
                 setError(null);
                 let parameter = pdfSource;
                 
-                if (typeof pdfSource === 'string' && pdfSource.startsWith('data:')) {
+                if (typeof pdfSource === 'string' && pdfSource.startsWith('media://')) {
+                    const { StorageService } = await import('../../services/StorageService');
+                    const url = await StorageService.loadMediaFile(pdfSource);
+                    parameter = url;
+                } else if (typeof pdfSource === 'string' && pdfSource.startsWith('data:')) {
                     const arr = pdfSource.split(',');
                     const bstr = atob(arr[1]);
                     let n = bstr.length;

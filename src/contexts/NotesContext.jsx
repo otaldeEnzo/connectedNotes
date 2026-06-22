@@ -233,6 +233,10 @@ export const NotesProvider = ({ children }) => {
   }, [notes, loading]);
 
   // Sincronização em tempo real de notas individuais do Firebase
+  // CRITICAL FIX: Never overwrite content for the active note from remote sync.
+  // The local user's edits are authoritative. Remote content sync only applies
+  // metadata (title, tags) to the active note. Content is only loaded when
+  // switching notes via the loadNoteData effect in CanvasArea.
   useEffect(() => {
     if (loading || !activeNoteId || !StorageService.getActiveProviders().firebase || !currentUser) return;
 
@@ -241,18 +245,26 @@ export const NotesProvider = ({ children }) => {
         const localNote = prev[activeNoteId];
         if (!localNote) return prev;
         
-        // Evita loop se for igual
-        if (JSON.stringify(localNote.content) === JSON.stringify(remoteNote.content) &&
-            localNote.title === remoteNote.title &&
-            JSON.stringify(localNote.tags) === JSON.stringify(remoteNote.tags)) {
-          return prev;
+        // Only sync metadata if we already have local content.
+        // If local content is empty/undefined, it means we are loading the note for the first time
+        // after loading the workspace shell, so we MUST load the remote content.
+        const hasLocalContent = localNote.content && Object.keys(localNote.content).length > 0;
+        const remoteTitle = remoteNote.title;
+        const remoteTags = remoteNote.tags;
+
+        if (hasLocalContent &&
+            localNote.title === remoteTitle &&
+            JSON.stringify(localNote.tags) === JSON.stringify(remoteTags)) {
+          return prev; // Nothing changed in metadata
         }
 
         return {
           ...prev,
           [activeNoteId]: {
             ...localNote,
-            ...remoteNote
+            title: remoteTitle !== undefined ? remoteTitle : localNote.title,
+            tags: remoteTags !== undefined ? remoteTags : localNote.tags,
+            content: hasLocalContent ? localNote.content : (remoteNote.content || {})
           }
         };
       });
@@ -262,6 +274,8 @@ export const NotesProvider = ({ children }) => {
   }, [activeNoteId, loading, currentUser]);
 
   // Sincronização em tempo real da árvore de notas (workspace) do Firebase
+  // The workspace document only contains note metadata (no content), so merging
+  // must always preserve local content fields.
   useEffect(() => {
     if (loading || !StorageService.getActiveProviders().firebase || !currentUser) return;
 
@@ -269,7 +283,6 @@ export const NotesProvider = ({ children }) => {
       setNotes(prev => {
         // Evita loop se for igual
         if (JSON.stringify(Object.keys(prev)) === JSON.stringify(Object.keys(remoteWorkspace))) {
-          // Também compara os filhos da raiz e collapseds
           let identical = true;
           for (const key of Object.keys(prev)) {
             if (JSON.stringify(prev[key]?.children) !== JSON.stringify(remoteWorkspace[key]?.children) ||
@@ -282,20 +295,29 @@ export const NotesProvider = ({ children }) => {
           if (identical) return prev;
         }
 
-        // Faz o merge das notas remotas preservando conteúdos locais não salvos ainda se houver
+        // Merge remote workspace metadata, always preserving local content
         const merged = { ...prev };
         for (const key of Object.keys(remoteWorkspace)) {
+          const localNote = prev[key];
+          const remoteNote = remoteWorkspace[key];
           merged[key] = {
-            ...(prev[key] || {}),
-            ...remoteWorkspace[key]
+            ...(localNote || {}),      // Start with everything local (preserves content)
+            ...remoteNote,             // Overlay remote metadata
+            content: localNote?.content || remoteNote?.content || {}  // Always prefer local content
           };
         }
         
         // Remove notas locais que foram excluídas na nuvem
+        // But NEVER remove 'root' — it's the structural anchor
         for (const key of Object.keys(prev)) {
-          if (!remoteWorkspace[key]) {
+          if (key !== 'root' && !remoteWorkspace[key]) {
             delete merged[key];
           }
+        }
+
+        // Safety: ensure 'root' always exists
+        if (!merged['root']) {
+          merged['root'] = prev['root'] || { id: 'root', title: 'As Minhas Notas', type: 'folder', children: [], collapsed: false, content: {}, tags: [] };
         }
 
         return merged;
@@ -440,7 +462,24 @@ export const NotesProvider = ({ children }) => {
         };
 
         // Salva nota no StorageService
-        StorageService.saveNote(id, updatedNote, newState);
+        StorageService.saveNote(id, updatedNote, newState).then(res => {
+          if (res && res.merged) {
+            console.log(`[NotesContext] Nota ${id} foi mesclada remotamente. Atualizando estado React.`);
+            setNotes(prev => {
+              if (!prev?.[id]) return prev;
+              return {
+                ...prev,
+                [id]: {
+                  ...prev[id],
+                  content: res.content,
+                  updatedAt: Date.now()
+                }
+              };
+            });
+          }
+        }).catch(err => {
+          console.error("Erro ao processar retorno do salvamento:", err);
+        });
 
         return newState;
       } catch (err) {
@@ -464,6 +503,8 @@ export const NotesProvider = ({ children }) => {
       initialContent = { code: 'graph TD\n  A[Início] --> B(Processo)' };
     } else if (type === 'mindmap') {
       initialContent = { root: { id: 'm-root', text: 'Tópico Central', x: 800, y: 450, children: [] } };
+    } else if (type === 'pdf_study') {
+      initialContent = { pdfFile: null, pagesData: {} };
     }
 
     const now = Date.now();

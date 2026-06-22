@@ -559,8 +559,8 @@ function AppContent() {
           onOpenSettings={() => setIsSettingsOpen(true)}
         />
 
-        {/* Floating Toolbar Pill — only on canvas notes */}
-        {activeNote?.type === 'canvas' && (
+        {/* Floating Toolbar Pill — only on canvas and pdf_study notes */}
+        {(activeNote?.type === 'canvas' || activeNote?.type === 'pdf_study') && (
           <FloatingToolbar
             isSidebarOpen={isSidebarOpen}
             onToggleSidebar={toggleSidebar}

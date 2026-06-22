@@ -1,6 +1,7 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNotes } from '../contexts/NotesContext';
+import { StorageService } from '../services/StorageService';
 import {
   DndContext,
   DragOverlay,
@@ -158,6 +159,7 @@ const TreeNode = ({ nodeId, level = 0 }) => {
             {note.type === 'code' && <SidebarIcons.Code />}
             {note.type === 'mermaid' && <SidebarIcons.Mermaid />}
             {note.type === 'mindmap' && <SidebarIcons.Mindmap />}
+            {note.type === 'pdf_study' && <SidebarIcons.File />}
           </span>
 
           {/* Title */}
@@ -224,6 +226,7 @@ const TreeNode = ({ nodeId, level = 0 }) => {
                     { type: 'canvas', label: 'Canvas', icon: SidebarIcons.Canvas },
                     { type: 'mermaid', label: 'Diagrama', icon: SidebarIcons.Mermaid },
                     { type: 'mindmap', label: 'Mapa Mental', icon: SidebarIcons.Mindmap },
+                    { type: 'pdf_study', label: 'Caderno PDF', icon: SidebarIcons.File },
                     { type: 'folder', label: 'Pasta', icon: SidebarIcons.Folder },
                   ].map(opt => (
                     <button
@@ -287,7 +290,37 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
   const [activeDragItem, setActiveDragItem] = useState(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [addMenuPos, setAddMenuPos] = useState({ top: 0, left: 0 });
-  const rootNote = notes['root'];
+  const rootNote = notes?.['root'];
+
+  const [isDriveExpired, setIsDriveExpired] = useState(() => StorageService.isGoogleTokenExpired());
+  const [syncStatus, setSyncStatus] = useState(() => StorageService.getSyncStatus?.() || 'synced');
+
+  useEffect(() => {
+    const handleCheck = () => {
+      setIsDriveExpired(StorageService.isGoogleTokenExpired());
+    };
+    const handleSyncChange = (e) => {
+      setSyncStatus(e.detail);
+    };
+    window.addEventListener('google-token-expired', handleCheck);
+    window.addEventListener('sync-status-changed', handleSyncChange);
+    const interval = setInterval(handleCheck, 15000); // check every 15s
+    return () => {
+      window.removeEventListener('google-token-expired', handleCheck);
+      window.removeEventListener('sync-status-changed', handleSyncChange);
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Safety: if notes or root is temporarily undefined (e.g. during Firebase sync), show loading
+  if (!notes || !rootNote) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-3 opacity-50">
+        <div style={{ width: '24px', height: '24px', borderRadius: '50%', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent-color)', animation: 'spin 1s linear infinite' }} />
+        <span className="text-[0.75rem] text-[var(--text-secondary)]">Carregando...</span>
+      </div>
+    );
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -393,6 +426,7 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
                       { type: 'canvas', label: 'Canvas Infinito', icon: SidebarIcons.Canvas },
                       { type: 'mermaid', label: 'Diagrama Mermaid', icon: SidebarIcons.Mermaid },
                       { type: 'mindmap', label: 'Mapa Mental', icon: SidebarIcons.Mindmap },
+                      { type: 'pdf_study', label: 'Caderno PDF', icon: SidebarIcons.File },
                       { type: 'folder', label: 'Nova Pasta', icon: SidebarIcons.Folder },
                     ].map(opt => (
                       <button
@@ -491,9 +525,69 @@ const Sidebar = ({ onOpenSearch, onToggleTheme, onOpenSettings, isDarkMode, onTo
         </div>
 
         {/* Status Bar */}
-        <div className="py-2 px-3 border-t border-[var(--glass-border)] text-[0.65rem] text-[var(--text-secondary)] flex justify-between opacity-60">
+        <div className="py-2 px-3 border-t border-[var(--glass-border)] text-[0.65rem] text-[var(--text-secondary)] flex justify-between items-center opacity-80">
           <span>v0.2.0 Beta</span>
-          <span title="Sync">🟢 Local</span>
+          <div className="flex items-center gap-2">
+            {isDriveExpired && (
+              <button 
+                onClick={onOpenSettings}
+                className="animate-pulse"
+                style={{
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  color: '#fca5a5',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  fontSize: '0.6rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'rgba(239, 68, 68, 0.3)'}
+                onMouseLeave={(e) => e.target.style.background = 'rgba(239, 68, 68, 0.2)'}
+                title="Sessão do Google Drive expirada! Clique para reconectar."
+              >
+                ⚠️ Reconectar Drive
+              </button>
+            )}
+            <span 
+              title={
+                syncStatus === 'synced' ? 'Sincronizado' :
+                syncStatus === 'syncing' ? 'Sincronizando...' :
+                syncStatus === 'pending' ? 'Sincronização Pendente' :
+                'Erro na Sincronização'
+              }
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.75rem',
+                color: 'var(--text-secondary)'
+              }}
+            >
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: 
+                  syncStatus === 'synced' ? '#10B981' : // Verde
+                  syncStatus === 'syncing' ? '#F59E0B' : // Amarelo
+                  syncStatus === 'pending' ? '#3B82F6' : // Azul
+                  '#EF4444', // Vermelho
+                boxShadow: 
+                  syncStatus === 'synced' ? '0 0 6px #10B981' :
+                  syncStatus === 'syncing' ? '0 0 6px #F59E0B' :
+                  syncStatus === 'pending' ? '0 0 6px #3B82F6' :
+                  '0 0 6px #EF4444',
+                transition: 'all 0.3s ease'
+              }} />
+              <span>
+                {syncStatus === 'synced' ? 'Nuvem' :
+                 syncStatus === 'syncing' ? 'Sincronizando' :
+                 syncStatus === 'pending' ? 'Pendente' :
+                 'Erro Sync'}
+              </span>
+            </span>
+          </div>
         </div>
       </div>
 

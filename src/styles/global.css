@@ -1081,6 +1081,7 @@ textarea.nodrag:focus {
   border-radius: 16px;
   box-shadow: var(--glass-shadow);
   overflow: hidden;
+  transition: padding-bottom 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   animation: slideDown 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 

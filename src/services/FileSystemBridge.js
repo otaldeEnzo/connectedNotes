@@ -144,7 +144,14 @@ export const FileSystemBridge = {
    * Salva um arquivo físico (JSON ou Texto) na pasta informada
    */
   async writeFile(directoryPathOrHandle, relativePath, content) {
-    const contentStr = typeof content === 'object' ? JSON.stringify(content, null, 2) : content;
+    let contentToWrite;
+    let isBinary = content instanceof ArrayBuffer || content instanceof Blob || content instanceof Uint8Array;
+    
+    if (!isBinary) {
+        contentToWrite = typeof content === 'object' ? JSON.stringify(content, null, 2) : content;
+    } else {
+        contentToWrite = content;
+    }
 
     if (isElectron && fs && path) {
       const fullPath = path.join(directoryPathOrHandle, relativePath);
@@ -152,7 +159,15 @@ export const FileSystemBridge = {
       if (!fs.existsSync(parentDir)) {
         fs.mkdirSync(parentDir, { recursive: true });
       }
-      fs.writeFileSync(fullPath, contentStr, 'utf8');
+      
+      if (isBinary) {
+          const uint8 = content instanceof Blob 
+              ? new Uint8Array(await content.arrayBuffer()) 
+              : (content instanceof ArrayBuffer ? new Uint8Array(content) : content);
+          fs.writeFileSync(fullPath, uint8);
+      } else {
+          fs.writeFileSync(fullPath, contentToWrite, 'utf8');
+      }
       return true;
     }
 
@@ -168,7 +183,7 @@ export const FileSystemBridge = {
       const fileName = parts[parts.length - 1];
       const fileHandle = await currentDir.getFileHandle(fileName, { create: true });
       const writable = await fileHandle.createWritable();
-      await writable.write(contentStr);
+      await writable.write(contentToWrite);
       await writable.close();
       return true;
     }
@@ -183,6 +198,11 @@ export const FileSystemBridge = {
     if (isElectron && fs && path) {
       const fullPath = path.join(directoryPathOrHandle, relativePath);
       if (fs.existsSync(fullPath)) {
+        // If it's a binary file like .png, .jpg, .pdf
+        if (fullPath.match(/\.(png|jpg|jpeg|gif|pdf)$/i)) {
+          const buf = fs.readFileSync(fullPath);
+          return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+        }
         return fs.readFileSync(fullPath, 'utf8');
       }
       return null;
@@ -200,6 +220,11 @@ export const FileSystemBridge = {
         const fileName = parts[parts.length - 1];
         const fileHandle = await currentDir.getFileHandle(fileName);
         const file = await fileHandle.getFile();
+        
+        if (fileName.match(/\.(png|jpg|jpeg|gif|pdf)$/i)) {
+            return await file.arrayBuffer();
+        }
+        
         const text = await file.text();
         return text;
       } catch (e) {

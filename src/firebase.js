@@ -66,8 +66,23 @@ function updateFirebaseConfig(newConfig) {
 /**
  * Função utilitária para limpar dados indefinidos antes de enviar ao Firestore.
  */
+function sanitizeDeep(obj) {
+  if (obj === undefined) return null;
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(item => item === undefined ? null : sanitizeDeep(item));
+  }
+  const result = {};
+  for (const key in obj) {
+    if (obj[key] !== undefined) {
+      result[key] = sanitizeDeep(obj[key]);
+    }
+  }
+  return result;
+}
+
 function sanitize(data) {
-  return JSON.parse(JSON.stringify(data, (key, value) => value === undefined ? null : value));
+  return sanitizeDeep(data);
 }
 
 /**

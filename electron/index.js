@@ -1,6 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 
+// Desativa a política COOP no Chromium para permitir que os popups de login funcionem no Electron
+app.commandLine.appendSwitch('disable-features', 'CrossOriginOpenerPolicy');
+
 function createWindow () {
   const win = new BrowserWindow({
     width: 1200,
@@ -9,6 +12,15 @@ function createWindow () {
       nodeIntegration: true,
       contextIsolation: false
     }
+  });
+
+  // Intercepta e remove cabeçalhos COOP para permitir comunicação do popup de login com o Electron
+  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    const responseHeaders = { ...details.responseHeaders };
+    // Remove o cabeçalho COOP de forma case-insensitive
+    const coopKeys = Object.keys(responseHeaders).filter(k => k.toLowerCase() === 'cross-origin-opener-policy');
+    coopKeys.forEach(k => delete responseHeaders[k]);
+    callback({ cancel: false, responseHeaders });
   });
 
   // Tenta carregar o URL do Vite (Dev)

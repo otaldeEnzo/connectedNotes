@@ -65,6 +65,15 @@ const TypeIcons = {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
         </svg>
+    ),
+    pdf_study: (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+            <polyline points="10 9 9 9 8 9" />
+        </svg>
     )
 };
 
@@ -480,11 +489,12 @@ const TagPopoverContent = ({ onClose, position }) => {
 
 const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShowTagPopover, isSidebarOpen, onToggleSidebar, onOpenSettings }) => {
     const {
-        notes, openTabs, activeNoteId, selectNote, closeTab, addNote,
+        notes, openTabs = [], activeNoteId, selectNote, closeTab, addNote,
         reorderTabs, updateNoteTitle, closeOtherTabs, closeTabsToRight
-    } = useNotes();
+    } = useNotes() || {};
     const [showNotePicker, setShowNotePicker] = useState(false);
     const [showPickerAddMenu, setShowPickerAddMenu] = useState(false);
+    const [addMenuRect, setAddMenuRect] = useState(null);
     const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
     const [tagMenuPosition, setTagMenuPosition] = useState({ top: 0, left: 0 });
     const [expandedFolders, setExpandedFolders] = useState({});
@@ -549,7 +559,7 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
         }, 100);
 
         return () => clearTimeout(timeoutId);
-    }, [activeNoteId, openTabs.length]);
+    }, [activeNoteId, openTabs?.length]);
 
     // Auto-focus search input when picker opens
     useEffect(() => {
@@ -596,6 +606,7 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                 top: rect.bottom + 8,
                 left: left
             });
+            setShowTagPopover(false);
         }
         setShowNotePicker(prev => !prev);
     };
@@ -838,6 +849,7 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                                 if (left < 16) left = 16;
                                 setTagMenuPosition({ top: rect.bottom + 8, left: left });
                                 setShowNotePicker(false);
+                                setShowPickerAddMenu(false);
                             }
                             setShowTagPopover(prev => !prev);
                         }}
@@ -984,7 +996,10 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                 >
                     <div style={{ padding: '12px', borderBottom: '1px solid var(--glass-border)', position: 'relative' }}>
                         <button
-                            onClick={() => setShowPickerAddMenu(!showPickerAddMenu)}
+                            onClick={(e) => {
+                                setAddMenuRect(e.currentTarget.getBoundingClientRect());
+                                setShowPickerAddMenu(!showPickerAddMenu);
+                            }}
                             className="liquid-button"
                             style={{
                                 background: 'var(--accent-gradient)',
@@ -1006,51 +1021,6 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                             Nova
                         </button>
-
-                        {/* Dropdown Options - Liquid Glass Menu */}
-                        {showPickerAddMenu && (
-                            <div className="glass-panel" style={{
-                                position: 'absolute',
-                                top: 'calc(100% + 4px)',
-                                left: '12px',
-                                right: '12px',
-                                padding: '8px',
-                                borderRadius: '12px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '4px',
-                                zIndex: 1001,
-                                animation: 'slideDown 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)'
-                            }}>
-                                {[
-                                    { type: 'text', label: 'Nota de Texto', icon: TypeIcons.text },
-                                    { type: 'code', label: 'Nota de Código', icon: TypeIcons.code },
-                                    { type: 'canvas', label: 'Canvas Infinito', icon: TypeIcons.canvas },
-                                    { type: 'mermaid', label: 'Diagrama Mermaid', icon: TypeIcons.mermaid },
-                                    { type: 'mindmap', label: 'Mapa Mental', icon: TypeIcons.mindmap },
-                                    { type: 'folder', label: 'Nova Pasta', icon: TypeIcons.folder },
-                                ].map(opt => (
-                                    <button
-                                        key={opt.type}
-                                        className="liquid-item"
-                                        style={{
-                                            display: 'flex', alignItems: 'center', gap: '8px',
-                                            padding: '8px 12px', borderRadius: '8px', border: 'none',
-                                            background: 'transparent', color: 'var(--text-primary)',
-                                            cursor: 'pointer', textAlign: 'left', fontSize: '0.85rem'
-                                        }}
-                                        onClick={() => {
-                                            addNote('root', opt.type);
-                                            setShowNotePicker(false);
-                                            setShowPickerAddMenu(false);
-                                        }}
-                                    >
-                                        <span style={{ opacity: 0.7, display: 'flex' }}>{opt.icon}</span>
-                                        {opt.label}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
                     </div>
 
                     <div className="tab-note-picker-search" style={{
@@ -1098,6 +1068,54 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
                 </div>,
                 document.body
             )}
+
+            {showNotePicker && showPickerAddMenu && addMenuRect && createPortal(
+                <div className="glass-extreme" style={{
+                    position: 'fixed',
+                    top: addMenuRect.bottom + 8,
+                    left: addMenuRect.left,
+                    width: addMenuRect.width,
+                    padding: '8px',
+                    borderRadius: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    zIndex: 2147483648,
+                    animation: 'slideDown 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                    boxShadow: 'var(--shadow-glass-dark, 0 20px 50px rgba(0,0,0,0.5))'
+                }}>
+                    {[
+                        { type: 'text', label: 'Nota de Texto', icon: TypeIcons.text },
+                        { type: 'code', label: 'Nota de Código', icon: TypeIcons.code },
+                        { type: 'canvas', label: 'Canvas Infinito', icon: TypeIcons.canvas },
+                        { type: 'mermaid', label: 'Diagrama Mermaid', icon: TypeIcons.mermaid },
+                        { type: 'mindmap', label: 'Mapa Mental', icon: TypeIcons.mindmap },
+                        { type: 'pdf_study', label: 'Caderno PDF', icon: TypeIcons.pdf_study },
+                        { type: 'folder', label: 'Nova Pasta', icon: TypeIcons.folder },
+                    ].map(opt => (
+                        <button
+                            key={opt.type}
+                            className="liquid-item"
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                padding: '8px 12px', borderRadius: '8px', border: 'none',
+                                background: 'transparent', color: 'var(--text-primary)',
+                                cursor: 'pointer', textAlign: 'left', fontSize: '0.85rem'
+                            }}
+                            onClick={() => {
+                                addNote('root', opt.type);
+                                setShowNotePicker(false);
+                                setShowPickerAddMenu(false);
+                            }}
+                        >
+                            <span style={{ opacity: 0.7, display: 'flex' }}>{opt.icon}</span>
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>,
+                document.body
+            )}
+
         </div>
     );
 };

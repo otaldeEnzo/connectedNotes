@@ -6,6 +6,7 @@ import CodeEditor from './editors/CodeEditor';
 import MermaidEditor from './editors/MermaidEditor';
 import MindmapEditor from './editors/MindmapEditor';
 import FolderView from './editors/FolderView';
+import PDFStudyEditor from './editors/PDFStudyEditor';
 import AIPanel from './AIPanel';
 import ScientificOmnibar from './canvas/ScientificOmnibar';
 import { ExportService } from '../services/ExportService';
@@ -155,7 +156,7 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
         return () => window.removeEventListener('triggerExport', handleTriggerExport);
     }, [runExport]);
 
-    const canNav = activeNote?.type === 'canvas' || activeNote?.type === 'mindmap';
+    const canNav = activeNote?.type === 'canvas' || activeNote?.type === 'mindmap' || activeNote?.type === 'pdf_study';
 
     const isOverInteractiveBlock = useCallback(() => {
         return window.isOverInteractiveBlock === true;
@@ -217,7 +218,7 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
                     const dy = (height - oldHeight) / 2;
 
                     if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-                        const shouldClamp = activeNote?.type === 'canvas';
+                        const shouldClamp = activeNote?.type === 'canvas' || activeNote?.type === 'pdf_study';
                         const newX = panRef.current.x + dx;
                         const newY = panRef.current.y + dy;
                         const newPan = {
@@ -257,7 +258,7 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
 
     const handlePointerMove = (e) => {
         if (isPanning) {
-            const shouldClamp = activeNote?.type === 'canvas';
+            const shouldClamp = activeNote?.type === 'canvas' || activeNote?.type === 'pdf_study';
             const dx = e.clientX - lastMousePos.x;
             const dy = e.clientY - lastMousePos.y;
 
@@ -291,7 +292,7 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
             return;
         }
 
-        const shouldClamp = activeNote?.type === 'canvas';
+        const shouldClamp = activeNote?.type === 'canvas' || activeNote?.type === 'pdf_study';
         const currentScale = scaleRef.current;
         const currentPan = panRef.current;
 
@@ -440,6 +441,19 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
                         setExportStatus={setExportStatus}
                         captureNote={captureNote}
                         runExport={runExport}
+                    />
+                );
+            case 'pdf_study':
+                return (
+                    <PDFStudyEditor
+                        {...commonProps}
+                        ref={canvasRef}
+                        note={activeNote}
+                        updateContent={updateContent}
+                        containerRef={containerRef}
+                        setAiPanel={setAiPanel}
+                        scale={scale}
+                        panOffset={panOffset}
                     />
                 );
             default:
