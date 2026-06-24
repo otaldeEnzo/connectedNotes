@@ -372,6 +372,14 @@ const CanvasArea = forwardRef(({
   const nextDragPosRef = useRef(null);
   const interactionInitialBlocksRef = useRef([]);
   const interactionInitialBoundsRef = useRef(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // [OPTIMIZATION] Imperative Drawing Refs
   const activeStrokePathRef = useRef(null);
@@ -1426,8 +1434,8 @@ const CanvasArea = forwardRef(({
       }, 1500); // Debounce de 1.5s para otimizar o salvamento no Google Drive
       return () => {
         clearTimeout(timer);
-        // Force immediate save of pending changes when switching pages or unmounting
-        if (lastSavedJson.current !== contentJson) {
+        // Force immediate save of pending changes ONLY when actually switching pages or unmounting
+        if (!isMountedRef.current && lastSavedJson.current !== contentJson) {
           lastSavedJson.current = contentJson;
           if (propUpdateContent) {
             propUpdateContent(content);
@@ -2566,7 +2574,7 @@ const CanvasArea = forwardRef(({
               {/* Vertical Margin (Left) */}
               <Line
                 points={[80, -25000, 80, 25000]}
-                stroke={isDarkMode ? 'rgba(255, 0, 0, 0.3)' : 'rgba(255, 0, 0, 0.2)'}
+                stroke={isDarkMode ? 'rgba(224, 224, 230, 0.35)' : 'rgba(180, 180, 185, 0.5)'}
                 strokeWidth={1.5 / scale}
               />
               {/* Horizontal Margin (Top) */}

@@ -534,6 +534,9 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
             const menuElement = document.getElementById('tab-picker-portal');
             if (menuElement && menuElement.contains(e.target)) return;
 
+            const addMenuElement = document.getElementById('tab-picker-add-menu-portal');
+            if (addMenuElement && addMenuElement.contains(e.target)) return;
+
             const tagMenuElement = document.getElementById('tag-popover-portal');
             if (tagMenuElement && tagMenuElement.contains(e.target)) return;
 
@@ -1070,20 +1073,24 @@ const TabBar = ({ isMiniMapEnabled, setIsMiniMapEnabled, showTagPopover, setShow
             )}
 
             {showNotePicker && showPickerAddMenu && addMenuRect && createPortal(
-                <div className="glass-extreme" style={{
-                    position: 'fixed',
-                    top: addMenuRect.bottom + 8,
-                    left: addMenuRect.left,
-                    width: addMenuRect.width,
-                    padding: '8px',
-                    borderRadius: '12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px',
-                    zIndex: 2147483648,
-                    animation: 'slideDown 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                    boxShadow: 'var(--shadow-glass-dark, 0 20px 50px rgba(0,0,0,0.5))'
-                }}>
+                <div 
+                    id="tab-picker-add-menu-portal"
+                    className="glass-extreme" 
+                    onMouseDown={(e) => e.stopPropagation()}
+                    style={{
+                        position: 'fixed',
+                        top: addMenuRect.bottom + 8,
+                        left: addMenuRect.left,
+                        width: addMenuRect.width,
+                        padding: '8px',
+                        borderRadius: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                        zIndex: 2147483648,
+                        animation: 'slideDown 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                        boxShadow: 'var(--shadow-glass-dark, 0 20px 50px rgba(0,0,0,0.5))'
+                    }}>
                     {[
                         { type: 'text', label: 'Nota de Texto', icon: TypeIcons.text },
                         { type: 'code', label: 'Nota de Código', icon: TypeIcons.code },

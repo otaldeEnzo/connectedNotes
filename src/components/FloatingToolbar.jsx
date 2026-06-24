@@ -235,6 +235,17 @@ const FloatingToolbar = ({
   const [orientation, setOrientation] = useState(() => {
     return localStorage.getItem('connected-notes-toolbar-orientation') || 'horizontal';
   });
+  // Minimum X boundary imposed by PDF canvas split (0 = unrestricted)
+  const [pdfMinX, setPdfMinX] = useState(0);
+
+  // Listen for PDF canvas boundary events
+  useEffect(() => {
+    const handleBoundary = (e) => {
+      setPdfMinX(e.detail?.minX ?? 0);
+    };
+    window.addEventListener('pdfCanvasBoundaryChanged', handleBoundary);
+    return () => window.removeEventListener('pdfCanvasBoundaryChanged', handleBoundary);
+  }, []);
 
   // New positioning strategy: Save side + distance to edge
   const [position, setPosition] = useState(() => {
@@ -313,6 +324,15 @@ const FloatingToolbar = ({
     lastBoundaryRef.current = currentBoundary;
   }, [sidebarWidth, isDragging, orientation]);
 
+  // When PDF boundary changes, push toolbar out of PDF zone if needed
+  useEffect(() => {
+    if (pdfMinX > 0 && position.x < pdfMinX + 56) {
+      setPosition(prev => ({ ...prev, x: pdfMinX + 56 }));
+    }
+  }, [pdfMinX]);
+
+
+
   // Click away to close submenus and discovery (ColorPicker)
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -357,10 +377,15 @@ const FloatingToolbar = ({
 
     const winW = window.innerWidth;
     const winH = window.innerHeight;
-    const newX = e.clientX;
+
+    // When a PDF is active, clamp X so the toolbar cannot enter the PDF zone
+    // Use 56px offset so the entire toolbar handle clears the boundary
+    const leftEdge = pdfMinX > 0 ? pdfMinX + 56 : 0;
+    const newX = Math.max(leftEdge, e.clientX);
     const newY = e.clientY;
 
-    const distLeft = newX;
+    // Measure distance from the effective left boundary (pdf divider or screen edge)
+    const distLeft = pdfMinX > 0 ? newX - pdfMinX : newX;
     const distRight = winW - newX;
     const distTop = newY;
     const distBottom = winH - newY;
@@ -381,7 +406,10 @@ const FloatingToolbar = ({
     // Magnetic Snap on Release
     const winW = window.innerWidth;
     const winH = window.innerHeight;
-    const distLeft = position.x;
+
+    // When PDF is active, measure "left" distance from the pdf divider, not screen edge
+    const effectiveLeft = pdfMinX > 0 ? pdfMinX : 0;
+    const distLeft = position.x - effectiveLeft;
     const distRight = winW - position.x;
     const distTop = position.y;
     const distBottom = winH - position.y;
@@ -394,14 +422,14 @@ const FloatingToolbar = ({
     if (minDist === distTop) {
       snappedY = 100; // Below TabBar
       snappedOrientation = 'horizontal';
-      snappedX = Math.max(24, Math.min(position.x, winW - 300));
+      snappedX = Math.max(effectiveLeft + 24, Math.min(position.x, winW - 300));
     } else if (minDist === distBottom) {
       snappedY = winH - 60;
       snappedOrientation = 'horizontal';
-      snappedX = Math.max(24, Math.min(position.x, winW - 300));
+      snappedX = Math.max(effectiveLeft + 24, Math.min(position.x, winW - 300));
     } else if (minDist === distLeft) {
-      // Sidebar aware snapping with larger gap
-      const snapX = sidebarWidth > 0 ? sidebarWidth + 56 : 60;
+      // Snap to left boundary of the canvas area (PDF divider or sidebar edge)
+      const snapX = pdfMinX > 0 ? pdfMinX + 56 : (sidebarWidth > 0 ? sidebarWidth + 56 : 60);
       snappedX = snapX;
       snappedOrientation = 'vertical';
       snappedY = Math.max(24, Math.min(position.y, winH - 100));
@@ -461,7 +489,9 @@ const FloatingToolbar = ({
   };
 
   // Determine current side for adaptive layout
-  const isLeftSide = position.x < window.innerWidth / 2;
+  // When PDF is active, use the canvas area midpoint, not the full window midpoint
+  const canvasMidX = pdfMinX > 0 ? pdfMinX + (window.innerWidth - pdfMinX) / 2 : window.innerWidth / 2;
+  const isLeftSide = position.x < canvasMidX;
   const isTopSide = position.y < window.innerHeight / 2;
 
   return (

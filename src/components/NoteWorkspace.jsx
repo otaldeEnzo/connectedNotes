@@ -11,7 +11,7 @@ import AIPanel from './AIPanel';
 import ScientificOmnibar from './canvas/ScientificOmnibar';
 import { ExportService } from '../services/ExportService';
 
-const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMapEnabled, ...props }, ref) => {
+const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMapEnabled, penConfig, highlighterConfig, penType, activeForcedShape, setActiveForcedShape, isDarkMode, ...props }, ref) => {
     const { notes, activeNote, activeNoteId, selectNote, updateNoteContent, updateNoteTags } = useNotes();
     const internalCanvasRef = useRef(null);
     const canvasRef = externalCanvasRef || internalCanvasRef;
@@ -454,6 +454,14 @@ const NoteWorkspace = React.forwardRef(({ canvasRef: externalCanvasRef, isMiniMa
                         setAiPanel={setAiPanel}
                         scale={scale}
                         panOffset={panOffset}
+                        activeTool={props.activeTool}
+                        setActiveTool={props.setActiveTool}
+                        penConfig={penConfig}
+                        highlighterConfig={highlighterConfig}
+                        penType={penType}
+                        activeForcedShape={activeForcedShape}
+                        setActiveForcedShape={setActiveForcedShape}
+                        isDarkMode={isDarkMode}
                     />
                 );
             default:
